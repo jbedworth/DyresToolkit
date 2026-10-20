@@ -28,7 +28,9 @@ TIMEOUT = 30
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 RECEIPT_NAME = "curseforge-upload.json"
 # The toolkit depends on nothing; its libraries are embedded in its package.
-RELATIONS = {"projects": []}
+# CurseForge answered HTTP 400 to an empty "relations" (v0.1.0-beta), so the
+# upload leaves the field out, as Dyre's Sounds' uploads do.
+RELATIONS = None
 
 
 class PublishError(Exception):
@@ -220,7 +222,9 @@ def publish(artifact_dir, project_id, game_version_id, tag):
     versions = request_json(opener, urllib.request.Request(VERSIONS_URL, headers=headers))
     verify_server_version(versions, game_version_id)
     metadata = {"gameVersions": [game_version_id], "releaseType": manifest["channel"],
-                "changelog": changelog, "changelogType": "markdown", "relations": RELATIONS}
+                "changelog": changelog, "changelogType": "markdown"}
+    if RELATIONS:
+        metadata["relations"] = RELATIONS
     body, content_type = multipart(metadata, manifest["archive_name"], archive_bytes)
     upload_headers = dict(headers, **{"Content-Type": content_type})
     request = urllib.request.Request(UPLOAD_URL.format(project_id=project_id),

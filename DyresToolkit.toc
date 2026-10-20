@@ -2,7 +2,7 @@
 ## Title: Dyre's Toolkit
 ## Notes: One layout mode, grid, and minimap menu for Dyre's AddOns in WoW Forever
 ## Author: Dyre
-## Version: 0.1.0-beta
+## Version: 0.1.1-beta
 ## IconTexture: Interface\Icons\INV_Misc_Wrench_01
 ## Category: Dyre's AddOns
 ## SavedVariables: DyresToolkitDB

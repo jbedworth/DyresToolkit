@@ -152,8 +152,7 @@ class CurseForgeTests(unittest.TestCase):
                          ["metadata", "file"])
         metadata = json.loads(parts[0].get_payload(decode=True))
         self.assertEqual(metadata, {"gameVersions": [12345], "releaseType": "beta",
-                                   "changelog": notes, "changelogType": "markdown",
-                                   "relations": {"projects": []}})
+                                   "changelog": notes, "changelogType": "markdown"})
         self.assertEqual(parts[1].get_filename(), self.archive.name)
         self.assertEqual(parts[1].get_content_type(), "application/zip")
         uploaded = parts[1].get_payload(decode=True)
@@ -188,8 +187,9 @@ class CurseForgeTests(unittest.TestCase):
                 self.assert_no_network()
 
     def test_the_toolkit_depends_on_nothing(self):
-        # Its libraries are embedded in its own package.
-        self.assertEqual(publisher.RELATIONS, {"projects": []})
+        # Its libraries are embedded in its own package; an empty "relations"
+        # got HTTP 400 from CurseForge, so the upload sends none.
+        self.assertIsNone(publisher.RELATIONS)
 
     def test_strict_tag(self):
         for tag in ("0.1.0-beta", "v0.1.0", "vv0.1.0-beta", "v0.1.0-beta\n", "v../bad"):
