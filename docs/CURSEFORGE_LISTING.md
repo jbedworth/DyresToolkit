@@ -10,7 +10,7 @@ tested.
 | --- | --- |
 | Name | Dyre's Toolkit |
 | Slug | dyres-toolkit (every Dyre's AddOn with frames or settings declares it as a required dependency by this slug) |
-| Project ID | Not created yet; set the `CURSEFORGE_PROJECT_ID` repository variable once it exists. |
+| Project ID | 1755491 |
 | Class | Addons |
 | Main category | Libraries. The TOC uses `## Category: Dyre's AddOns` instead, so the in-game AddOn list shows the family as one section with the toolkit as its parent. |
 | Additional categories | None |
@@ -23,7 +23,7 @@ tested.
 
 ## Summary
 
-The shared toolkit for Dyre's AddOns on WoW: Forever: one layout mode, a snapping grid, a minimap button, and one settings home for all of them.
+The shared toolkit for Dyre's AddOns on WoW: Forever: includes a shared layout mode, grid, minimap button, and one settings home for all of them.
 
 ## Description
 
