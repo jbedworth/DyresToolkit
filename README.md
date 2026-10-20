@@ -44,7 +44,7 @@ Frames always start locked when you log in. Frames move only out of combat.
 
 ## Compatibility
 
-Beta, for the Forever beta client 1.60.1, build 70450, Interface 16001.
+For the Forever beta client 1.60.1, build 70450, Interface 16001.
 
 ## License
 

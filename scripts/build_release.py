@@ -250,7 +250,7 @@ def _release_notes(version, changes):
 
 ## Notes
 
-- Beta for WoW: Forever. Built for Forever beta {GAME_VERSION}, build {TARGET_BUILD},
+- For WoW: Forever. Built for Forever beta {GAME_VERSION}, build {TARGET_BUILD},
   Interface {INTERFACE}. It runs on later beta builds while the client provides
   the APIs it needs.
 - One layout mode for every Dyre's AddOn: `/dyre unlock` and `/dyre lock`, a

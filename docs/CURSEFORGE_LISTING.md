@@ -61,7 +61,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - `/dyretoolkit` works the same, in case another AddOn uses `/dyre`.
 
 ### Compatibility
-Beta, for the Forever beta client 1.60.1, build 70450.
+For the Forever beta client 1.60.1, build 70450.
 
 Source, issues, and license (MIT): https://github.com/jbedworth/DyresToolkit
 ```
