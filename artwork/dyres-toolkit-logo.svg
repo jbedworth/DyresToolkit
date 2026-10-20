@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">Dyre's Toolkit</title>
+  <desc id="description">An original emblem: a heavy gold gear whose dark hub shows a fine layout grid crossed by red center lines, on a rich dark-brown field framed by a fine gold border.</desc>
+  <defs>
+    <radialGradient id="background" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#49301c"/>
+      <stop offset="0.6" stop-color="#2b190f"/>
+      <stop offset="1" stop-color="#170e09"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4d38b"/>
+      <stop offset="0.32" stop-color="#d5a956"/>
+      <stop offset="0.64" stop-color="#96703a"/>
+      <stop offset="1" stop-color="#e9bf6a"/>
+    </linearGradient>
+    <linearGradient id="red" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff6b5a"/>
+      <stop offset="0.5" stop-color="#d8261c"/>
+      <stop offset="1" stop-color="#8f120d"/>
+    </linearGradient>
+    <radialGradient id="aura" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffe9a8" stop-opacity="0.30"/>
+      <stop offset="0.7" stop-color="#c9a24f" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#3a2410" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lens" cx="45%" cy="38%" r="65%">
+      <stop offset="0" stop-color="#3a2a1a"/>
+      <stop offset="1" stop-color="#140c07"/>
+    </radialGradient>
+    <filter id="shadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#080502" flood-opacity="0.7"/>
+    </filter>
+    <clipPath id="hub">
+      <circle cx="512" cy="480" r="128"/>
+    </clipPath>
+  </defs>
+  <path d="M0 0H1024V1024H0Z" fill="url(#background)"/>
+  <rect x="46" y="46" width="932" height="932" rx="94" fill="none" stroke="url(#gold)" stroke-width="5"/>
+  <rect x="62" y="62" width="900" height="900" rx="80" fill="none" stroke="#b48b45" stroke-opacity="0.28" stroke-width="2"/>
+  <path d="M512 91 L525 108 L512 125 L499 108 Z M512 899 L525 916 L512 933 L499 916 Z" fill="url(#gold)"/>
+  <!-- A warm aura behind the emblem. -->
+  <circle cx="512" cy="480" r="360" fill="url(#aura)"/>
+  <g filter="url(#shadow)">
+    <!-- The gear: twelve teeth around a hub hole (evenodd). -->
+    <path d="M483.0 259.9 L488.2 213.1 A268 268 0 0 1 535.8 213.1 L541.0 259.9 A222 222 0 0 1 597.0 274.9 L624.8 236.9 A268 268 0 0 1 666.1 260.7 L647.1 303.9 A222 222 0 0 1 688.1 344.9 L731.3 325.9 A268 268 0 0 1 755.1 367.2 L717.1 395.0 A222 222 0 0 1 732.1 451.0 L778.9 456.2 A268 268 0 0 1 778.9 503.8 L732.1 509.0 A222 222 0 0 1 717.1 565.0 L755.1 592.8 A268 268 0 0 1 731.3 634.1 L688.1 615.1 A222 222 0 0 1 647.1 656.1 L666.1 699.3 A268 268 0 0 1 624.8 723.1 L597.0 685.1 A222 222 0 0 1 541.0 700.1 L535.8 746.9 A268 268 0 0 1 488.2 746.9 L483.0 700.1 A222 222 0 0 1 427.0 685.1 L399.2 723.1 A268 268 0 0 1 357.9 699.3 L376.9 656.1 A222 222 0 0 1 335.9 615.1 L292.7 634.1 A268 268 0 0 1 268.9 592.8 L306.9 565.0 A222 222 0 0 1 291.9 509.0 L245.1 503.8 A268 268 0 0 1 245.1 456.2 L291.9 451.0 A222 222 0 0 1 306.9 395.0 L268.9 367.2 A268 268 0 0 1 292.7 325.9 L335.9 344.9 A222 222 0 0 1 376.9 303.9 L357.9 260.7 A268 268 0 0 1 399.2 236.9 L427.0 274.9 A222 222 0 0 1 483.0 259.9 Z M512 352 A128 128 0 1 0 512.1 352 Z" fill="url(#gold)" fill-rule="evenodd" stroke="#8a5a10" stroke-width="5" stroke-linejoin="round"/>
+    <!-- A worn groove on the gear's face. -->
+    <circle cx="512" cy="480" r="178" fill="none" stroke="#6e4a1c" stroke-opacity="0.55" stroke-width="6"/>
+    <!-- The hub: a dark lens with the layout grid and its red center lines. -->
+    <circle cx="512" cy="480" r="128" fill="url(#lens)"/>
+    <g clip-path="url(#hub)">
+      <path d="M448 340 V620 M576 340 V620 M384 340 V620 M640 340 V620 M372 416 H652 M372 544 H652 M372 352 H652 M372 608 H652" fill="none" stroke="#c9b8a0" stroke-opacity="0.35" stroke-width="3"/>
+      <path d="M512 340 V620 M372 480 H652" fill="none" stroke="url(#red)" stroke-width="10" stroke-linecap="round"/>
+    </g>
+    <circle cx="512" cy="480" r="128" fill="none" stroke="#8a5a10" stroke-width="6"/>
+    <!-- Fine outer rings, as on the other Forever logos. -->
+    <circle cx="512" cy="480" r="338" fill="none" stroke="#f0ca78" stroke-opacity="0.45" stroke-width="2"/>
+    <circle cx="512" cy="480" r="350" fill="none" stroke="#b48b45" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="3 12"/>
+  </g>
+  <path d="M359 850H457 M567 850H665" fill="none" stroke="#b98e47" stroke-opacity="0.5" stroke-width="3" stroke-linecap="round"/>
+  <path d="M512 837 L524 850 L512 863 L500 850 Z" fill="url(#gold)"/>
+</svg>

@@ -1,0 +1,563 @@
+-- Lua 5.1 mock suite for Dyre's Toolkit. Run from the repository root:
+--   lua5.1 tests/run.lua
+-- Mocks cannot prove dragging, the settings panel, or the minimap button in
+-- the client; TESTING.md lists the in-client checks.
+
+if _VERSION ~= "Lua 5.1" then
+    io.stderr:write("This suite requires Lua 5.1; found " .. tostring(_VERSION) .. "\n")
+    os.exit(1)
+end
+
+local ADDON = "DyresToolkit"
+local RUNTIME = {"Core.lua", "Layout.lua", "Settings.lua", "Minimap.lua"}
+local tests = {}
+
+local function test(name, body)
+    tests[#tests + 1] = {name = name, body = body}
+end
+
+local function equal(actual, expected, context)
+    if actual ~= expected then
+        error((context and context .. ": " or "") .. "expected " .. tostring(expected) .. ", got "
+            .. tostring(actual), 2)
+    end
+end
+
+local function contains(text, fragment, context)
+    if type(text) ~= "string" or not text:find(fragment, 1, true) then
+        error((context and context .. ": " or "") .. "expected " .. tostring(text) .. " to contain " .. fragment, 2)
+    end
+end
+
+-- A frame with a center, a size, and a scale, as Box and MoveTo read them.
+local function newFrame(state, x, y, width, height)
+    local frame = {x = x, y = y, width = width or 40, height = height or 40, scale = 1, shown = true,
+        events = {}, scripts = {}, moving = false}
+    function frame:GetCenter() return self.x, self.y end
+    function frame:GetWidth() return self.width end
+    function frame:GetHeight() return self.height end
+    function frame:GetEffectiveScale() return self.scale end
+    function frame:SetScale(scale) self.scale = scale end
+    function frame:IsShown() return self.shown end
+    function frame:SetShown(shown) self.shown = shown end
+    function frame:Show() self.shown = true end
+    function frame:Hide() self.shown = false end
+    function frame:ClearAllPoints() self.anchor = nil end
+    function frame:SetPoint(point, relative, relativePoint, px, py)
+        self.anchor = {point, relative, relativePoint, px, py}
+        if relative == state.UIParent and point == "CENTER" and relativePoint == "BOTTOMLEFT" then
+            self.x, self.y = px * self.scale, py * self.scale
+        end
+    end
+    function frame:SetAllPoints() end
+    function frame:StartMoving() self.moving = true end
+    function frame:StopMovingOrSizing() self.moving = false end
+    function frame:RegisterEvent(event) self.events[event] = true end
+    function frame:UnregisterEvent(event) self.events[event] = nil end
+    function frame:SetScript(script, callback) self.scripts[script] = callback end
+    function frame:SetFrameStrata() end
+    function frame:EnableMouse() end
+    function frame:CreateTexture()
+        local texture = {}
+        function texture:SetColorTexture() end
+        function texture:SetWidth() end
+        function texture:SetHeight() end
+        function texture:SetPoint() end
+        function texture:Hide() end
+        state.textures = state.textures + 1
+        return texture
+    end
+    state.frames[#state.frames + 1] = frame
+    return frame
+end
+
+local function fixture(options)
+    options = options or {}
+    local state = {messages = {}, frames = {}, textures = 0, combat = false, shift = false, opened = nil}
+    local env = setmetatable({}, {__index = _G})
+    env._G = env
+    env.SlashCmdList = {}
+    env.DEFAULT_CHAT_FRAME = {AddMessage = function(_, message) state.messages[#state.messages + 1] = message end}
+    env.InCombatLockdown = function() return state.combat end
+    env.IsShiftKeyDown = function() return state.shift end
+    env.IsControlKeyDown = function() return state.ctrl end
+    state.UIParent = newFrame(state, 960, 540, 1920, 1080)
+    env.UIParent = state.UIParent
+    env.CreateFrame = function() return newFrame(state, 0, 0) end
+    if not options.noSettings then
+        local function category(name)
+            local object = {name = name, subcategories = {}, initializers = {}}
+            function object:GetID() return "id:" .. self.name end
+            return object
+        end
+        env.Settings = {
+            VarType = {Boolean = "boolean", Number = "number"},
+            RegisterVerticalLayoutCategory = function(name)
+                state.homes = (state.homes or 0) + 1
+                local object = category(name)
+                return object, {category = object}
+            end,
+            RegisterVerticalLayoutSubcategory = function(parent, name)
+                local object = category(name)
+                parent.subcategories[#parent.subcategories + 1] = object
+                return object, {category = object}
+            end,
+            RegisterAddOnCategory = function(object) state.registered = object end,
+            RegisterProxySetting = function(object, variable, kind, name, default, get, set)
+                local setting = {variable = variable, name = name, get = get, set = set}
+                state.settings = state.settings or {}
+                state.settings[variable] = setting
+                return setting
+            end,
+            CreateCheckbox = function(object, setting) object.initializers[#object.initializers + 1] = setting end,
+            CreateSlider = function(object, setting) object.initializers[#object.initializers + 1] = setting end,
+            CreateSliderOptions = function() return {} end,
+            OpenToCategory = function(id) state.opened = id end,
+        }
+    end
+    -- LibDataBroker and LibDBIcon, as the minimap button uses them.
+    if not options.noLibraries then
+        local broker = {NewDataObject = function(_, name, data) state.launcher = data; return data end}
+        local dbicon = {
+            Register = function(_, name, data, db) state.icon = {name = name, data = data, db = db} end,
+            Show = function() state.iconShown = true end,
+            Hide = function() state.iconShown = false end,
+        }
+        env.LibStub = function(name)
+            if name == "LibDataBroker-1.1" then return broker end
+            if name == "LibDBIcon-1.0" then return dbicon end
+        end
+    end
+    env.MenuUtil = {CreateContextMenu = function(owner, generator) state.menuOwner = owner; state.menu = generator end}
+    env.DyresToolkitDB = options.saved
+    local ns = {}
+    for _, path in ipairs(RUNTIME) do
+        local chunk = assert(loadfile(path))
+        setfenv(chunk, env)
+        chunk(ADDON, ns)
+    end
+    state.env, state.ns, state.toolkit = env, ns, env.DyresToolkit
+    -- The client: the AddOn's SavedVariables, then login.
+    local events = state.frames[2]
+    for _, frame in ipairs(state.frames) do
+        if frame.scripts.OnEvent and frame.events.ADDON_LOADED then events = frame end
+    end
+    state.events = events
+    events.scripts.OnEvent(events, "ADDON_LOADED", ADDON)
+    if not options.noLogin then
+        events.scripts.OnEvent(events, "PLAYER_LOGIN")
+    end
+    function state.slash(text) env.SlashCmdList.DYRESTOOLKIT(text) end
+    function state.said(fragment)
+        for _, message in ipairs(state.messages) do
+            if message:find(fragment, 1, true) then return true end
+        end
+        return false
+    end
+    function state.last() return state.messages[#state.messages] end
+    return state
+end
+
+-- A minimal menu description that records what the generator adds.
+local function menuRoot()
+    local root = {entries = {}}
+    local function add(kind, text, a, b)
+        root.entries[#root.entries + 1] = {kind = kind, text = text, a = a, b = b}
+    end
+    function root:CreateTitle(text) add("title", text) end
+    function root:CreateButton(text, callback) add("button", text, callback) end
+    function root:CreateCheckbox(text, isSelected, setSelected) add("checkbox", text, isSelected, setSelected) end
+    function root:CreateDivider() add("divider") end
+    return root
+end
+
+-- The interface ---------------------------------------------------------------------
+
+test("the toolkit is the global DyresToolkit behind a contract", function()
+    local toolkit = fixture().toolkit
+    equal(toolkit.RequireContract(1), toolkit)
+    equal(toolkit.RequireContract(2), nil, "a newer contract than this toolkit offers")
+    equal(toolkit.RequireContract("1"), nil)
+end)
+
+test("saved settings are repaired on load, and frames always start locked", function()
+    local state = fixture({saved = {locked = false, grid = "yes", snapToGrid = 1, gridSize = 1000, minimap = 5}})
+    local db = state.env.DyresToolkitDB
+    equal(db.locked, true, "never unlocked at login")
+    equal(db.grid, true)
+    equal(db.snapToGrid, false)
+    equal(db.gridSize, 128, "clamped to the largest size")
+    equal(type(db.minimap), "table")
+    equal(state.ns.SanitizeDB({gridSize = 3}).gridSize, 8)
+    equal(state.ns.SanitizeDB({gridSize = 0 / 0}).gridSize, 32, "not a number: the default")
+end)
+
+test("AddOns register by folder and title, sorted by title", function()
+    local toolkit = fixture().toolkit
+    equal(toolkit.RegisterAddOn({addon = "WarlockToolsForever", title = "Warlock Tools Forever"}), true)
+    equal(toolkit.RegisterAddOn({addon = "DyresBuffReminders", title = "Dyre's Buff Reminders"}), true)
+    equal(toolkit.RegisterAddOn({addon = "", title = "Nameless"}), false)
+    equal(toolkit.RegisterAddOn({addon = "X"}), false)
+    equal(toolkit.RegisterAddOn(nil), false)
+    toolkit.RegisterAddOn({addon = "WarlockToolsForever", title = "Warlock Tools Forever"})
+    toolkit.RegisterAddOn({addon = "DyresQuestTargeting", title = "Dyre's Quest Targeting"})
+    local list = toolkit.AddOns()
+    equal(#list, 3, "registering again replaces, it does not add")
+    equal(list[1].title, "Dyre's Buff Reminders", "sorted by the short name: Buff, Quest, Warlock")
+    equal(list[2].title, "Dyre's Quest Targeting")
+end)
+
+test("one layout mode: every AddOn locks and unlocks together, with one line in chat", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local seen = {}
+    toolkit.RegisterAddOn({addon = "A", title = "A", setLocked = function(locked) seen.A = locked end})
+    toolkit.RegisterAddOn({addon = "B", title = "B", setLocked = function(locked) seen.B = locked end})
+    toolkit.Unlock()
+    equal(seen.A, false)
+    equal(seen.B, false)
+    equal(toolkit.IsLocked(), false)
+    contains(state.last(), "Dyre: Frames unlocked")
+    local count = #state.messages
+    toolkit.RegisterAddOn({addon = "C", title = "C", setLocked = function(locked) seen.C = locked end})
+    equal(seen.C, false, "an AddOn that joins while unlocked shows its frames too")
+    toolkit.ToggleLock()
+    equal(seen.A, true)
+    equal(seen.C, true)
+    equal(#state.messages, count + 1)
+    equal(state.last(), "Dyre: Frames locked.")
+    state.combat = true
+    toolkit.Unlock()
+    contains(state.last(), "after combat")
+end)
+
+-- Layout --------------------------------------------------------------------------
+
+test("frames drag only while unlocked and out of combat", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local frame = newFrame(state, 500, 500)
+    local saved
+    equal(toolkit.RegisterMovable(frame, function(position) saved = position end), true)
+    equal(toolkit.RegisterMovable(frame, "no"), false)
+    toolkit.BeginDrag(frame)
+    equal(frame.moving, false, "locked")
+    toolkit.Unlock()
+    state.combat = true
+    toolkit.BeginDrag(frame)
+    equal(frame.moving, false, "in combat")
+    state.combat = false
+    toolkit.BeginDrag(frame)
+    equal(frame.moving, true)
+    frame.x, frame.y = 700, 300
+    toolkit.EndDrag(frame)
+    equal(frame.moving, false)
+    equal(saved.point, "CENTER")
+    equal(saved.x, 700)
+    equal(saved.y, 300)
+    local stranger = newFrame(state, 0, 0)
+    toolkit.BeginDrag(stranger)
+    equal(stranger.moving, false, "an unregistered frame does not drag")
+end)
+
+test("a dropped frame snaps beside a neighbor, also one from another AddOn", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local mine = newFrame(state, 0, 0)
+    local theirs = newFrame(state, 500, 500)
+    local saved = {}
+    toolkit.RegisterMovable(mine, function(position) saved.mine = position end)
+    toolkit.RegisterMovable(theirs, function(position) saved.theirs = position end)
+    toolkit.Unlock()
+    toolkit.BeginDrag(mine)
+    -- 40 wide each, 20 apart: a neighbor's spot is 60 right of its center.
+    mine.x, mine.y = 562, 505
+    toolkit.EndDrag(mine)
+    equal(saved.mine.x, 560, "beside, the gap apart")
+    equal(saved.mine.y, 500, "lined up by centers")
+end)
+
+test("with Snap to the grid on, a frame with no neighbor in reach goes to the nearest grid point", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local frame = newFrame(state, 0, 0)
+    local saved
+    toolkit.RegisterMovable(frame, function(position) saved = position end)
+    toolkit.Unlock()
+    toolkit.BeginDrag(frame)
+    frame.x, frame.y = 1003, 525
+    toolkit.EndDrag(frame)
+    equal(saved.x, 1003, "off: where it was dropped")
+    state.slash("snap")
+    contains(state.last(), "snap to the grid")
+    -- Lines 32 apart from the center (960, 540); the frame is 40 by 40.
+    -- The grey lines take an edge within a quarter of the size (8): the left
+    -- edge (1183) is 1 left of 1184; the top edge (727) is 5 below 732.
+    toolkit.BeginDrag(frame)
+    frame.x, frame.y = 1203, 707
+    toolkit.EndDrag(frame)
+    equal(saved.x, 1204, "the left edge onto a grey line")
+    equal(saved.y, 712, "the top edge onto a grey line")
+    -- Farther than 8 from every grey line, the frame stays where it was
+    -- dropped: edges 1194 and 1234 are 10 from 1184 and 14 from 1248.
+    toolkit.BeginDrag(frame)
+    frame.x, frame.y = 1214, 700
+    toolkit.EndDrag(frame)
+    equal(saved.x, 1214, "no grey line in reach: no move")
+    -- Centering on a center line comes first: the center (938) is 22 from
+    -- x 960, though the right edge (958) is only 2 from it.
+    toolkit.BeginDrag(frame)
+    frame.x, frame.y = 938, 523
+    toolkit.EndDrag(frame)
+    equal(saved.x, 960, "centered on the center line")
+    equal(saved.y, 540)
+    -- With the center out of reach, an edge in reach goes onto the center
+    -- line: the left edge (970) 10 right of x 960; the bottom edge (560) 20
+    -- above y 540.
+    toolkit.BeginDrag(frame)
+    frame.x, frame.y = 990, 580
+    toolkit.EndDrag(frame)
+    equal(saved.x, 980, "the left edge onto the center line")
+    equal(saved.y, 560, "the bottom edge onto the center line")
+    state.ns.SetGridSize(64)
+    local moveX = state.ns.GridShift({newFrame(state, 1203, 707)})
+    equal(moveX, -7, "a new size: lines 64 apart, reach 16; the right edge (1223) onto 1216")
+end)
+
+test("a neighbor in reach comes before the grid", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local mine = newFrame(state, 0, 0)
+    local theirs = newFrame(state, 1300, 800)
+    local saved
+    toolkit.RegisterMovable(mine, function(position) saved = position end)
+    toolkit.RegisterMovable(theirs, function() end)
+    toolkit.Unlock()
+    state.slash("snap")
+    toolkit.BeginDrag(mine)
+    mine.x, mine.y = 1363, 803
+    toolkit.EndDrag(mine)
+    equal(saved.x, 1360, "beside the neighbor, not on a grid line")
+    equal(saved.y, 800)
+end)
+
+test("Ctrl held at the drop skips snapping, to neighbors and to the grid", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local mine = newFrame(state, 0, 0)
+    local theirs = newFrame(state, 500, 500)
+    local saved
+    toolkit.RegisterMovable(mine, function(position) saved = position end)
+    toolkit.RegisterMovable(theirs, function() end)
+    toolkit.Unlock()
+    state.slash("snap")
+    toolkit.BeginDrag(mine)
+    state.ctrl = true
+    mine.x, mine.y = 562, 505
+    toolkit.EndDrag(mine)
+    equal(saved.x, 562, "a neighbor in reach, but Ctrl: where it was dropped")
+    equal(saved.y, 505)
+    toolkit.BeginDrag(mine)
+    mine.x, mine.y = 1203, 707
+    toolkit.EndDrag(mine)
+    equal(saved.x, 1203, "a grid line in reach, but Ctrl: where it was dropped")
+    state.ctrl = false
+    toolkit.BeginDrag(mine)
+    mine.x, mine.y = 562, 505
+    toolkit.EndDrag(mine)
+    equal(saved.x, 560, "without Ctrl it snaps again")
+end)
+
+test("a Shift-dragged group snaps to the grid as one box", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local lead = newFrame(state, 500, 300)
+    local follower = newFrame(state, 560, 300)
+    local saved = {}
+    toolkit.RegisterMovable(lead, function(position) saved.lead = position end)
+    toolkit.RegisterMovable(follower, function(position) saved.follower = position end)
+    toolkit.Unlock()
+    state.slash("snap")
+    state.shift = true
+    toolkit.BeginDrag(lead)
+    -- The group's box: 1181 to 1261 across, 683 to 723 up. Its left edge
+    -- goes onto 1184 (+3). Up and down, the lines are 668, 700, and 732:
+    -- the bottom (683) and top (723) edges are 15 and 9 away, out of reach.
+    lead.x, lead.y = 1201, 703
+    follower.x, follower.y = 1241, 703
+    toolkit.EndDrag(lead)
+    equal(saved.lead.x, 1204)
+    equal(saved.follower.x, 1244, "the group moves as one")
+    equal(saved.lead.y, 703, "no edge in reach up or down: no move")
+    equal(saved.follower.y, 703)
+end)
+
+test("Shift-drag moves the snapped group", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local lead = newFrame(state, 500, 500)
+    local follower = newFrame(state, 560, 500)
+    local saved = {}
+    toolkit.RegisterMovable(lead, function(position) saved.lead = position end)
+    toolkit.RegisterMovable(follower, function(position) saved.follower = position end)
+    toolkit.Unlock()
+    state.shift = true
+    toolkit.BeginDrag(lead)
+    equal(follower.anchor[2], lead, "the follower is anchored to the dragged frame")
+    lead.x, lead.y = 100, 100
+    follower.x, follower.y = 160, 100
+    toolkit.EndDrag(lead)
+    equal(saved.lead.x, 100)
+    equal(saved.follower.x, 160)
+end)
+
+test("a drop in combat waits until combat ends", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local frame = newFrame(state, 0, 0)
+    local saved
+    toolkit.RegisterMovable(frame, function(position) saved = position end)
+    toolkit.Unlock()
+    toolkit.BeginDrag(frame)
+    state.combat = true
+    frame.x, frame.y = 300, 300
+    toolkit.EndDrag(frame)
+    equal(saved, nil)
+    state.combat = false
+    for _, other in ipairs(state.frames) do
+        if other.events.PLAYER_REGEN_ENABLED then other.scripts.OnEvent(other, "PLAYER_REGEN_ENABLED") end
+    end
+    equal(saved.x, 300)
+end)
+
+test("the grid shows only while unlocked and switched on", function()
+    local state = fixture()
+    local ns = state.ns
+    equal(ns.grid, nil, "nothing is built while locked")
+    state.toolkit.Unlock()
+    equal(ns.grid.shown, true)
+    local lines = state.textures
+    equal(lines > 0, true)
+    state.slash("grid")
+    equal(ns.grid.shown, false)
+    state.slash("grid")
+    ns.SetGridSize(64)
+    equal(state.textures > lines, true, "a new size rebuilds the lines")
+    state.toolkit.Lock()
+    equal(ns.grid.shown, false)
+end)
+
+-- Settings --------------------------------------------------------------------------
+
+test("one Dyre's AddOns home, with each AddOn's page under it", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local home = toolkit.SettingsCategory()
+    equal(home.name, "Dyre's AddOns")
+    equal(state.registered, home)
+    local page, layout = toolkit.RegisterSettingsCategory("Mage Tools Forever")
+    equal(page.name, "Mage Tools Forever", "a name without Dyre's stays")
+    equal(toolkit.RegisterSettingsCategory("Dyre's Buff Reminders").name, "Buff Reminders",
+        "under Dyre's AddOns, Dyre's is said once")
+    equal(layout.category, page)
+    equal(home.subcategories[1], page)
+    equal(state.homes, 1, "the home is made once")
+    equal(toolkit.RegisterSettingsCategory(""), nil)
+    equal(state.settings.DYRE_GRID.get(), true)
+    state.settings.DYRE_UNLOCKED.set(true)
+    equal(toolkit.IsLocked(), false)
+    state.settings.DYRE_GRID_SIZE.set(48)
+    equal(state.env.DyresToolkitDB.gridSize, 48)
+end)
+
+test("an AddOn may ask for its page before the toolkit's own login", function()
+    local state = fixture({noLogin = true})
+    local page = state.toolkit.RegisterSettingsCategory("Dyre's Shields Up")
+    equal(page.name, "Shields Up")
+    state.events.scripts.OnEvent(state.events, "PLAYER_LOGIN")
+    equal(state.homes, 1)
+end)
+
+test("/dyre opens the settings, never in combat; without the settings API it explains", function()
+    local state = fixture()
+    state.slash("")
+    equal(state.opened, "id:Dyre's AddOns")
+    state.opened = nil
+    state.combat = true
+    state.slash("")
+    equal(state.opened, nil)
+    contains(state.last(), "out of combat")
+    local bare = fixture({noSettings = true})
+    equal(bare.toolkit.RegisterSettingsCategory("X"), nil)
+    bare.slash("")
+    contains(bare.last(), "unavailable")
+    bare.slash("bogus")
+    contains(bare.last(), "Use /dyre")
+end)
+
+-- Minimap -----------------------------------------------------------------------------
+
+test("the minimap button: left-click locks or unlocks, right-click opens the menu", function()
+    local state = fixture()
+    equal(state.icon.name, ADDON)
+    equal(state.icon.db, state.env.DyresToolkitDB.minimap, "LibDBIcon keeps its place in the saved settings")
+    state.launcher.OnClick("button", "LeftButton")
+    equal(state.toolkit.IsLocked(), false)
+    local opened = false
+    state.toolkit.RegisterAddOn({addon = "MageToolsForever", title = "Mage Tools Forever",
+        openSettings = function() opened = true end})
+    state.toolkit.RegisterAddOn({addon = "DyresShieldsUp", title = "Dyre's Shields Up", openSettings = function() end})
+    state.launcher.OnClick("button", "RightButton")
+    equal(state.menuOwner, "button")
+    local root = menuRoot()
+    state.menu("button", root)
+    equal(root.entries[1].text, "Dyre's Toolkit")
+    equal(root.entries[2].text, "Lock frames")
+    local last = root.entries[#root.entries]
+    equal(root.entries[#root.entries - 1].text, "Mage Tools Forever")
+    equal(last.text, "Shields Up", "short names in the menu, sorted by them")
+    last = root.entries[#root.entries - 1]
+    last.a()
+    equal(opened, true)
+    state.slash("minimap")
+    equal(state.iconShown, false)
+    equal(state.env.DyresToolkitDB.minimap.hide, true)
+    state.slash("minimap")
+    equal(state.iconShown, true)
+end)
+
+test("without the minimap libraries there is no button, and nothing breaks", function()
+    local state = fixture({noLibraries = true})
+    equal(state.icon, nil)
+    state.slash("minimap")
+    state.toolkit.Unlock()
+    equal(state.toolkit.IsLocked(), false)
+end)
+
+test("the TOC loads the libraries, then the runtime, in order", function()
+    local files = {}
+    for line in io.lines(ADDON .. ".toc") do
+        if line:match("%S") and not line:match("^#") then files[#files + 1] = line end
+    end
+    equal(table.concat(files, ","), "Libs\\LibStub\\LibStub.lua,Libs\\CallbackHandler-1.0\\CallbackHandler-1.0.lua,"
+        .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
+        .. "Core.lua,Layout.lua,Settings.lua,Minimap.lua")
+end)
+
+local failed = 0
+for index, entry in ipairs(tests) do
+    local ok, message = xpcall(entry.body, debug.traceback)
+    if ok then
+        print("ok " .. index .. " - " .. entry.name)
+    else
+        failed = failed + 1
+        print("not ok " .. index .. " - " .. entry.name)
+        print(message)
+    end
+end
+print("")
+print(#tests .. " tests: " .. (#tests - failed) .. " passed, " .. failed .. " failed")
+print("Mock results do not establish in-client compatibility.")
+if failed > 0 then
+    os.exit(1)
+end

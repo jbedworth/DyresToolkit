@@ -1,0 +1,17 @@
+## Interface: 16001
+## Title: Dyre's Toolkit
+## Notes: One layout mode, grid, and minimap menu for Dyre's AddOns in WoW Forever
+## Author: Dyre
+## Version: 0.1.0-beta
+## IconTexture: Interface\Icons\INV_Misc_Wrench_01
+## Category: Dyre's AddOns
+## SavedVariables: DyresToolkitDB
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
+Core.lua
+Layout.lua
+Settings.lua
+Minimap.lua
