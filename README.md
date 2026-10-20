@@ -46,6 +46,10 @@ Frames always start locked when you log in. Frames move only out of combat.
 
 For the Forever beta client 1.60.1, build 70450, Interface 16001.
 
+## Support
+
+Dyre's AddOns are free. If you enjoy them, you can support them on Ko-fi: https://ko-fi.com/dyre_janelle
+
 ## License
 
 MIT; see LICENSE. The embedded libraries keep their own terms: LibStub (public

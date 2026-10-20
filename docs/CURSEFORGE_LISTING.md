@@ -20,6 +20,7 @@ tested.
 | Relations | None: its libraries (LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0) are embedded in its package. |
 | Source | https://github.com/jbedworth/DyresToolkit |
 | Issues | https://github.com/jbedworth/DyresToolkit/issues |
+| Donation | Ko-fi, https://ko-fi.com/dyre_janelle (the project's Donation field) |
 
 ## Summary
 
