@@ -166,11 +166,51 @@ function ns.GridShift(frames)
     return AxisShift(left, right, UIParent:GetWidth() / 2), AxisShift(bottom, top, UIParent:GetHeight() / 2)
 end
 
--- Changes a frame's scale without moving its center, and saves it.
+-- Changes a frame's scale and/or size without moving its center on screen. A
+-- frame anchored CENTER to UIParent's corner moves when only SetScale changes,
+-- because its offsets are in its own (scaled) units, so the center is read in
+-- UIParent units first and the frame is anchored there again. Nothing happens
+-- when nothing changes. A registered frame saves its new place; any other
+-- frame is only re-anchored. Pass width and height together, or neither.
+local SIZE_EPSILON = 0.01
+
+function DyresToolkit.ResizeFromCenter(frame, scale, width, height)
+    if scale and math.abs(frame:GetScale() - scale) < SIZE_EPSILON then
+        scale = nil
+    end
+    if width and height and math.abs(frame:GetWidth() - width) < SIZE_EPSILON
+            and math.abs(frame:GetHeight() - height) < SIZE_EPSILON then
+        width, height = nil, nil
+    end
+    if not scale and not (width and height) then
+        return
+    end
+    local placed = frame:GetNumPoints() > 0 and frame:GetCenter() ~= nil
+    local x, y
+    if placed then
+        x, y = Box(frame)
+    end
+    if scale then
+        frame:SetScale(scale)
+    end
+    if width and height then
+        frame:SetSize(width, height)
+    end
+    if not placed then
+        return
+    end
+    if layout.saves[frame] then
+        MoveTo(frame, x, y)
+    else
+        local ratio = UIParent:GetEffectiveScale() / frame:GetEffectiveScale()
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x * ratio, y * ratio)
+    end
+end
+
+-- Contract 1's original name, kept for dependents that call it.
 function DyresToolkit.ScaleKeepingCenter(frame, scale)
-    local x, y = Box(frame)
-    frame:SetScale(scale)
-    MoveTo(frame, x, y)
+    DyresToolkit.ResizeFromCenter(frame, scale)
 end
 
 function DyresToolkit.BeginDrag(frame)

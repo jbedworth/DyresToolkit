@@ -4,6 +4,20 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.0.0
+
+### Features
+- Every Dyre's AddOn that moves to the toolkit's widgets places, drags, snaps, and resizes its frames exactly the same way: the gold outline and hint while frames are unlocked, magnetic snapping, the grid, Shift-drag for a group, and Ctrl for an exact place.
+- Their size and opacity settings look and work the same everywhere, each slider with a gold mark at its default, and a "Reset size" button.
+
+### Fixes
+- Frames that change size or scale keep their place on screen. Before, making a frame bigger through a size setting could move it right and up, away from where you put it.
+- A frame you lock no longer takes your mouse clicks where it sits, unless it is a bar of buttons you click.
+
+### Other changes
+- Dyre's AddOns will need Dyre's Toolkit from their next releases on; the CurseForge app installs it with them.
+- For AddOn authors: contract 2 adds `CreateWidget`, `AddWidgetSettings`, `ResetWidgets`, and `Widgets`, plus `ResizeFromCenter`. Contract 1 still works.
+
 ## 1.0.0
 
 The first full release for WoW: Forever, no longer marked beta: it was play tested on the Forever beta client 1.60.1, build 70450. CurseForge now offers it as a release, so the app updates it and installs what it needs for every player.

@@ -9,7 +9,7 @@ if _VERSION ~= "Lua 5.1" then
 end
 
 local ADDON = "DyresToolkit"
-local RUNTIME = {"Core.lua", "Layout.lua", "Settings.lua", "Minimap.lua"}
+local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua"}
 local tests = {}
 
 local function test(name, body)
@@ -56,7 +56,23 @@ local function newFrame(state, x, y, width, height)
     function frame:UnregisterEvent(event) self.events[event] = nil end
     function frame:SetScript(script, callback) self.scripts[script] = callback end
     function frame:SetFrameStrata() end
-    function frame:EnableMouse() end
+    function frame:EnableMouse(enabled) self.mouse = enabled end
+    function frame:GetScale() return self.scale end
+    function frame:SetSize(w, h) self.width, self.height = w, h end
+    function frame:GetNumPoints() return self.anchor and 1 or 0 end
+    function frame:SetMovable() end
+    function frame:SetClampedToScreen() end
+    function frame:RegisterForDrag() end
+    function frame:SetAlpha(alpha) self.alpha = alpha end
+    function frame:IsProtected() return self.protected == true end
+    function frame:SetBackdrop() end
+    function frame:SetBackdropBorderColor() end
+    function frame:CreateFontString()
+        local text = {}
+        function text:SetPoint() end
+        function text:SetText(value) self.text = value end
+        return text
+    end
     function frame:CreateTexture()
         local texture = {}
         function texture:SetColorTexture() end
@@ -175,8 +191,9 @@ end
 
 test("the toolkit is the global DyresToolkit behind a contract", function()
     local toolkit = fixture().toolkit
-    equal(toolkit.RequireContract(1), toolkit)
-    equal(toolkit.RequireContract(2), nil, "a newer contract than this toolkit offers")
+    equal(toolkit.RequireContract(1), toolkit, "contract 1 clients keep working")
+    equal(toolkit.RequireContract(2), toolkit, "widgets")
+    equal(toolkit.RequireContract(3), nil, "a newer contract than this toolkit offers")
     equal(toolkit.RequireContract("1"), nil)
 end)
 
@@ -258,6 +275,74 @@ test("frames drag only while unlocked and out of combat", function()
     local stranger = newFrame(state, 0, 0)
     toolkit.BeginDrag(stranger)
     equal(stranger.moving, false, "an unregistered frame does not drag")
+end)
+
+-- As in the client: GetCenter and the anchor offsets are in the frame's own
+-- scaled units, so the screen center is offset * scale, and a bare SetScale moves it.
+local function clientFrame(state, screenX, screenY, width, height)
+    local frame = newFrame(state, 0, 0, width, height)
+    function frame:GetScale() return self.scale end
+    function frame:GetCenter() return self.cx, self.cy end
+    function frame:GetNumPoints() return self.anchor and 1 or 0 end
+    function frame:SetSize(w, h) self.width, self.height = w, h end
+    function frame:SetPoint(point, relative, relativePoint, px, py)
+        self.anchor = {point, relative, relativePoint, px, py}
+        self.cx, self.cy = px, py
+    end
+    -- Rounded: scales like 1.5 and 3 leave float noise.
+    function frame:ScreenCenter()
+        return math.floor(self.cx * self.scale + 0.5), math.floor(self.cy * self.scale + 0.5)
+    end
+    frame:SetPoint("CENTER", state.UIParent, "BOTTOMLEFT", screenX, screenY)
+    return frame
+end
+
+test("ResizeFromCenter changes scale and size without moving the center", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local bare = clientFrame(state, 500, 300, 100, 20)
+    bare:SetScale(2)
+    local bx, by = bare:ScreenCenter()
+    equal(bx, 1000, "a bare SetScale moves the center (the bug)")
+    equal(by, 600)
+
+    local saved, saves = nil, 0
+    local frame = clientFrame(state, 500, 300, 100, 20)
+    toolkit.RegisterMovable(frame, function(position) saved, saves = position, saves + 1 end)
+    toolkit.ResizeFromCenter(frame, 2)
+    local x, y = frame:ScreenCenter()
+    equal(x, 500, "scale up keeps the center")
+    equal(y, 300)
+    equal(saved.point, "CENTER")
+    equal(saved.x, 250, "saved in the frame's own units")
+    toolkit.ResizeFromCenter(frame, 0.5, 200, 40)
+    x, y = frame:ScreenCenter()
+    equal(x, 500, "scale down and resize keep the center")
+    equal(y, 300)
+    equal(frame.width, 200)
+    equal(frame.height, 40)
+    local before = saves
+    toolkit.ResizeFromCenter(frame, 0.5, 200, 40)
+    equal(saves, before, "nothing changes, nothing is saved")
+
+    local loose = clientFrame(state, 800, 200, 50, 50)
+    toolkit.ResizeFromCenter(loose, 1.5, 60, 60)
+    x, y = loose:ScreenCenter()
+    equal(x, 800, "an unregistered frame is re-anchored too")
+    equal(y, 200)
+
+    local unplaced = clientFrame(state, 0, 0, 10, 10)
+    unplaced.anchor = nil
+    toolkit.ResizeFromCenter(unplaced, 2, 20, 20)
+    equal(unplaced.scale, 2, "a frame with no place yet just takes the new scale and size")
+    equal(unplaced.width, 20)
+
+    local old = clientFrame(state, 400, 400, 40, 40)
+    toolkit.RegisterMovable(old, function() end)
+    toolkit.ScaleKeepingCenter(old, 3)
+    x, y = old:ScreenCenter()
+    equal(x, 400, "ScaleKeepingCenter keeps working")
+    equal(y, 400)
 end)
 
 test("a dropped frame snaps beside a neighbor, also one from another AddOn", function()
@@ -534,6 +619,227 @@ test("without the minimap libraries there is no button, and nothing breaks", fun
     equal(state.toolkit.IsLocked(), false)
 end)
 
+-- Widgets (contract 2) -------------------------------------------------------------
+
+local function endCombat(state)
+    state.combat = false
+    for _, frame in ipairs(state.frames) do
+        if frame.events.PLAYER_REGEN_ENABLED and frame.scripts.OnEvent then
+            frame.scripts.OnEvent(frame, "PLAYER_REGEN_ENABLED")
+        end
+    end
+end
+
+local function barSpec(store, extra)
+    local spec = {addon = "MageToolsForever", key = "polymorph", title = "Polymorph bar", store = store,
+        width = 200, height = 40, point = {"CENTER", "CENTER", 0, -120},
+        sizes = {scale = true, width = {min = 120, max = 400, step = 10}, height = {min = 10, max = 40, step = 1},
+            opacity = true}}
+    for key, value in pairs(extra or {}) do spec[key] = value end
+    return spec
+end
+
+test("a widget places itself, shows its outline only while unlocked, and takes clicks only then", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store, unlocks = {}, {}
+    local widget = toolkit.CreateWidget(barSpec(store, {onUnlock = function(_, unlocked) unlocks[#unlocks + 1] = unlocked end}))
+    equal(widget.anchor[1], "CENTER", "the default place")
+    equal(widget.anchor[5], -120)
+    equal(widget.width, 200)
+    equal(widget.height, 40)
+    equal(widget.dyre.mover.shown, false, "locked at login")
+    equal(widget.mouse, false, "no clicks while locked: the world gets them")
+    contains(widget.dyre.mover.hint.text, "Polymorph bar")
+    equal(store.scale, 100, "repaired to the defaults")
+    equal(store.opacity, 100)
+    equal(store.width, 200, "the width default comes from the widget's own size")
+    toolkit.Unlock()
+    equal(widget.dyre.mover.shown, true)
+    equal(widget.mouse, true)
+    equal(unlocks[#unlocks], true, "the AddOn shows its samples")
+    toolkit.BeginDrag(widget)
+    widget.x, widget.y = 700, 300
+    toolkit.EndDrag(widget)
+    equal(store.position.point, "CENTER", "a drag saves into the AddOn's table")
+    equal(store.position.x, 700)
+    toolkit.Lock()
+    equal(widget.dyre.mover.shown, false)
+    equal(widget.mouse, false)
+    equal(unlocks[#unlocks], false)
+end)
+
+test("a widget's saved place and settings come back, repaired, under the AddOn's own keys", function()
+    local state = fixture()
+    local store = {barScale = 999, barOpacity = "x", position = {point = "CENTER", relativePoint = "BOTTOMLEFT",
+        x = 321, y = 123}}
+    local widget = state.toolkit.CreateWidget(barSpec(store, {keys = {scale = "barScale", opacity = "barOpacity"}}))
+    equal(store.barScale, 150, "clamped to the range")
+    equal(store.barOpacity, 100, "not a number: the default")
+    equal(widget.anchor[3], "BOTTOMLEFT", "the saved place")
+    equal(widget.anchor[4], 321)
+    equal(widget.scale, 1.5)
+    equal(widget.alpha, 1)
+end)
+
+test("size settings change a widget from its center; opacity applies at once", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store, layouts, alphas = {}, {}, {}
+    local frame = clientFrame(state, 500, 300, 200, 40)
+    local widget = toolkit.CreateWidget(barSpec(store, {frame = frame,
+        point = {"CENTER", "BOTTOMLEFT", 500, 300},
+        onLayout = function(_, w, h, s) layouts[#layouts + 1] = {w, h, s} end,
+        onOpacity = function(_, alpha) alphas[#alphas + 1] = alpha end}))
+    equal(widget, frame, "the AddOn's own frame becomes the widget")
+    widget:SetSetting("scale", 150)
+    local x, y = frame:ScreenCenter()
+    equal(x, 500, "bigger, same center")
+    equal(y, 300)
+    equal(store.scale, 150)
+    widget:SetSetting("width", 333)
+    equal(store.width, 330, "rounded to the step")
+    equal(frame.width, 330)
+    x, y = frame:ScreenCenter()
+    equal(x, 500)
+    equal(layouts[#layouts][1], 330, "the AddOn lays out its content at the new size")
+    widget:SetSetting("opacity", 40)
+    equal(frame.alpha, 0.4)
+    equal(alphas[#alphas], 0.4)
+    widget:ResetSize()
+    equal(store.scale, 100)
+    equal(store.width, 200)
+    equal(store.opacity, 40, "Reset size keeps the opacity")
+    x, y = frame:ScreenCenter()
+    equal(x, 500, "and the center")
+    equal(y, 300)
+    widget:SetContentSize(260, 40)
+    equal(frame.width, 200, "a width setting wins over the content width")
+end)
+
+test("a protected widget changes size and mouse only out of combat; opacity at once", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store = {}
+    local widget = toolkit.CreateWidget(barSpec(store))
+    widget.protected = true
+    state.combat = true
+    widget:SetSetting("width", 300)
+    equal(store.width, 300, "saved at once")
+    equal(widget.width, 200, "not resized in combat")
+    widget:SetSetting("opacity", 50)
+    equal(widget.alpha, 0.5, "opacity is not protected")
+    toolkit.Unlock()
+    equal(widget.mouse, false, "the mouse waits too")
+    equal(widget.dyre.mover.shown, true, "the outline shows at once")
+    endCombat(state)
+    equal(widget.width, 300, "applied when combat ends")
+    equal(widget.mouse, true)
+end)
+
+test("mouse modes: always takes clicks, client leaves the mouse to the AddOn", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local always = toolkit.CreateWidget(barSpec({}, {key = "conjure", mouse = "always"}))
+    local client = toolkit.CreateWidget(barSpec({}, {key = "holder", mouse = "client"}))
+    equal(always.mouse, true, "a bar of buttons takes clicks while locked")
+    equal(client.mouse, nil, "the AddOn decides")
+    toolkit.Unlock()
+    equal(client.mouse, nil)
+end)
+
+test("ResetWidgets puts an AddOn's widgets back, and only that AddOn's", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local mine = {position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 10, y = 10}}
+    local theirs = {position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 20, y = 20}}
+    local a = toolkit.CreateWidget(barSpec(mine))
+    local b = toolkit.CreateWidget(barSpec(theirs, {addon = "WarlockToolsForever"}))
+    toolkit.ResetWidgets("MageToolsForever")
+    equal(mine.position, nil)
+    equal(a.anchor[5], -120, "the default place")
+    equal(theirs.position.x, 20, "another AddOn's widget stays")
+    equal(#toolkit.Widgets("MageToolsForever"), 1)
+    equal(b.anchor[4], 20)
+end)
+
+test("AddWidgetSettings adds a slider for each size, wired to the widget", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store = {}
+    local widget = toolkit.CreateWidget(barSpec(store))
+    local page = state.env.Settings.RegisterVerticalLayoutCategory("Mage Tools Forever")
+    equal(toolkit.AddWidgetSettings(page, nil, widget, {labels = {scale = "Bar size (%)"}}), true)
+    local scale = state.settings.DYRE_MAGETOOLSFOREVER_POLYMORPH_SCALE
+    equal(scale.name, "Bar size (%)")
+    equal(scale.get(), 100)
+    scale.set(120)
+    equal(store.scale, 120)
+    equal(state.settings.DYRE_MAGETOOLSFOREVER_POLYMORPH_WIDTH.name, "Width")
+    equal(state.settings.DYRE_MAGETOOLSFOREVER_POLYMORPH_HEIGHT.name, "Height")
+    state.settings.DYRE_MAGETOOLSFOREVER_POLYMORPH_OPACITY.set(30)
+    equal(widget.alpha, 0.3)
+    equal(#page.initializers, 4)
+end)
+
+test("an AddOn's own size settings and measure decide the frame's size", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store = {barWidth = 200}
+    local frame = clientFrame(state, 400, 400, 200, 40)
+    local widget = toolkit.CreateWidget({addon = "MageToolsForever", key = "polymorph", title = "Polymorph bar",
+        store = store, frame = frame, width = 200, height = 40, point = {"CENTER", "BOTTOMLEFT", 400, 400},
+        keys = {width = "barWidth"},
+        sizes = {scale = true, width = {min = 120, max = 400, step = 10},
+            barHeight = {min = 10, max = 40, step = 1, default = 16, label = "Bar height"},
+            textScale = {min = 50, max = 200, step = 5, default = 100, label = "Text size", percent = true},
+            opacity = true},
+        sizeOrder = {"scale", "width", "barHeight", "textScale"},
+        measure = function(w)
+            return w:GetSetting("width"), math.floor(18 * w:GetSetting("textScale") / 100 + 0.5)
+                + w:GetSetting("barHeight") + 6
+        end})
+    equal(frame.height, 40, "18 + 16 + 6 at the defaults")
+    equal(store.barHeight, 16, "a custom setting is saved under its own name")
+    widget:SetSetting("textScale", 200)
+    equal(frame.height, 58, "36 + 16 + 6")
+    local x, y = frame:ScreenCenter()
+    equal(x, 400, "from the center")
+    equal(y, 400)
+    widget:SetSetting("barHeight", 99)
+    equal(store.barHeight, 40, "clamped")
+    widget:ResetSize()
+    equal(store.textScale, 100, "Reset size covers the custom sizes")
+    equal(frame.height, 40)
+    local page = state.env.Settings.RegisterVerticalLayoutCategory("Mage Tools Forever")
+    toolkit.AddWidgetSettings(page, nil, widget)
+    local names = {}
+    for _, setting in ipairs(page.initializers) do names[#names + 1] = setting.name end
+    equal(table.concat(names, ","), "Size (%),Width,Bar height,Text size,Opacity", "in the AddOn's order, opacity last")
+end)
+
+test("resetSizes picks what Reset size restores; a hint and drag handles are the AddOn's", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store = {scale = 120, width = 300, opacity = 50}
+    local widget = toolkit.CreateWidget(barSpec(store, {resetSizes = {"width", "height"},
+        hint = "Polymorph bar · drag to move · scroll to resize"}))
+    widget:ResetSize()
+    equal(store.width, 200, "listed: reset")
+    equal(store.scale, 120, "not listed: Bar size (%) stays")
+    equal(store.opacity, 50)
+    equal(widget.dyre.mover.hint.text, "Polymorph bar · drag to move · scroll to resize")
+    local button = newFrame(state, 0, 0)
+    widget:AddDragHandle(button)
+    toolkit.Unlock()
+    button.scripts.OnDragStart(button)
+    equal(widget.moving, true, "a drag on a button moves the widget")
+    widget.x, widget.y = 640, 360
+    button.scripts.OnDragStop(button)
+    equal(widget.moving, false)
+    equal(store.position.x, 640)
+end)
+
 test("the TOC loads the libraries, then the runtime, in order", function()
     local files = {}
     for line in io.lines(ADDON .. ".toc") do
@@ -541,7 +847,7 @@ test("the TOC loads the libraries, then the runtime, in order", function()
     end
     equal(table.concat(files, ","), "Libs\\LibStub\\LibStub.lua,Libs\\CallbackHandler-1.0\\CallbackHandler-1.0.lua,"
         .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
-        .. "Core.lua,Layout.lua,Settings.lua,Minimap.lua")
+        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Minimap.lua")
 end)
 
 local failed = 0

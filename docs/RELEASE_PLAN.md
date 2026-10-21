@@ -42,6 +42,7 @@ DyresToolkit/
     Libs/Ace3-LICENSE.txt
     Core.lua
     Layout.lua
+    Widgets.lua
     Settings.lua
     Minimap.lua
     LICENSE
@@ -61,7 +62,7 @@ Validate the actual archive, not only the staging folder:
 
 1. Check CRC/integrity, non-empty files, and the exact file list.
 2. Reject absolute paths, traversal paths, symlinks, and extra root folders.
-3. Verify the TOC name, Interface `16001`, and the load order: the four libraries, then Core/Layout/Settings/Minimap. Every listed runtime file must exist inside the archive.
+3. Verify the TOC name, Interface `16001`, and the load order: the four libraries, then Core/Layout/Widgets/Settings/Minimap. Every listed runtime file must exist inside the archive.
 4. Verify the packaged version matches the selected tag, with one leading `v`
    removed. Verify the packaged MIT copyright/permission notice is intact.
 5. Check the packaged Lua files with Lua 5.1 syntax validation.
@@ -86,7 +87,7 @@ On Windows, use the portable `.tools/python-3.13.7/python.exe` in place of
 uses `ubuntu-24.04`, native `python3`, and apt-installed `lua5.1`; it cannot run
 the local Windows `.tools/` binaries.
 
-`scripts/build_release.py` uses the eleven-file allowlist, validates the
+`scripts/build_release.py` uses the twelve-file allowlist, validates the
 TOC/version/license and actual archive, and writes to `dist/`:
 
 - `DyresToolkit-<version>-forever.zip`;
@@ -102,7 +103,7 @@ WowUp 2.24.0 reads `release.json` first and maps its `forever` flavor to Forever
 installs, falling back to the ZIP-name suffix. The publisher refuses to upload
 unless `release.json` exactly names the verified ZIP.
 
-Only the eleven package files are inside the installable ZIP. Checksums, manifest,
+Only the twelve package files are inside the installable ZIP. Checksums, manifest,
 and notes stay outside it. Identical inputs and toolchain produce deterministic
 ZIP bytes; this is not a cross-toolchain compression guarantee. The builder does
 not itself run Lua syntax checks or establish client compatibility.
@@ -356,7 +357,7 @@ Do not add a self-updater to the AddOn.
 
 ### Custom builder rather than BigWigs packager
 
-This AddOn has only eleven distribution files, so the project uses a small
+This AddOn has only twelve distribution files, so the project uses a small
 allowlist ZIP builder plus separate publication jobs: a Linux runner obtains
 Lua 5.1, runs the suite, builds the archive, retains it as an artifact, and
 publishes the tested bytes through GitHub CLI and the documented CurseForge

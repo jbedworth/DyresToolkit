@@ -28,7 +28,7 @@ LIBRARY_FILES = ("Libs/LibStub/LibStub.lua",
                  "Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua",
                  "Libs/LibDBIcon-1.0/LibDBIcon-1.0.lua")
 LIBRARY_NOTICES = ("Libs/Ace3-LICENSE.txt",)
-RUNTIME_FILES = ("Core.lua", "Layout.lua", "Settings.lua", "Minimap.lua")
+RUNTIME_FILES = ("Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua")
 # The TOC names files with backslashes, as the client expects.
 TOC_LOADS = tuple(name.replace("/", "\\") for name in LIBRARY_FILES) + RUNTIME_FILES
 TEXT_FILES = (ADDON + ".toc",) + LIBRARY_FILES + RUNTIME_FILES + ("LICENSE",) + LIBRARY_NOTICES

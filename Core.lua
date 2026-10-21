@@ -16,11 +16,15 @@ local addonName, ns = ...
 --   RegisterSettingsCategory(name) a page under "Dyre's AddOns": category, layout
 --   SettingsCategory()             the "Dyre's AddOns" category
 --   OpenSettings(category)         opens a page, never in combat
+--   ResizeFromCenter(frame, scale, width, height)  keeps the center (1.1.0)
+-- Contract 2 (2.0.0) adds widgets, which own all placement for an AddOn:
+--   CreateWidget(spec), AddWidgetSettings(category, layout, widget, opts),
+--   ResetWidgets(addon), Widgets(addon); see Widgets.lua.
 local DyresToolkit = {}
 _G.DyresToolkit = DyresToolkit
 ns.toolkit = DyresToolkit
 
-local CONTRACT = 1
+local CONTRACT = 2
 ns.TITLE = "Dyre's Toolkit"
 ns.PREFIX = "Dyre: "
 -- Grid spacing, in UIParent units.
@@ -116,6 +120,9 @@ function DyresToolkit.SetLocked(locked)
         end
     end
     ns.RefreshGrid()
+    if ns.RefreshWidgets then
+        ns.RefreshWidgets()
+    end
     if ns.RefreshMinimap then
         ns.RefreshMinimap()
     end
