@@ -22,6 +22,9 @@ installs it with them.
   Snapping to another Dyre's frame comes before the grid; a Shift-dragged
   group snaps to the grid as one block. Hold **Ctrl** as you drop a frame to
   place it exactly, with no snapping.
+- **Move without unlocking.** Hold **Ctrl** and drag a frame by a button or
+  a box's header to move it while frames are locked, as with Questie's
+  tracker. It goes exactly where you drop it. Frames move only out of combat.
 - **A minimap button.** Left-click locks or unlocks frames. Right-click opens a
   menu: lock or unlock, the grid switches, the settings, and each installed
   Dyre's AddOn's settings. `/dyre minimap` hides or shows the button.

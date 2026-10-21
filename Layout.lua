@@ -20,7 +20,7 @@ local SNAP_TOLERANCE = 1.5
 local GRID_LINE = {1, 1, 1, 0.12}
 local GRID_CENTER = {1, 0.15, 0.15, 0.6}
 
-local layout = {saves = {}, order = {}, dragging = {}, pending = {}}
+local layout = {saves = {}, order = {}, dragging = {}, pending = {}, free = {}}
 
 function DyresToolkit.RegisterMovable(frame, save)
     if type(frame) ~= "table" or type(save) ~= "function" then
@@ -231,13 +231,27 @@ function DyresToolkit.ScaleKeepingCenter(frame, scale)
     DyresToolkit.ResizeFromCenter(frame, scale)
 end
 
+local function ControlDown()
+    return type(IsControlKeyDown) == "function" and IsControlKeyDown() == true
+end
+
+-- While frames are locked, a drag started with Ctrl held moves that one
+-- frame anyway (author-approved 2026-10-21, family-wide, as Questie's
+-- tracker): no group, and the drop is free (no neighbors, no grid). It
+-- can start only on a part that takes the mouse while locked (a button, a
+-- box's header); the rest of a locked widget lets clicks through.
 function DyresToolkit.BeginDrag(frame)
-    if ns.db.locked or InCombatLockdown() or not layout.saves[frame] then
+    if InCombatLockdown() or not layout.saves[frame] then
+        return
+    end
+    local lockedDrag = ns.db.locked
+    if lockedDrag and not ControlDown() then
         return
     end
     local group = {frame}
+    layout.free[frame] = lockedDrag or nil
     -- Shift: the snapped group follows, anchored to the dragged frame.
-    if IsShiftKeyDown() then
+    if not lockedDrag and IsShiftKeyDown() then
         group = SnappedGroup(frame)
         local scale = frame:GetEffectiveScale()
         local leadX, leadY = frame:GetCenter()
@@ -295,7 +309,7 @@ pendingEvents:SetScript("OnEvent", function(self)
     layout.pending = {}
     for _, drop in ipairs(pending) do
         drop.frame:StopMovingOrSizing()
-        FinishDrop(drop.frame, drop.group)
+        FinishDrop(drop.frame, drop.group, drop.free)
     end
 end)
 
@@ -305,17 +319,20 @@ function DyresToolkit.EndDrag(frame)
         return
     end
     layout.dragging[frame] = nil
+    local wasLocked = layout.free[frame] == true
+    local free = wasLocked or ControlDown()
+    layout.free[frame] = nil
     if InCombatLockdown() then
         local protected = type(frame.IsProtected) == "function" and frame:IsProtected()
         if not protected then
             frame:StopMovingOrSizing()
         end
-        layout.pending[#layout.pending + 1] = {frame = frame, group = group}
+        layout.pending[#layout.pending + 1] = {frame = frame, group = group, free = wasLocked}
         pendingEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
     frame:StopMovingOrSizing()
-    FinishDrop(frame, group, type(IsControlKeyDown) == "function" and IsControlKeyDown() == true)
+    FinishDrop(frame, group, free)
 end
 
 -- The grid: lines ns.db.gridSize apart from the screen's center, and the two

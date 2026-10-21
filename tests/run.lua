@@ -903,6 +903,79 @@ test("SetContentSize can keep the top, the bottom, or a corner fixed", function(
     equal(top, 310, "and the top edge")
 end)
 
+test("a widget that grows from an edge comes back to the same place after a reload", function()
+    local store = {}
+    local function load()
+        local state = fixture()
+        local frame = clientFrame(state, 500, 300, 200, 100)
+        local widget = state.toolkit.CreateWidget({addon = "DyresQuestTargeting", key = "box", title = "Quest Targets",
+            store = store, frame = frame, width = 200, height = 100, point = {"CENTER", "BOTTOMLEFT", 500, 300}})
+        -- The content arrives after login and folds the box toward its top.
+        widget:SetContentSize(200, 40, "TOP")
+        return state, frame, widget
+    end
+    local function top(frame)
+        local _, y = frame:ScreenCenter()
+        return y + frame.height * frame.scale / 2
+    end
+    local state, frame, widget = load()
+    state.ctrl = true
+    state.toolkit.BeginDrag(widget)
+    frame.cx, frame.cy = 700, 500
+    state.toolkit.EndDrag(widget)
+    equal(top(frame), 520, "dropped with its top at 520")
+    state, frame = load()
+    equal(top(frame), 520, "after the reload the top is where it was dropped")
+    local x = frame:ScreenCenter()
+    equal(x, 700)
+end)
+
+test("while locked, a Ctrl-drag moves one frame freely; without Ctrl, nothing", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local mine = newFrame(state, 0, 0)
+    local theirs = newFrame(state, 500, 500)
+    local friend = newFrame(state, 560, 500)
+    local saved = {}
+    toolkit.RegisterMovable(mine, function(position) saved.mine = position end)
+    toolkit.RegisterMovable(theirs, function(position) saved.theirs = position end)
+    toolkit.RegisterMovable(friend, function(position) saved.friend = position end)
+    equal(state.ns.db.locked, true, "locked at login")
+    toolkit.BeginDrag(mine)
+    equal(mine.moving, false, "locked, no Ctrl: no drag")
+    state.ctrl = true
+    toolkit.BeginDrag(mine)
+    equal(mine.moving, true, "locked, Ctrl: it drags")
+    mine.x, mine.y = 562, 505
+    state.ctrl = false
+    toolkit.EndDrag(mine)
+    equal(saved.mine.x, 562, "the drop is free: no neighbor snap, even with Ctrl released")
+    equal(saved.mine.y, 505)
+    state.ctrl, state.shift = true, true
+    toolkit.BeginDrag(theirs)
+    theirs.x = 520
+    toolkit.EndDrag(theirs)
+    equal(saved.friend, nil, "no Shift group while locked: only the one frame moves")
+    state.combat = true
+    toolkit.BeginDrag(mine)
+    equal(mine.moving, false, "never in combat")
+    state.combat, state.ctrl, state.shift = false, false, false
+    toolkit.Unlock()
+    toolkit.BeginDrag(mine)
+    mine.x, mine.y = 562, 505
+    toolkit.EndDrag(mine)
+    equal(saved.mine.x, 580, "unlocked, as before: it snaps beside theirs (now at 520)")
+end)
+
+test("AddDefaultTick is public for an AddOn's own sliders", function()
+    local toolkit = fixture().toolkit
+    equal(type(toolkit.AddDefaultTick), "function")
+    local initializer = {InitFrame = function() end}
+    toolkit.AddDefaultTick(initializer, {min = 5, max = 120, default = 60})
+    equal(initializer.dyreDefault.default, 60, "the range is kept for the mark")
+    toolkit.AddDefaultTick(nil, {min = 0, max = 1, default = 0})
+end)
+
 test("the TOC loads the libraries, then the runtime, in order", function()
     local files = {}
     for line in io.lines(ADDON .. ".toc") do

@@ -45,6 +45,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - A frame you drop near another snaps beside it, also when the other frame belongs to a different Dyre's AddOn.
 - **Shift-drag** moves a group of snapped frames together.
 - **Ctrl** as you drop places a frame exactly where you let go, with no snapping.
+- **Ctrl-drag** moves a frame even while frames are locked: grab it by a button or a box's header.
 
 ### The grid
 - While frames are unlocked, a grid across the screen, with red lines through its center. Its size is a setting.

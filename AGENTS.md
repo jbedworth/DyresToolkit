@@ -62,6 +62,12 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
 - Ctrl held at the drop skips all snapping, neighbors and grid (author:
   "for people trying to do pixel-perfect aligns"). A drop that waited out
   combat snaps as usual.
+- While locked, a drag started with Ctrl held moves that one frame
+  (author-approved 2026-10-21, family-wide, as Questie's tracker): no Shift
+  group, and the drop is free (no neighbors, no grid), also after a combat
+  wait. It can only start on a part that takes the mouse while locked (a
+  button or drag handle, a box's header); the rest of a locked widget stays
+  click-through. Never in combat.
 - `RegisterSettingsCategory(name)` returns a page (category, layout) under
   "Dyre's AddOns", or nil without the settings API; the AddOn then makes its
   own top-level page. The home is made on first use, whoever asks first.
@@ -98,6 +104,11 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
 - Methods: `SetContentSize(w, h, anchor)` (a size from content; anchor
   `"LEFT"`/`"RIGHT"`/`"TOP"`/`"BOTTOM"` or a corner keeps that edge, for
   bars growing left to right or right to left and boxes collapsing to their top; default the center; 2.1.0, for DBR's grow direction),
+  A widget that has grown from an edge saves that edge and its size with
+  its place (`anchor`, `width`, `height` in the position table, 2.2.0), and
+  is restored at that size and resized keeping the edge: its content is not
+  in yet at login, so a center alone made it drift on every reload (found in
+  client, 2026-10-21).
   `SetSetting(name, value)` (clamped, saved, applied), `GetSetting(name)`,
   `ResetSize()` (spec.resetSizes, else every size but opacity),
   `ResetPosition()`, `AddDragHandle(child)` (a button the widget drags by;
@@ -108,6 +119,8 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
   (variables `DYRE_<ADDON>_<KEY>_<NAME>`), each with a gold default mark
   (`ns.AddDefaultTick`, as MTF's and WTF's), and "Reset size"; `opts.labels`,
   `opts.tooltips`, `opts.resetLabel`, `opts.resetTooltip`.
+  `AddDefaultTick(initializer, {min, max, default})` (2.2.0) puts the same
+  gold default mark on an AddOn's own slider.
 - Rules: saved numbers are repaired on creation; sizes apply from the
   center (`ResizeFromCenter`); a protected widget resizes, re-places, and
   changes its mouse only out of combat, waiting for `PLAYER_REGEN_ENABLED`;

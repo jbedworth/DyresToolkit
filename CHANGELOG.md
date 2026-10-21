@@ -4,6 +4,17 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.2.0
+
+### Features
+- Move a Dyre's frame without unlocking: hold **Ctrl** and drag it, as with Questie's tracker. The frame goes exactly where you drop it, with no snapping and no grid. Start the drag on a part you can click, such as a button or a box's header; the rest of a locked frame still lets your clicks through. Frames still move only out of combat.
+
+### Fixes
+- Frames that grow from an edge (a bar that grows left or right, or a box that folds toward its top, such as Dyre's Quest Targeting's box) come back exactly where you left them after a reload, instead of shifting a little each time.
+
+### Other changes
+- For AddOn authors: `AddDefaultTick(initializer, {min, max, default})` puts the gold default mark on an AddOn's own slider.
+
 ## 2.1.0
 
 ### Other changes
