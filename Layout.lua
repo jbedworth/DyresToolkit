@@ -174,7 +174,11 @@ end
 -- frame is only re-anchored. Pass width and height together, or neither.
 local SIZE_EPSILON = 0.01
 
-function DyresToolkit.ResizeFromCenter(frame, scale, width, height)
+-- anchor (2.1.0): "LEFT", "RIGHT", "TOP", "BOTTOM", or a corner such as
+-- "TOPLEFT" keeps that edge (or both edges) where it is instead of the
+-- center: a bar that grows left to right, a box that collapses toward its
+-- top. The saved place is still the center.
+function DyresToolkit.ResizeFromCenter(frame, scale, width, height, anchor)
     if scale and math.abs(frame:GetScale() - scale) < SIZE_EPSILON then
         scale = nil
     end
@@ -186,9 +190,9 @@ function DyresToolkit.ResizeFromCenter(frame, scale, width, height)
         return
     end
     local placed = frame:GetNumPoints() > 0 and frame:GetCenter() ~= nil
-    local x, y
+    local x, y, halfWidth, halfHeight
     if placed then
-        x, y = Box(frame)
+        x, y, halfWidth, halfHeight = Box(frame)
     end
     if scale then
         frame:SetScale(scale)
@@ -198,6 +202,20 @@ function DyresToolkit.ResizeFromCenter(frame, scale, width, height)
     end
     if not placed then
         return
+    end
+    if type(anchor) == "string" then
+        local ratio = frame:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        local newHalfWidth, newHalfHeight = frame:GetWidth() * ratio / 2, frame:GetHeight() * ratio / 2
+        if anchor:find("LEFT") then
+            x = x - halfWidth + newHalfWidth
+        elseif anchor:find("RIGHT") then
+            x = x + halfWidth - newHalfWidth
+        end
+        if anchor:find("TOP") then
+            y = y + halfHeight - newHalfHeight
+        elseif anchor:find("BOTTOM") then
+            y = y - halfHeight + newHalfHeight
+        end
     end
     if layout.saves[frame] then
         MoveTo(frame, x, y)

@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.1.0
+
+### Other changes
+- For AddOn authors: `widget:SetContentSize(width, height, anchor)` can keep an edge or a corner fixed (`"LEFT"`, `"RIGHT"`, `"TOP"`, `"BOTTOM"`, or a corner such as `"TOPLEFT"`), so a bar grows left to right or right to left, and a box collapses toward its top; `"CENTER"` stays the default. `ResizeFromCenter` takes the same anchor.
+
 ## 2.0.0
 
 ### Features

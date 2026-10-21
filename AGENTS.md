@@ -95,7 +95,9 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
   `"always"`: a bar of buttons; `"client"`: the AddOn decides), callbacks
   `onLayout(widget, width, height, scale)`, `onOpacity(widget, alpha)`,
   `onUnlock(widget, unlocked)`.
-- Methods: `SetContentSize(w, h)` (a size from content, from the center),
+- Methods: `SetContentSize(w, h, anchor)` (a size from content; anchor
+  `"LEFT"`/`"RIGHT"`/`"TOP"`/`"BOTTOM"` or a corner keeps that edge, for
+  bars growing left to right or right to left and boxes collapsing to their top; default the center; 2.1.0, for DBR's grow direction),
   `SetSetting(name, value)` (clamped, saved, applied), `GetSetting(name)`,
   `ResetSize()` (spec.resetSizes, else every size but opacity),
   `ResetPosition()`, `AddDragHandle(child)` (a button the widget drags by;

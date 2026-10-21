@@ -130,7 +130,9 @@ local function Apply(widget)
         return false
     end
     local scale, width, height = Wanted(widget)
-    DyresToolkit.ResizeFromCenter(widget, scale, width, height)
+    DyresToolkit.ResizeFromCenter(widget, scale, width, height, widget.dyre.growAnchor)
+    -- The edge holds for this content change only; settings resize from the center.
+    widget.dyre.growAnchor = nil
     if widget.dyre.mouseMode ~= "client" then
         widget:EnableMouse(MouseWanted(widget))
     end
@@ -238,8 +240,12 @@ local WidgetMethods = {}
 
 -- A size that comes from the content (a bar holding as many buttons as
 -- spells you know), not from a setting. Applied from the center.
-function WidgetMethods.SetContentSize(widget, width, height)
+-- anchor: "LEFT", "RIGHT", "TOP", "BOTTOM", or a corner ("TOPLEFT") keeps
+-- that edge or corner fixed (a bar growing left to right, a box collapsing
+-- toward its top); "CENTER" (the default) keeps the center.
+function WidgetMethods.SetContentSize(widget, width, height, anchor)
     widget.dyre.contentWidth, widget.dyre.contentHeight = width, height
+    widget.dyre.growAnchor = anchor
     Apply(widget)
 end
 

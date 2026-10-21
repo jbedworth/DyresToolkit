@@ -840,6 +840,69 @@ test("resetSizes picks what Reset size restores; a hint and drag handles are the
     equal(store.position.x, 640)
 end)
 
+test("SetContentSize can keep the left or right edge fixed; settings still resize from the center", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store = {}
+    local frame = clientFrame(state, 500, 300, 200, 40)
+    local widget = toolkit.CreateWidget({addon = "DyresBuffReminders", key = "mybuffs", title = "My buffs",
+        store = store, frame = frame, width = 200, height = 40, point = {"CENTER", "BOTTOMLEFT", 500, 300},
+        sizes = {scale = true}})
+    local function edges()
+        local x = frame:ScreenCenter()
+        local half = frame.width * frame.scale / 2
+        return math.floor(x - half + 0.5), math.floor(x + half + 0.5)
+    end
+    local left, right = edges()
+    equal(left, 400)
+    equal(right, 600)
+    widget:SetContentSize(100, 40, "LEFT")
+    left, right = edges()
+    equal(left, 400, "LEFT: the left edge stays")
+    equal(right, 500)
+    widget:SetContentSize(300, 40, "RIGHT")
+    left, right = edges()
+    equal(right, 500, "RIGHT: the right edge stays")
+    equal(left, 200)
+    widget:SetContentSize(100, 40)
+    left, right = edges()
+    equal(left, 300, "the default keeps the center (350)")
+    equal(right, 400)
+    widget:SetSetting("scale", 200)
+    local x = frame:ScreenCenter()
+    equal(x, 350, "a later setting change is from the center again")
+end)
+
+test("SetContentSize can keep the top, the bottom, or a corner fixed", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local frame = clientFrame(state, 500, 300, 200, 100)
+    local widget = toolkit.CreateWidget({addon = "DyresQuestTargeting", key = "box", title = "Quest Targets",
+        store = {}, frame = frame, width = 200, height = 100, point = {"CENTER", "BOTTOMLEFT", 500, 300}})
+    local function box()
+        local x, y = frame:ScreenCenter()
+        local hw, hh = frame.width * frame.scale / 2, frame.height * frame.scale / 2
+        return math.floor(x - hw + 0.5), math.floor(x + hw + 0.5), math.floor(y - hh + 0.5), math.floor(y + hh + 0.5)
+    end
+    local left, right, bottom, top = box()
+    equal(top, 350)
+    widget:SetContentSize(200, 40, "TOP")
+    left, right, bottom, top = box()
+    equal(top, 350, "TOP: collapsing keeps the top edge")
+    equal(bottom, 310)
+    widget:SetContentSize(200, 100, "TOP")
+    left, right, bottom, top = box()
+    equal(top, 350, "and expanding too")
+    equal(bottom, 250)
+    widget:SetContentSize(200, 60, "BOTTOM")
+    left, right, bottom, top = box()
+    equal(bottom, 250, "BOTTOM keeps the bottom edge")
+    widget:SetContentSize(100, 40, "TOPLEFT")
+    left, right, bottom, top = box()
+    equal(left, 400, "TOPLEFT keeps the left edge")
+    equal(top, 310, "and the top edge")
+end)
+
 test("the TOC loads the libraries, then the runtime, in order", function()
     local files = {}
     for line in io.lines(ADDON .. ".toc") do
