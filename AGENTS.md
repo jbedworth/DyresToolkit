@@ -69,6 +69,13 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
   wait. It can only start on a part that takes the mouse while locked (a
   button or drag handle, a box's header); the rest of a locked widget stays
   click-through. Never in combat.
+- `AddSettingsLink(category, layout, opts)` (2.3.0; author-approved
+  2026-10-22: a feature that moved to another Dyre's AddOn is linked, not
+  mirrored): a button row that opens that AddOn's page through its
+  `openSettings` from `RegisterAddOn`. `opts.addon` (folder), `opts.name`,
+  optional `opts.button`, `opts.tooltip`, `opts.missing`. Greyed (a modify
+  predicate, checked each time the page draws) while the AddOn has not
+  joined; a click then says `missing` in chat. Never opens in combat.
 - `RegisterSettingsCategory(name)` returns a page (category, layout) under
   "Dyre's AddOns", or nil without the settings API; the AddOn then makes its
   own top-level page. The home is made on first use, whoever asks first.

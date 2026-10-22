@@ -992,6 +992,45 @@ test("while locked, a Ctrl-drag moves one frame freely; without Ctrl, nothing", 
     equal(saved.mine.x, 580, "unlocked, as before: it snaps beside theirs (now at 520)")
 end)
 
+test("AddSettingsLink opens another Dyre's AddOn's page, and is greyed with a hint while it is missing", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local made = {}
+    state.env.CreateSettingsButtonInitializer = function(name, button, click, tooltip)
+        local initializer = {name = name, button = button, click = click, tooltip = tooltip, predicates = {}}
+        function initializer:AddModifyPredicate(predicate) self.predicates[#self.predicates + 1] = predicate end
+        made[#made + 1] = initializer
+        return initializer
+    end
+    local layout = {rows = {}}
+    function layout:AddInitializer(initializer) self.rows[#self.rows + 1] = initializer end
+    local link = toolkit.AddSettingsLink(nil, layout, {addon = "DyresShieldsUp", name = "Shield display",
+        button = "Open Shield settings", tooltip = "Opens Dyre's Shields Up.",
+        missing = "Install Dyre's Shields Up from CurseForge for the shield display."})
+    equal(layout.rows[1], link, "added to the page")
+    equal(link.button, "Open Shield settings")
+    equal(link.tooltip, "Install Dyre's Shields Up from CurseForge for the shield display.", "missing: the hint")
+    equal(link.predicates[1](), false, "greyed while missing")
+    link.click()
+    contains(state.messages[#state.messages], "Install Dyre's Shields Up from CurseForge")
+    local opened = 0
+    toolkit.RegisterAddOn({addon = "DyresShieldsUp", title = "Dyre's Shields Up",
+        openSettings = function() opened = opened + 1 end})
+    equal(link.predicates[1](), true, "an AddOn that joins later counts")
+    link.click()
+    equal(opened, 1, "opens its page")
+    state.combat = true
+    link.click()
+    equal(opened, 1, "never in combat")
+    contains(state.messages[#state.messages], "out of combat")
+    state.combat = false
+    local present = toolkit.AddSettingsLink(nil, layout, {addon = "DyresShieldsUp", name = "Shield display",
+        tooltip = "Opens Dyre's Shields Up."})
+    equal(present.tooltip, "Opens Dyre's Shields Up.", "present: its own tooltip")
+    equal(present.button, "Open settings", "the default button text")
+    equal(toolkit.AddSettingsLink(nil, nil, {addon = "X", name = "Y"}), nil, "no layout: nothing")
+end)
+
 test("AddDefaultTick is public for an AddOn's own sliders", function()
     local toolkit = fixture().toolkit
     equal(type(toolkit.AddDefaultTick), "function")

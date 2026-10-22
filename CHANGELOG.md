@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.3.0
+
+### Other changes
+- For AddOn authors: `AddSettingsLink(category, layout, {addon, name, button, tooltip, missing})` adds a row that opens another Dyre's AddOn's settings page, for a feature that moved there. While that AddOn is missing or disabled, the button is greyed and says what to install.
+
 ## 2.2.2
 
 ### Other changes
