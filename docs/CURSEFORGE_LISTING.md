@@ -24,7 +24,7 @@ tested.
 
 ## Summary
 
-The shared toolkit for Dyre's AddOns on WoW: Forever: includes a shared layout mode, grid, minimap button, and one settings home for all of them.
+The shared toolkit for Dyre's AddOns on WoW: Forever: includes a shared layout mode, grid, mini-map button, and one settings home for all of them.
 
 ## Description
 
@@ -35,7 +35,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 `CHANGELOG.md` section, through `release-notes.md`.
 
 ```markdown
-**Dyre's Toolkit** ties Dyre's AddOns together on WoW: Forever. It does nothing on its own: the Dyre's AddOns you install use it, and the CurseForge app installs it with them.
+**Dyre's Toolkit** ties Dyre's AddOns together on WoW: Forever. It does very little on its own: the Dyre's AddOns you install use it, and the CurseForge app installs it with them.
 
 ### One layout mode
 - `/dyre unlock` shows every Dyre's AddOn's frames, so you can drag them where you want. `/dyre lock` locks them all again. Each AddOn's own unlock command does the same.
@@ -63,7 +63,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 - `/dyretoolkit` works the same, in case another AddOn uses `/dyre`.
 
 ### Compatibility
-For the Forever beta client 1.60.1, build 70450.
+For World of Warcraft: Forever 1.60.1 (tested on build 70450).
 
 Source, issues, and license (MIT): https://github.com/jbedworth/DyresToolkit
 ```
