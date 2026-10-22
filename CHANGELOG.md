@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.2.2
+
+### Other changes
+- A widget's size slider is now labeled **Size** instead of **Size (%)**: its value already shows the % sign.
+
 ## 2.2.1
 
 ### Fixes

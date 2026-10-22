@@ -825,7 +825,7 @@ test("an AddOn's own size settings and measure decide the frame's size", functio
     toolkit.AddWidgetSettings(page, nil, widget)
     local names = {}
     for _, setting in ipairs(page.initializers) do names[#names + 1] = setting.name end
-    equal(table.concat(names, ","), "Size (%),Width,Bar height,Text size,Opacity", "in the AddOn's order, opacity last")
+    equal(table.concat(names, ","), "Size,Width,Bar height,Text size,Opacity", "in the AddOn's order, opacity last")
 end)
 
 test("resetSizes picks what Reset size restores; a hint and drag handles are the AddOn's", function()
