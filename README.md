@@ -13,7 +13,7 @@ installs it with them.
   other frame belongs to a different Dyre's AddOn. Shift-drag moves a group of
   snapped frames together.
 - **A grid** while frames are unlocked, with red lines through the center of
-  the screen. Its size is a setting. Turn on **Snap to the grid**: a dropped
+  the screen. Its size is a setting. With **Snap to the grid** (on by default), a dropped
   frame near a red center line centers on it, or puts its nearer edge on it.
   Elsewhere, an edge within a quarter of the grid size (8 at 32) of a grey
   line lines up with it. When both edges (left and right, or top and bottom)

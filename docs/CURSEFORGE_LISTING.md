@@ -49,7 +49,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 
 ### The grid
 - While frames are unlocked, a grid across the screen, with red lines through its center. Its size is a setting.
-- With **Snap to the grid** on, a frame near a red center line centers on it, or puts its nearer edge on it.
+- With **Snap to the grid** on (the default), a frame near a red center line centers on it, or puts its nearer edge on it.
 - Elsewhere, an edge within a quarter of the grid size of a grey line lines up with it. When both edges (left and right, or top and bottom) are that close, the one that moves the least wins, so a frame may line up at its lower-right corner rather than its upper-left: check both.
 - Snapping to another Dyre's frame comes before the grid; a Shift-dragged group snaps to the grid as one block.
 

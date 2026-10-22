@@ -4,6 +4,14 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.2.1
+
+### Fixes
+- Fixed Lua errors blamed on Dyre's Toolkit in the game's own code, such as "tainted by 'DyresToolkit'" from combat text and the quest tracker, and a blocked action bar move when your pet appeared or left in combat. Placing and resizing Dyre's frames, at login and when their content changes, no longer makes the game lay out its own frames in the middle of the toolkit's work.
+
+### Other changes
+- **Snap to the grid** is now on for new installs, so dropped frames line up with the grid from the start. Existing installs keep their current setting. Hold **Ctrl** as you drop to place a frame exactly, or turn snapping off in the settings or with `/dyre snap`.
+
 ## 2.2.0
 
 ### Features

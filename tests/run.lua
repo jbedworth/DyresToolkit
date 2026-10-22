@@ -145,7 +145,8 @@ local function fixture(options)
         end
     end
     env.MenuUtil = {CreateContextMenu = function(owner, generator) state.menuOwner = owner; state.menu = generator end}
-    env.DyresToolkitDB = options.saved
+    -- Most tests drop frames without the grid; a fresh install snaps (tested apart).
+    env.DyresToolkitDB = options.saved or (not options.fresh and {snapToGrid = false}) or nil
     local ns = {}
     for _, path in ipairs(RUNTIME) do
         local chunk = assert(loadfile(path))
@@ -202,11 +203,16 @@ test("saved settings are repaired on load, and frames always start locked", func
     local db = state.env.DyresToolkitDB
     equal(db.locked, true, "never unlocked at login")
     equal(db.grid, true)
-    equal(db.snapToGrid, false)
+    equal(db.snapToGrid, true, "not a boolean: the default, on")
     equal(db.gridSize, 128, "clamped to the largest size")
     equal(type(db.minimap), "table")
     equal(state.ns.SanitizeDB({gridSize = 3}).gridSize, 8)
     equal(state.ns.SanitizeDB({gridSize = 0 / 0}).gridSize, 32, "not a number: the default")
+end)
+
+test("a fresh install snaps to the grid; a saved choice stays", function()
+    equal(fixture({fresh = true}).ns.db.snapToGrid, true, "on by default")
+    equal(fixture({saved = {snapToGrid = false}}).ns.db.snapToGrid, false, "off when the player turned it off")
 end)
 
 test("AddOns register by folder and title, sorted by title", function()
@@ -282,7 +288,11 @@ end)
 local function clientFrame(state, screenX, screenY, width, height)
     local frame = newFrame(state, 0, 0, width, height)
     function frame:GetScale() return self.scale end
-    function frame:GetCenter() return self.cx, self.cy end
+    function frame:GetCenter()
+        self.centerReads = (self.centerReads or 0) + 1
+        return self.cx, self.cy
+    end
+    function frame:GetPoint() return unpack(self.anchor) end
     function frame:GetNumPoints() return self.anchor and 1 or 0 end
     function frame:SetSize(w, h) self.width, self.height = w, h end
     function frame:SetPoint(point, relative, relativePoint, px, py)
@@ -903,6 +913,20 @@ test("SetContentSize can keep the top, the bottom, or a corner fixed", function(
     equal(top, 310, "and the top edge")
 end)
 
+test("resizing a placed widget reads its anchor, not GetCenter (no forced layout in our call)", function()
+    local state = fixture()
+    local frame = clientFrame(state, 500, 300, 200, 100)
+    local widget = state.toolkit.CreateWidget({addon = "DyresQuestTargeting", key = "box", title = "Quest Targets",
+        store = {}, frame = frame, width = 200, height = 100, point = {"CENTER", "BOTTOMLEFT", 500, 300}})
+    frame.centerReads = 0
+    widget:SetContentSize(200, 40, "TOP")
+    widget:SetContentSize(260, 80)
+    widget:SetSetting("scale", 120)
+    equal(frame.centerReads, 0, "no GetCenter while the toolkit's own anchor holds")
+    local _, y = frame:ScreenCenter()
+    equal(y, 330, "the top edge still held (350), then the center")
+end)
+
 test("a widget that grows from an edge comes back to the same place after a reload", function()
     local store = {}
     local function load()
@@ -921,7 +945,8 @@ test("a widget that grows from an edge comes back to the same place after a relo
     local state, frame, widget = load()
     state.ctrl = true
     state.toolkit.BeginDrag(widget)
-    frame.cx, frame.cy = 700, 500
+    -- A drag re-anchors the frame (the client does; here by hand).
+    frame.cx, frame.cy, frame.anchor = 700, 500, {"TOPLEFT", state.UIParent, "BOTTOMLEFT", 0, 0}
     state.toolkit.EndDrag(widget)
     equal(top(frame), 520, "dropped with its top at 520")
     state, frame = load()

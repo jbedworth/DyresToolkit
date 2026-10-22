@@ -53,7 +53,8 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
   saves through the registered `save` (an unregistered frame is only
   re-anchored), and does nothing when nothing changes. `ScaleKeepingCenter`
   now calls it.
-- Snap to grid (author-approved after play testing): per axis, a box whose
+- Snap to grid (author-approved after play testing; on by default since
+  2.2.1, author: "It should probably be on by default"): per axis, a box whose
   center is within reach (24) of the red center line centers on it; else an
   edge within reach goes onto it; else an edge within a quarter of the grid
   size (GRID_EDGE_REACH; 8 at 32) of a grey line goes onto it; else the box
@@ -121,6 +122,12 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
   `opts.tooltips`, `opts.resetLabel`, `opts.resetTooltip`.
   `AddDefaultTick(initializer, {min, max, default})` (2.2.0) puts the same
   gold default mark on an AddOn's own slider.
+- Never call GetCenter (or GetRect, GetLeft...) on a frame the toolkit has
+  placed: read the center from its anchor (Layout.lua Center). Those calls
+  make the client lay out pending frames inside our call, and a Blizzard frame
+  resized then (the objective tracker) runs its update tainted by the toolkit
+  (found in client, 2026-10-21). A frame just dragged has the client's own
+  anchor, so it falls back to GetCenter.
 - Rules: saved numbers are repaired on creation; sizes apply from the
   center (`ResizeFromCenter`); a protected widget resizes, re-places, and
   changes its mouse only out of combat, waiting for `PLAYER_REGEN_ENABLED`;
