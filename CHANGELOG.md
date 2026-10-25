@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.3.1
+
+### Other changes
+- Now also for WoW Classic Era (1.15.9): the toolkit loads there without "out of date", so Dyre's AddOns can use it on Era as on Forever.
+
 ## 2.3.0
 
 ### Other changes

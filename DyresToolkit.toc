@@ -1,8 +1,8 @@
-## Interface: 16001
+## Interface: 16001, 11509
 ## Title: Dyre's Toolkit
 ## Notes: One layout mode, grid, and minimap menu for Dyre's AddOns in WoW Forever
 ## Author: Dyre
-## Version: 2.3.0
+## Version: 2.3.1
 ## IconTexture: Interface\Icons\INV_Misc_Wrench_01
 ## Category: Dyre's AddOns
 ## SavedVariables: DyresToolkitDB
