@@ -28,11 +28,20 @@ LIBRARY_FILES = ("Libs/LibStub/LibStub.lua",
                  "Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua",
                  "Libs/LibDBIcon-1.0/LibDBIcon-1.0.lua")
 LIBRARY_NOTICES = ("Libs/Ace3-LICENSE.txt",)
-RUNTIME_FILES = ("Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua")
+RUNTIME_FILES = ("Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua",
+                 "Auras.lua", "Units.lua", "HealthBars.lua")
 # The TOC names files with backslashes, as the client expects.
 TOC_LOADS = tuple(name.replace("/", "\\") for name in LIBRARY_FILES) + RUNTIME_FILES
 TEXT_FILES = (ADDON + ".toc",) + LIBRARY_FILES + RUNTIME_FILES + ("LICENSE",) + LIBRARY_NOTICES
-PACKAGE_FILES = TEXT_FILES
+# Runtime textures shipped in the package: since 2.4.0 the damage-to-come
+# block's stripes for HealthBars.lua (copied byte for byte from Warlock Tools
+# Forever 1.4.0, John's own art, made by its scripts/make_stripes.py). Each
+# must be an uncompressed 32-bit, square, power-of-two TGA. No sounds.
+MEDIA_FILES = ("Textures/Stripes.tga",)
+PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
+TGA_HEADER_SIZE = 18
+TGA_TRUECOLOR = 2
+TGA_SIZES = (16, 32, 64, 128, 256)
 # Release metadata: the TOC Interface, CurseForge game version, and the build last
 # targeted. The runtime itself detects features, not builds.
 INTERFACE = 16001
@@ -109,8 +118,28 @@ def _text(name, data):
     return text
 
 
+def _validate_tga(name, data):
+    """Require an uncompressed 32-bit square TGA with power-of-two sides."""
+    if len(data) < TGA_HEADER_SIZE:
+        raise ValueError(f"{name}: TGA header is truncated")
+    id_length, color_map, image_type = data[0], data[1], data[2]
+    width = int.from_bytes(data[12:14], "little")
+    height = int.from_bytes(data[14:16], "little")
+    depth, descriptor = data[16], data[17]
+    if color_map != 0 or image_type != TGA_TRUECOLOR:
+        raise ValueError(f"{name}: require an uncompressed true-color TGA")
+    if width != height or width not in TGA_SIZES:
+        raise ValueError(f"{name}: require square power-of-two TGA dimensions")
+    if depth != 32 or descriptor & 0x0F != 8:
+        raise ValueError(f"{name}: require 32-bit TGA pixels with 8 alpha bits")
+    if len(data) != TGA_HEADER_SIZE + id_length + width * height * 4:
+        raise ValueError(f"{name}: TGA size does not match its header")
+
+
 def _validate_files(files, expected_version=None):
     texts = {name: _text(name, files[name]) for name in TEXT_FILES}
+    for name in MEDIA_FILES:
+        _validate_tga(name, files[name])
     metadata = {}
     loads = []
     for line in texts[ADDON + ".toc"].splitlines():

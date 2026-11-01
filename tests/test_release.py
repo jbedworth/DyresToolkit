@@ -42,6 +42,9 @@ class ReleaseTests(unittest.TestCase):
         for name in builder.LIBRARY_FILES + builder.RUNTIME_FILES + builder.LIBRARY_NOTICES:
             (self.source / name).parent.mkdir(parents=True, exist_ok=True)
             (self.source / name).write_bytes(b"local addonName, DQT = ...\n")
+        for name in builder.MEDIA_FILES:
+            (self.source / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.source / name).write_bytes((ROOT / name).read_bytes())
         (self.source / builder.CHANGELOG_NAME).write_bytes(
             (ROOT / builder.CHANGELOG_NAME).read_bytes().replace(b"\r\n", b"\n"))
         self.version = builder._validate_files(self.files())
@@ -270,6 +273,23 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.build()
                 self.assertFalse(self.output.exists(), "nothing is written without notes")
+
+    def test_tga_validator_and_the_stripes_texture(self):
+        # 2.4.0: HealthBars.lua's block stripes, a copy of WTF 1.4.0's.
+        builder._validate_tga("Stripes.tga", (ROOT / "Textures" / "Stripes.tga").read_bytes())
+        icon = (bytes((0, 0, 2)) + bytes(9) + (64).to_bytes(2, "little")
+                + (64).to_bytes(2, "little") + bytes((32, 0x28)) + bytes(64 * 64 * 4))
+        builder._validate_tga("icon.tga", icon)
+        for data in (b"", icon[:17], icon[:-1], icon[:2] + bytes((10,)) + icon[3:],
+                     icon[:16] + bytes((24,)) + icon[17:]):
+            with self.subTest(header=data[:18]), self.assertRaises(ValueError):
+                builder._validate_tga("icon.tga", data)
+        self.assertEqual(builder.MEDIA_FILES, ("Textures/Stripes.tga",))
+        self.assertEqual(sorted(path.name for path in (ROOT / "Textures").iterdir()), ["Stripes.tga"])
+        path, _ = self.build()
+        with zipfile.ZipFile(path) as archive:
+            self.assertIn("DyresToolkit/Textures/Stripes.tga", archive.namelist())
+            self.assertEqual(len(archive.namelist()), len(builder.PACKAGE_FILES))
 
     def test_changelog_never_enters_the_package(self):
         path, _ = self.build()

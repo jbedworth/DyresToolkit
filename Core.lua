@@ -163,7 +163,7 @@ function ns.SetGridSize(size)
 end
 
 -- /dyre, and /dyretoolkit in case another AddOn uses /dyre.
-local USAGE = "Use /dyre (settings), /dyre unlock, /dyre lock, /dyre grid, /dyre snap, or /dyre minimap."
+local USAGE = "Use /dyre (settings), /dyre unlock, /dyre lock, /dyre grid, /dyre snap, /dyre minimap, or /dyre debug."
 
 function ns.HandleCommand(message)
     local command = type(message) == "string" and message:match("^%s*(%S*)%s*$")
@@ -182,6 +182,14 @@ function ns.HandleCommand(message)
         ns.Report(ns.db.snapToGrid and "Frames snap to the grid." or "Frames no longer snap to the grid.")
     elseif command == "minimap" then
         ns.SetMinimapShown(ns.db.minimap.hide == true)
+    elseif command == "debug" then
+        -- Until reload: failing hooks of other AddOns are said in chat
+        -- (HealthBars.lua), the ones so far first.
+        ns.debug = not ns.debug
+        ns.Report(ns.debug and "Debug mode is on until you reload." or "Debug mode is off.")
+        if ns.debug and ns.ReportProblems then
+            ns.ReportProblems()
+        end
     else
         ns.Report(USAGE)
     end

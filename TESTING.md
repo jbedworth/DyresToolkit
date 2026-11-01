@@ -40,3 +40,26 @@
       another frame or near a grid line; Shift+Ctrl moves a group unsnapped.
 - [ ] After /reload, frames start locked and stay where they were dropped.
 - [ ] In combat, /dyre opens nothing and says so; a drag ends after combat.
+
+### Shared tracker code (2.4.0)
+
+Mocks cannot prove these; check them once a dependent uses the modules.
+
+- [ ] Both clients load Dyre's Toolkit 2.4.0 with no Lua errors, and every
+      Dyre's AddOn behaves as on 2.3.1 (none uses the new modules yet).
+- [ ] Era: a plain-Lua aura container shows your debuff on your target, with
+      the time left counting down, and hides when it ends.
+- [ ] Forever, before any switch-over: an AuraContainer made by toolkit code
+      shows your auras in combat, and no error or taint names DyresToolkit.
+- [ ] Era: `/focus` leaves `DyresToolkitDB.focusWorks` nil. Forever: the first
+      focus sets it true; a reload keeps it.
+- [ ] The block and DIES draw on Blizzard's target frame and nameplates, and
+      on each installed frame AddOn's bars, as WTF 1.4.0's did.
+- [ ] HealthBars API: with `/run` registering an adapter that returns
+      `TargetFrame.healthbar` and `side = "right"`, DIES shows right of the
+      target frame's bar; one that errors leaves Blizzard's placement, says
+      nothing, and `/dyre debug` then lists it.
+- [ ] Threat Plates with its target-of-target text on, in combat, and Plater with
+      its cast target name right of the cast bar: DIES shows left
+      of the bar (or inside it), not over the text; with a raid marker
+      left of the bar too, inside the bar's right end.

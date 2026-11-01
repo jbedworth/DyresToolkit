@@ -49,6 +49,9 @@ class CurseForgeTests(unittest.TestCase):
         for name in builder.LIBRARY_FILES + builder.RUNTIME_FILES + builder.LIBRARY_NOTICES:
             (source / name).parent.mkdir(parents=True, exist_ok=True)
             (source / name).write_bytes(b"local addonName, DQT = ...\n")
+        for name in builder.MEDIA_FILES:
+            (source / name).parent.mkdir(parents=True, exist_ok=True)
+            (source / name).write_bytes((ROOT / name).read_bytes())
         (source / builder.CHANGELOG_NAME).write_bytes(
             f"## {version}\n\n- Test change.\n".encode("utf-8"))
         self.dist = self.base / "dist"

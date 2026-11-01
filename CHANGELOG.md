@@ -4,6 +4,18 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.4.0
+
+### Features
+- The damage-to-come block and the red skull **DIES** badge, for Dyre's AddOns that predict damage, now come from the toolkit. They work on Blizzard's frames, Threat Plates, Plater, Platynator, Shadowed Unit Frames, BetterBlizzFrames (also with smooth bars), and EllesmereUI.
+- The **DIES** badge no longer runs into what a nameplate AddOn shows beside the health bar: Threat Plates' target-of-target name, crowd-control icons, and threat text, or Plater's cast target name and raid marker. When that side of the bar is taken, the badge moves to the other side, or into the bar's right end.
+- For nameplate and unit frame AddOn authors: `DyresToolkit.HealthBars` (API version 1) lets your AddOn point to its own health bars, place the **DIES** badge, keep it off the sides your frame uses, turn the block off on a bar, ask for a redraw, and read the damage to come (`GetPredictedDamage`, `WillDie`, and a `PREDICTION_CHANGED` callback). See docs/HEALTHBARS_API.md.
+- `/dyre debug` turns on debug mode until you reload. A hook from another AddOn that fails is turned off quietly, and said in chat only in debug mode.
+
+### Other changes
+- Whether your client has a focus target is now learned once for every Dyre's AddOn, not once per AddOn.
+- For AddOn authors: `CreateAuraContainer` and `AuraEngineKind` (aura slots on Forever's engine, and in plain Lua on Classic Era); `ReadGUID`, `ReadName`, `IsDead`, `FindUnit`, the nameplate memory (`LearnPlate`, `LearnPlates`, `ForgetPlate`, `KnownPlate`, `PlateGUID`), and `LockCast`, which finds the mob a cast goes to as it starts; `FocusWorks`, `OnFocusWorks`, `LearnFocusWorks`, `NoteFocusWorks`, `ResetFocusWorks`, and `FOCUS_RESET_TEXT`; `FindPlateBar`, `FindUnitBar`, `RegisterBarAdapter`, `UseBar`, `PrepareBar`, `DrawPrediction`, `HidePrediction`, and `MoveDies`. Contracts 1 and 2 are unchanged.
+
 ## 2.3.1
 
 ### Other changes

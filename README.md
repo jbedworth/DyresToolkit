@@ -42,8 +42,18 @@ Frames always start locked when you log in. Frames move only out of combat.
 | `/dyre grid` | Shows or hides the grid while unlocked |
 | `/dyre snap` | Turns snapping to the grid on or off |
 | `/dyre minimap` | Shows or hides the minimap button |
+| `/dyre debug` | Until you reload: says in chat when another AddOn's hook into the toolkit fails, and lists those so far |
 
 `/dyretoolkit` works the same, in case another AddOn uses `/dyre`.
+
+## For nameplate and unit frame authors
+
+Dyre's AddOns that predict DoT damage draw a block and a **DIES** badge on
+mob health bars. If your AddOn draws its own bars, or the badge covers
+something of yours, `DyresToolkit.HealthBars` lets you say where your bar
+is, where the badge goes, and when to draw nothing. You can also read the
+prediction to show it your own way. See
+[docs/HEALTHBARS_API.md](docs/HEALTHBARS_API.md).
 
 ## Compatibility
 

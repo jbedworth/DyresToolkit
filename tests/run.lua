@@ -9,7 +9,8 @@ if _VERSION ~= "Lua 5.1" then
 end
 
 local ADDON = "DyresToolkit"
-local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua"}
+local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua", "Auras.lua", "Units.lua",
+    "HealthBars.lua"}
 local tests = {}
 
 local function test(name, body)
@@ -1047,7 +1048,837 @@ test("the TOC loads the libraries, then the runtime, in order", function()
     end
     equal(table.concat(files, ","), "Libs\\LibStub\\LibStub.lua,Libs\\CallbackHandler-1.0\\CallbackHandler-1.0.lua,"
         .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
-        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Minimap.lua")
+        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Minimap.lua,Auras.lua,Units.lua,HealthBars.lua")
+end)
+
+-- Shared code for trackers (2.4.0) -------------------------------------------------
+
+-- A value the client keeps secret: only issecretvalue may look at it.
+local SECRET = setmetatable({}, {__tostring = function() error("a secret was printed") end,
+    __eq = function() error("a secret was compared") end})
+
+-- The units the client shows: {[token] = {guid, name, canAttack, dead}}, any
+-- field possibly SECRET; and your focus, which Era never has.
+local function world(state, units)
+    local env = state.env
+    state.units = units or {}
+    env.issecretvalue = function(value) return rawequal(value, SECRET) end
+    local function get(unit, field)
+        local info = state.units[unit]
+        return info and info[field]
+    end
+    env.UnitExists = function(unit) return state.units[unit] ~= nil end
+    env.UnitGUID = function(unit) return get(unit, "guid") end
+    env.UnitName = function(unit) return get(unit, "name") end
+    env.UnitCanAttack = function(_, unit) return get(unit, "canAttack") end
+    env.UnitIsDead = function(unit) return get(unit, "dead") end
+    env.UnitIsUnit = function(a, b)
+        local x, y = state.units[a], state.units[b]
+        if x and x.same ~= nil then return x.same == b end
+        return x ~= nil and x == y
+    end
+    return env
+end
+
+local function mob(guid, name, extra)
+    local info = {guid = guid, name = name, canAttack = true, dead = false}
+    for key, value in pairs(extra or {}) do info[key] = value end
+    return info
+end
+
+test("unit readers give nil for a secret, and Describe never shows one", function()
+    local state = fixture()
+    world(state, {target = mob(SECRET, SECRET, {dead = SECRET}), focus = mob("Creature-1", "Grunt")})
+    local toolkit = state.toolkit
+    equal(toolkit.ReadGUID("target"), nil)
+    equal(toolkit.ReadName("target"), nil)
+    equal(toolkit.IsDead("target"), false, "a secret dead counts as alive")
+    equal(toolkit.ReadGUID("focus"), "Creature-1")
+    equal(toolkit.ReadName("focus"), "Grunt")
+    equal(toolkit.Describe(SECRET), "secret")
+    equal(toolkit.Describe(true), "true")
+    equal(toolkit.IsSecret(SECRET), true)
+end)
+
+test("the plate memory learns a plate from its GUID, else from your target", function()
+    local state = fixture()
+    local target = mob("Creature-7", "Grunt")
+    world(state, {nameplate3 = mob("Creature-5", "Grunt"), nameplate4 = target, target = target})
+    local toolkit = state.toolkit
+    state.units.nameplate4 = mob(SECRET, "Grunt", {same = "target"})
+    toolkit.LearnPlates()
+    equal(toolkit.PlateGUID("nameplate3"), "Creature-5", "a readable GUID")
+    equal(toolkit.PlateGUID("nameplate4"), "Creature-7", "secret: the target it is")
+    equal(toolkit.KnownPlate("Creature-7"), "nameplate4")
+    toolkit.ForgetPlate("nameplate4")
+    equal(toolkit.KnownPlate("Creature-7"), nil, "a plate that went is forgotten")
+    toolkit.LearnPlate("nameplate9")
+    equal(toolkit.PlateGUID("nameplate9"), nil, "no such plate")
+end)
+
+test("FindUnit follows the caller's order, with plates and the plate memory", function()
+    local state = fixture()
+    world(state, {target = mob("Creature-1", "A"), focus = mob("Creature-1", "A"),
+        nameplate2 = mob("Creature-2", "B"), nameplate6 = mob(SECRET, "C", {same = "focus"})})
+    local toolkit = state.toolkit
+    equal(toolkit.FindUnit("Creature-1"), "focus", "default: focus first")
+    equal(toolkit.FindUnit("Creature-1", {"plates", "target", "focus"}), "target")
+    equal(toolkit.FindUnit("Creature-2"), "nameplate2")
+    state.units.focus = mob("Creature-3", "C")
+    toolkit.LearnPlate("nameplate6")
+    state.units.focus = nil
+    equal(toolkit.FindUnit("Creature-3"), "nameplate6", "a secret plate, from the memory")
+    equal(toolkit.FindUnit("Creature-3", {"focus", "target", "plates"}), nil, "no memory asked for")
+    equal(toolkit.FindUnit(nil), nil)
+end)
+
+test("LockCast keeps each caller's rules", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    -- WTF's DoT tracker: target, focus, mouseover, plates; the first unit with
+    -- the name decides; dead is not checked; a secret "can attack" is no.
+    local tracker = {units = {"target", "focus", "mouseover", "plates"}, stopAtName = true, allowDead = true}
+    world(state, {target = mob("Creature-1", "Grunt", {canAttack = SECRET}), focus = mob("Creature-2", "Grunt")})
+    equal(toolkit.LockCast("Grunt", tracker), nil, "the target has the name; a secret attack is no")
+    state.units.target = mob("Creature-1", "Grunt", {dead = true})
+    equal(toolkit.LockCast("Grunt", tracker), "Creature-1", "dead not checked")
+    -- WTF's Control bar: focus, mouseover, target, plates; the memory; a secret
+    -- "can attack" is yes; skips to the next unit with the name.
+    local control = {units = {"focus", "mouseover", "target", "plates"}, memory = true, secretHostile = true}
+    world(state, {focus = mob("Creature-2", "Grunt", {dead = true}), target = mob("Creature-1", "Grunt"),
+        nameplate1 = mob(SECRET, "Imp", {canAttack = SECRET, same = "target"})})
+    local guid, unit, look = toolkit.LockCast("Grunt", control)
+    equal(guid, "Creature-1", "the dead focus is skipped")
+    equal(unit, "target")
+    contains(table.concat(look, " "), "focus(attack=true dead=true guid=true)")
+    state.units.target = mob("Creature-9", "Boss")
+    toolkit.LearnPlate("nameplate1")
+    state.units.target = nil
+    guid, unit = toolkit.LockCast("Imp", control)
+    equal(guid, "Creature-9", "a secret plate from the memory, a secret attack is yes")
+    equal(unit, "nameplate1")
+    -- MTF without a focus: focus, then mouseover if there is one, else target.
+    local chain = {units = {"focus", "mouseover", "target"}, stopAt = {mouseover = true}}
+    world(state, {mouseover = mob("Creature-4", "Wolf"), target = mob("Creature-1", "Grunt")})
+    equal(toolkit.LockCast("Grunt", chain), nil, "a mouseover ends the chain")
+    state.units.mouseover = nil
+    equal(toolkit.LockCast("Grunt", chain), "Creature-1")
+    equal(toolkit.LockCast(SECRET, chain), nil, "a secret name")
+    equal(toolkit.LockCast("", chain), nil)
+end)
+
+test("focusWorks is one flag for every AddOn, learned once from a readable focus", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    world(state, {})
+    local heard = {}
+    equal(toolkit.OnFocusWorks(function(works) heard[#heard + 1] = works end), true)
+    equal(toolkit.OnFocusWorks("no"), false)
+    equal(toolkit.FocusWorks(), false, "nil at first")
+    local frame
+    for _, candidate in ipairs(state.frames) do
+        if candidate.events.PLAYER_FOCUS_CHANGED then frame = candidate end
+    end
+    frame.scripts.OnEvent(frame, "PLAYER_FOCUS_CHANGED")
+    equal(toolkit.FocusWorks(), false, "Era: /focus leaves no focus")
+    state.env.UnitExists = function() return SECRET end
+    frame.scripts.OnEvent(frame, "PLAYER_FOCUS_CHANGED")
+    equal(toolkit.FocusWorks(), false, "a secret answer teaches nothing")
+    state.units.focus = mob("Creature-1", "Grunt")
+    world(state, state.units)
+    frame.scripts.OnEvent(frame, "PLAYER_FOCUS_CHANGED")
+    equal(toolkit.FocusWorks(), true)
+    equal(state.env.DyresToolkitDB.focusWorks, true, "saved account-wide in the toolkit's table")
+    state.units.focus = nil
+    frame.scripts.OnEvent(frame, "PLAYER_FOCUS_CHANGED")
+    equal(toolkit.FocusWorks(), true, "never goes back on its own")
+    equal(#heard, 1)
+    toolkit.ResetFocusWorks()
+    equal(toolkit.FocusWorks(), false)
+    equal(heard[2], false, "listeners hear the reset")
+    toolkit.NoteFocusWorks()
+    equal(toolkit.FocusWorks(), true, "an AddOn's older flag carries over")
+    equal(#heard, 3)
+    toolkit.ResetFocusWorks()
+    toolkit.ResetFocusWorks()
+    equal(#heard, 5, "every reset is told, also a second one (WTF rebuilds its macros on each)")
+    equal(heard[5], false)
+    contains(toolkit.FOCUS_RESET_TEXT, "every Dyre's AddOn")
+    toolkit.NoteFocusWorks()
+    local saved = fixture({saved = {snapToGrid = false, focusWorks = true}})
+    equal(saved.toolkit.FocusWorks(), true, "kept across reloads; Core's repair keeps the key")
+    equal(fixture({saved = {focusWorks = "yes"}}).toolkit.FocusWorks(), false, "only true counts")
+end)
+
+-- A client object: every method a no-op that records its arguments, with
+-- the few readers the code needs.
+local function stub(fields)
+    local object = {calls = {}}
+    for key, value in pairs(fields or {}) do object[key] = value end
+    -- Methods only (capitalized, as the client's): a field the code sets stays nil until set.
+    return setmetatable(object, {__index = function(self, key)
+        if not key:match("^%u") then return nil end
+        return function(_, ...)
+            rawget(self, "calls")[key] = {...}
+        end
+    end})
+end
+
+local function auraWorld(state)
+    local env = world(state, {target = mob("Creature-1", "Grunt")})
+    state.now, state.auras = 100, {}
+    env.GetTime = function() return state.now end
+    env.C_XMLUtil = nil
+    env.C_UnitAuras = {GetAuraDataByIndex = function(unit, index, filter)
+        local list = state.auras[unit .. ":" .. filter]
+        return list and list[index]
+    end}
+    env.CreateFrame = function(kind, name, parent)
+        local frame = newFrame(state, 0, 0)
+        frame.kind, frame.parent = kind, parent
+        return frame
+    end
+    return env
+end
+
+local function region()
+    return stub({SetTexture = function(self, value, wrap) self.texture, self.wrap = value, wrap end,
+        SetText = function(self, value) self.text = value end,
+        SetValue = function(self, value) self.value = value end,
+        SetMinMaxValues = function(self, low, high) self.max = high end})
+end
+
+test("on Era the aura container is plain Lua, with the engine's slots", function()
+    local state = fixture()
+    auraWorld(state)
+    local toolkit = state.toolkit
+    equal(toolkit.AuraEngineKind(), "lua")
+    contains(toolkit.AURA_ENGINE_MISSING, "CustomAuraContainerTemplate")
+    local container = toolkit.CreateAuraContainer(state.UIParent)
+    local display = {}
+    container:AddAuraSlot("dot", "HARMFUL|PLAYER", {candidateFilters = {includeSpellIDs = {[172] = true}},
+        initializeFrame = function(button)
+            display.icon, display.text, display.bar = region(), region(), region()
+            button:SetIcon(display.icon)
+            button:SetDurationText(display.text)
+            button:SetDurationBar(display.bar)
+            display.button = button
+        end})
+    equal(display.button.shown, false, "hidden until an aura matches")
+    state.auras["target:HARMFUL|PLAYER"] = {{spellId = 999, name = "Other"},
+        {spellId = 172, name = "Corruption", icon = "corruption", duration = 12, expirationTime = 106}}
+    container:SetUnit("target")
+    equal(display.button.shown, true)
+    equal(display.icon.texture, "corruption")
+    equal(display.text.text, "6 s")
+    equal(display.bar.value, 6)
+    -- One ticker for every timed slot, only while one shows.
+    local ticker
+    for _, frame in ipairs(state.frames) do
+        if frame.scripts.OnUpdate then ticker = frame end
+    end
+    equal(ticker ~= nil, true, "a timed aura ticks")
+    state.now = 104.2
+    ticker.scripts.OnUpdate(ticker, 1)
+    equal(display.text.text, "2 s")
+    state.auras["target:HARMFUL|PLAYER"] = {}
+    local dispatcher
+    for _, frame in ipairs(state.frames) do
+        if frame.events.UNIT_AURA then dispatcher = frame end
+    end
+    dispatcher.scripts.OnEvent(dispatcher, "UNIT_AURA", "target")
+    equal(display.button.shown, false, "the aura went")
+    equal(ticker.scripts.OnUpdate, nil, "no slot ticking: no OnUpdate")
+    local ok = pcall(container.SetAuraSlotCandidateFilters, container, "missing", {})
+    equal(ok, false, "an unknown slot raises, as the engine does")
+end)
+
+test("on Forever the aura container is the engine's", function()
+    local state = fixture()
+    local env = auraWorld(state)
+    env.C_XMLUtil = {GetTemplateInfo = function(name) return name == "CustomAuraContainerTemplate" and {} or nil end}
+    local made
+    env.CreateFrame = function(kind, name, parent, template)
+        made = {kind = kind, template = template}
+        return newFrame(state, 0, 0)
+    end
+    equal(state.toolkit.AuraEngineKind(), "engine")
+    state.toolkit.CreateAuraContainer(state.UIParent)
+    equal(made.kind, "AuraContainer")
+    equal(made.template, "CustomAuraContainerTemplate")
+end)
+
+-- A health bar of some frame AddOn, with its texts.
+local function healthBar(options)
+    options = options or {}
+    local fill = stub({GetAtlas = function() return options.atlas end, GetTexture = function() return "bar.tga" end})
+    local bar = stub({regions = {}, parentFrame = options.parent})
+    function bar:GetStatusBarTexture() return fill end
+    function bar:GetReverseFill() return options.reverse == true end
+    function bar:GetFrameLevel() return 5 end
+    function bar:GetStatusBarColor() return 0, 1, 0 end
+    function bar:GetOrientation() return options.vertical and "VERTICAL" or "HORIZONTAL" end
+    function bar:GetRegions() return unpack(self.regions) end
+    function bar:GetParent() return self.parentFrame end
+    function bar:IsForbidden() return false end
+    bar.fill = fill
+    return bar
+end
+
+-- A shown text anchored with point to relativePoint of `to`.
+local function sideText(to, point, relativePoint, shown)
+    local text = stub()
+    function text:GetObjectType() return "FontString" end
+    function text:IsShown() return shown ~= false end
+    function text:GetNumPoints() return 1 end
+    function text:GetPoint() return point, to, relativePoint, 0, 0 end
+    return text
+end
+
+local function barWorld(state)
+    local env = world(state, {})
+    state.made = {}
+    env.CreateFrame = function(kind)
+        local frame = stub({kind = kind, shown = true})
+        function frame:Show() self.shown = true end
+        function frame:Hide() self.shown = false end
+        function frame:SetShown(shown) self.shown = shown end
+        function frame:GetStatusBarTexture() return self.span end
+        function frame:GetEffectiveScale() return 0.5 end
+        function frame:SetValue(value) self.value = value end
+        function frame:SetMinMaxValues(low, high) self.max = high end
+        function frame:SetPoint(...) self.point = {...} end
+        function frame:CreateTexture() return region() end
+        function frame:CreateFontString()
+            return stub({GetStringWidth = function() return 30 end})
+        end
+        frame.span = region()
+        state.made[#state.made + 1] = frame
+        return frame
+    end
+    env.UIParent = stub({GetEffectiveScale = function() return 1 end})
+    return env
+end
+
+local STYLE = {fill = "stripes", color = {0.6, 0.2, 0.9}, opacity = 70, outline = "solid", dies = true}
+
+test("the block shows the damage to come, and DIES when it kills", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local bar = healthBar()
+    equal(toolkit.DrawPrediction(bar, "target", 300, 1000, STYLE), false, "not lethal")
+    local overlay = state.made[1]
+    equal(overlay.kind, "StatusBar")
+    equal(overlay.max, 1000)
+    equal(overlay.value, 300)
+    equal(overlay.shown, true)
+    local dies, side = toolkit.DrawPrediction(bar, "target", 1200, 1000, STYLE)
+    equal(dies, true)
+    equal(side, "left", "unit frames: left of the bar")
+    equal(overlay.value, 1000, "never past the health")
+    equal(state.made[2].point[1], "RIGHT")
+    equal(state.made[2].point[3], "LEFT")
+    equal(state.made[2].shown, true)
+    equal(toolkit.DrawPrediction(bar, "target", 1200, 1000, {dies = false}), false, "DIES off")
+    for _, health in ipairs({SECRET, 0, nil}) do
+        toolkit.DrawPrediction(bar, "target", 300, health, STYLE)
+        equal(overlay.shown, false, "no readable health: hidden")
+        overlay.shown = true
+    end
+    toolkit.DrawPrediction(bar, "target", 0, 1000, STYLE)
+    equal(overlay.shown, false, "no damage")
+    equal(toolkit.DrawPrediction(healthBar({vertical = true}), "plate", 300, 1000, STYLE), false, "vertical")
+    equal(toolkit.DrawPrediction(bar, "wrong", 300, 1000, STYLE), false)
+    toolkit.DrawPrediction(bar, "target", 300, 1000, STYLE)
+    toolkit.HidePrediction(bar)
+    equal(overlay.shown, false)
+end)
+
+test("a reverse-filled bar gets the mirror block", function()
+    local state = fixture()
+    barWorld(state)
+    local bar = healthBar({reverse = true})
+    state.toolkit.DrawPrediction(bar, "target", 300, 1000, STYLE)
+    equal(state.made[1].calls.SetReverseFill[1], false)
+    local plain = healthBar()
+    state.toolkit.DrawPrediction(plain, "target", 300, 1000, STYLE)
+    equal(state.made[3].calls.SetReverseFill[1], true, "fills from the right, from the health's end")
+end)
+
+test("DIES avoids a side another AddOn writes on (Plater's target-of-target)", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local plate = stub({regions = {}})
+    function plate:GetRegions() return unpack(self.regions) end
+    local bar = healthBar({parent = plate})
+    local _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, STYLE)
+    equal(side, "right", "nameplates: right of the bar")
+    -- John's screenshot: "[Juk'taz]" just right of the bar made "DIESJuk'taz ]".
+    plate.regions = {sideText(bar, "LEFT", "RIGHT")}
+    _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, STYLE)
+    equal(side, "left", "moves to the free side")
+    bar.regions = {sideText(bar, "RIGHT", "LEFT")}
+    _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, STYLE)
+    equal(side, "inside", "both taken: inside the bar's right end")
+    bar.regions = {sideText(bar, "RIGHT", "LEFT", false), sideText(bar, "LEFT", "LEFT")}
+    _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, STYLE)
+    equal(side, "left", "a hidden text, or one inside the bar, does not count")
+    plate.regions = {sideText(SECRET, "LEFT", "RIGHT")}
+    _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, STYLE)
+    equal(side, "right", "a secret anchor is never compared")
+    local forced = {}
+    for key, value in pairs(STYLE) do forced[key] = value end
+    forced.side = "inside"
+    _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, forced)
+    equal(side, "inside", "the caller's side wins")
+    -- An adapter's own place (Platynator, past its arrows) when its side is free.
+    local other = healthBar()
+    toolkit.DrawPrediction(other, "plate", 900, 500, STYLE, {place = {"LEFT", "RIGHT", 22, 0}, strata = "LOW"})
+    local badge = state.made[#state.made]
+    equal(badge.point[4], 22)
+    equal(badge.calls.SetFrameStrata[1], "LOW")
+end)
+
+test("a tracker row moves DIES where it wants it", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local bar = healthBar()
+    equal(toolkit.MoveDies(bar, nil), false, "no block yet")
+    local _, side = toolkit.DrawPrediction(bar, "row", 900, 500, STYLE)
+    equal(side, "inside")
+    local number = stub()
+    toolkit.MoveDies(bar, {"RIGHT", number, "LEFT", -2})
+    local badge = state.made[2]
+    equal(badge.point[2], number)
+    toolkit.DrawPrediction(bar, "row", 900, 500, STYLE)
+    equal(badge.point[2], number, "a draw keeps the row's place")
+    toolkit.MoveDies(bar, nil)
+    equal(badge.point[2], bar, "back to the bar's right end")
+end)
+
+-- A shown, or hidden, object with IsShown.
+local function showing(shown, fields)
+    local object = stub(fields)
+    function object:IsShown() return shown end
+    return object
+end
+
+-- A plate with Threat Plates' frame and widgets, as its Era source has them.
+local function threatPlate(widgets)
+    local bar = healthBar()
+    local plate = stub({TPFrame = {Active = true, visual = {Healthbar = bar}, widgets = widgets or {}}})
+    function plate:IsForbidden() return false end
+    return plate, bar
+end
+
+test("DIES on Threat Plates leaves the side of its target-of-target, crowd control, and threat texts", function()
+    local state = fixture()
+    local env = barWorld(state)
+    local toolkit = state.toolkit
+    local widgets = {}
+    local plate, bar = threatPlate(widgets)
+    env.C_NamePlate = {GetNamePlateForUnit = function() return plate end}
+    local function side()
+        local found, info = toolkit.FindPlateBar("nameplate1")
+        equal(found, bar)
+        equal(info.name, "Threat Plates", "the debug name stays")
+        return select(2, toolkit.DrawPrediction(found, "plate", 900, 500, STYLE, info))
+    end
+    equal(side(), "right", "nothing beside the bar: right, as before")
+    -- John's screenshot: "[ Juk'taz ]", the target-of-target text.
+    bar.TargetUnit = showing(true)
+    equal(side(), "left")
+    bar.TargetUnit = showing(false)
+    widgets.Auras = {CrowdControl = showing(true, {ActiveAuras = 1})}
+    equal(side(), "left", "crowd control icons right of the bar")
+    widgets.Auras.CrowdControl.ActiveAuras = SECRET
+    equal(side(), "right", "a secret count is not read")
+    widgets.Threat = showing(true)
+    equal(side(), "inside", "in a group its threat art and percent take both sides")
+end)
+
+test("DIES on Plater leaves the side of its cast target name and its raid marker", function()
+    local state = fixture()
+    local env = barWorld(state)
+    local toolkit = state.toolkit
+    local bar = healthBar()
+    local raid = showing(false)
+    local plate = stub({unitFrame = {healthBar = bar, PlaterRaidTargetFrame = {RaidTargetIcon = raid}}})
+    function plate:IsForbidden() return false end
+    env.C_NamePlate = {GetNamePlateForUnit = function() return plate end}
+    local profile = {castbar_target_show = false, castbar_target_anchor = {side = 6},
+        indicator_raidmark_anchor = {side = 2}}
+    env.Plater = {db = {profile = profile}}
+    local function side()
+        local found, info = toolkit.FindPlateBar("nameplate1")
+        equal(info.name, "Plater")
+        return select(2, toolkit.DrawPrediction(found, "plate", 900, 500, STYLE, info))
+    end
+    equal(side(), "right")
+    profile.castbar_target_show = true
+    equal(side(), "left", "John's profile: the cast's target right of the cast bar (side 6)")
+    profile.castbar_target_anchor = {side = 11}
+    equal(side(), "right", "inside the cast bar: not in the way")
+    profile.castbar_target_anchor = {side = 6}
+    raid.IsShown = function() return true end
+    equal(side(), "inside", "and a raid marker left of the bar")
+    env.Plater = {}
+    equal(side(), "right", "no profile: only the marker, on its default side, left")
+end)
+
+test("UseBar hides the block on the bar a unit left", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local shown = {}
+    local first, second = healthBar(), healthBar()
+    toolkit.UseBar(shown, "nameplate1", first, {name = "Threat Plates"})
+    toolkit.DrawPrediction(first, "plate", 300, 1000, STYLE)
+    local overlay = state.made[1]
+    equal(overlay.shown, true)
+    toolkit.UseBar(shown, "nameplate1", first, {name = "Threat Plates"})
+    equal(overlay.shown, true, "the same bar: kept")
+    toolkit.UseBar(shown, "nameplate1", second, {name = "Blizzard"})
+    equal(overlay.shown, false, "Threat Plates let the plate go")
+    equal(shown.nameplate1.name, "Blizzard")
+    toolkit.UseBar(shown, "nameplate1", nil)
+    equal(shown.nameplate1, nil, "the plate went")
+end)
+
+test("PrepareBar makes the block out of combat, hidden until a draw", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local bar = healthBar()
+    equal(toolkit.PrepareBar(bar, "target"), true)
+    equal(#state.made, 2, "the block and its badge")
+    equal(state.made[1].shown, false)
+    toolkit.DrawPrediction(bar, "target", 300, 1000, STYLE)
+    equal(#state.made, 2, "a draw uses it")
+    equal(toolkit.PrepareBar(nil, "target"), false)
+    equal(toolkit.PrepareBar(bar, "other"), false)
+end)
+
+local function near(actual, expected, context)
+    if math.abs(actual - expected) > 0.001 then
+        error((context or "value") .. ": expected " .. expected .. ", got " .. tostring(actual), 2)
+    end
+end
+
+-- WTF 1.4.0's block style and DIES tests, as the spec.
+test("block style: stripes tiled, the caller's color and opacity, a 1 px outline a little lighter", function()
+    local state = fixture()
+    barWorld(state)
+    local bar = healthBar()
+    state.toolkit.DrawPrediction(bar, "plate", 300, 1000, {fill = "stripes", color = {0.64, 0.21, 0.93},
+        opacity = 70, outline = "solid"})
+    local overlay = state.made[1]
+    local block = overlay.block
+    equal(block.texture, "Interface\\AddOns\\DyresToolkit\\Textures\\Stripes", "the toolkit's stripes")
+    equal(block.wrap, "REPEAT", "tiled")
+    equal(block.calls.SetHorizTile[1], true)
+    equal(block.calls.SetVertTile[1], true)
+    near(block.calls.SetVertexColor[1], 0.64, "purple")
+    near(block.calls.SetVertexColor[4], 0.7, "70%")
+    equal(#overlay.edges, 4)
+    for _, edge in ipairs(overlay.edges) do
+        equal(edge.calls.SetShown[1], true, "the outline")
+        near(edge.calls.SetColorTexture[4], 1, "70% + 30%, at most 1")
+        near(edge.calls.SetColorTexture[1], 0.64 + 0.36 * 0.4, "40% lighter")
+    end
+    equal(overlay.edges[1].calls.SetHeight[1], 1, "1 px")
+    equal(overlay.calls.SetStatusBarColor[4], 0, "the measuring fill is clear")
+end)
+
+test("block style: solid, the bar's own texture or atlas, no outline, lighter on a bar of its color", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local bar = healthBar()
+    toolkit.DrawPrediction(bar, "plate", 300, 1000, {fill = "solid", color = {0.2, 0.9, 0.2}, opacity = 40,
+        outline = "none"})
+    local overlay = state.made[1]
+    equal(overlay.block.texture, "Interface\\Buttons\\WHITE8X8")
+    equal(overlay.block.calls.SetHorizTile[1], false)
+    near(overlay.block.calls.SetVertexColor[4], 0.4)
+    equal(overlay.edges[1].calls.SetShown[1], false, "no outline")
+    toolkit.DrawPrediction(bar, "plate", 300, 1000, {fill = "bar", color = {0.2, 0.9, 0.2}})
+    equal(overlay.block.texture, "bar.tga", "the bar's own file")
+    local atlas = healthBar({atlas = "UI-HUD-CoolDownManager-Bar"})
+    toolkit.DrawPrediction(atlas, "plate", 300, 1000, {fill = "bar"})
+    equal(state.made[3].block.calls.SetAtlas[1], "UI-HUD-CoolDownManager-Bar", "Era's plate atlas")
+    -- healthBar's own color is green (0, 1, 0): 0.12 from 0.04, 0.96, 0.04.
+    toolkit.DrawPrediction(bar, "plate", 300, 1000, {fill = "solid", color = {0.04, 0.96, 0.04}})
+    near(overlay.block.calls.SetVertexColor[1], 0.52, "50% lighter on a bar of the same color")
+    toolkit.DrawPrediction(bar, "plate", 300, 1000, {fill = "solid", color = {0.64, 0.21, 0.93}})
+    near(overlay.block.calls.SetVertexColor[1], 0.64, "another color keeps it")
+    toolkit.DrawPrediction(bar, "plate", 300, 1000, {fill = "glitter", color = "purple", opacity = "x"})
+    equal(overlay.block.texture, "Interface\\AddOns\\DyresToolkit\\Textures\\Stripes", "a bad style: the defaults")
+end)
+
+test("DIES: a red level skull and bold red text, above the bar's texts, at UI scale, sized per kind", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    for _, case in ipairs({{"target", 14, 1}, {"plate", 11, 1}, {"row", 10, 0}}) do
+        local bar = healthBar()
+        local before = #state.made
+        toolkit.DrawPrediction(bar, case[1], 900, 500, STYLE)
+        local overlay, dies = state.made[before + 1], state.made[before + 2]
+        equal(overlay.calls.SetFrameLevel[1], 5 + case[3], case[1] .. ": the block's level")
+        equal(dies.calls.SetFrameLevel[1], 5 + 12, case[1] .. ": the badge above the bar's texts")
+        near(dies.calls.SetScale[1], 2, case[1] .. ": UIParent 1 over the bar's 0.5")
+        equal(dies.skull.texture, "Interface\\TargetingFrame\\UI-TargetingFrame-Skull", "the level skull, not a raid icon")
+        near(dies.skull.calls.SetVertexColor[1], 1, "tinted red")
+        local font = dies.label.calls.SetFont
+        equal(font[2], case[2], case[1] .. ": size")
+        equal(font[3], "THICKOUTLINE")
+        equal(dies.label.calls.SetText[1], "DIES")
+    end
+end)
+
+test("the frame adapters find each AddOn's bar, Blizzard's last", function()
+    local state = fixture()
+    local env = barWorld(state)
+    local toolkit = state.toolkit
+    local blizzard = healthBar()
+    local plate = stub({UnitFrame = {healthBar = blizzard}})
+    function plate:IsForbidden() return false end
+    env.C_NamePlate = {GetNamePlateForUnit = function() return plate end}
+    local bar, info = toolkit.FindPlateBar("nameplate1")
+    equal(bar, blizzard)
+    equal(info.name, "Blizzard")
+    plate.unitFrame = {healthBar = healthBar()}
+    equal(select(2, toolkit.FindPlateBar("nameplate1")).name, "Blizzard", "Plater's frame without Plater")
+    env.Plater = {}
+    equal(select(2, toolkit.FindPlateBar("nameplate1")).name, "Plater")
+    plate.TPFrame = {Active = true, visual = {Healthbar = healthBar()}}
+    equal(select(2, toolkit.FindPlateBar("nameplate1")).name, "Threat Plates")
+    function plate:IsForbidden() return true end
+    equal(toolkit.FindPlateBar("nameplate1"), nil, "a forbidden plate")
+    -- Unit frames: SUF, then BetterBlizzFrames' smooth bar, then Blizzard's.
+    local stock = healthBar()
+    env.TargetFrame = {healthbar = stock}
+    equal(select(2, toolkit.FindUnitBar("target")).name, "Blizzard")
+    stock.bbfSmoothOverlay = healthBar()
+    local smooth, smoothInfo = toolkit.FindUnitBar("target")
+    equal(smooth, stock.bbfSmoothOverlay, "the eased bar you see")
+    equal(smoothInfo.name, "BetterBlizzFrames")
+    env.ShadowUF = {Units = {unitFrames = {target = {healthBar = healthBar()}}}}
+    equal(select(2, toolkit.FindUnitBar("target")).name, "Shadowed Unit Frames")
+    -- An AddOn can add one, before Blizzard's.
+    local own = healthBar()
+    equal(toolkit.RegisterBarAdapter("unit", {name = "Mine", bar = function() return own end}, "Shadowed Unit Frames"),
+        true)
+    equal(toolkit.FindUnitBar("target"), own)
+    equal(toolkit.RegisterBarAdapter("unit", {name = "Mine", bar = function() end}), false, "one name once")
+    equal(toolkit.RegisterBarAdapter("other", {name = "X", bar = function() end}), false)
+end)
+
+-- The public API (John, 2026-10-31) ------------------------------------------------
+
+test("HealthBars.RegisterAdapter: another AddOn's bar comes first, nil falls through", function()
+    local state = fixture()
+    local env = barWorld(state)
+    local api = state.toolkit.HealthBars
+    equal(api.API_VERSION, 1)
+    local blizzard = healthBar()
+    local plate = stub({UnitFrame = {healthBar = blizzard}, TPFrame = {Active = true, visual = {Healthbar = healthBar()}}})
+    function plate:IsForbidden() return false end
+    env.C_NamePlate = {GetNamePlateForUnit = function() return plate end}
+    local own, mine = healthBar(), true
+    equal(api.RegisterAdapter({name = "My Plates", plate = function(p, unit)
+        if mine and p == plate and unit == "nameplate1" then return own end
+    end}), true)
+    local bar, info = state.toolkit.FindPlateBar("nameplate1")
+    equal(bar, own, "before Threat Plates")
+    equal(info.name, "My Plates")
+    mine = false
+    equal(select(2, state.toolkit.FindPlateBar("nameplate1")).name, "Threat Plates", "nil falls through")
+    equal(select(2, state.toolkit.FindUnitBar("target")), nil, "a plate adapter is not asked for unit frames")
+    -- Bad specs say why.
+    local ok, why = api.RegisterAdapter({name = "X"})
+    equal(ok, false)
+    contains(why, "spec.plate or spec.unit")
+    equal(select(2, api.RegisterAdapter({name = "X", unit = function() end, side = "top"})) ~= nil, true)
+    equal(api.UnregisterAdapter("My Plates"), true)
+    equal(api.UnregisterAdapter("My Plates"), false)
+end)
+
+test("HealthBars: an adapter's side, anchor, strata, level, and avoid place DIES", function()
+    local state = fixture()
+    barWorld(state)
+    local api, toolkit = state.toolkit.HealthBars, state.toolkit
+    local bar = healthBar()
+    api.RegisterAdapter({name = "Mine", unit = function() return bar end, side = "right", level = 30})
+    local found, info = toolkit.FindUnitBar("target")
+    local dies, side = toolkit.DrawPrediction(found, "target", 900, 500, STYLE, info)
+    equal(dies, true)
+    equal(side, "right", "the adapter's side, not unit frames' left")
+    local badge = state.made[2]
+    equal(badge.calls.SetFrameLevel[1], 35, "bar level 5 + 30")
+    equal(select(2, toolkit.DrawPrediction(found, "target", 900, 500, {side = "left"}, info)), "left",
+        "the player's own setting wins")
+    api.RegisterAdapter({name = "Mine", unit = function() return bar end, anchor = {"BOTTOM", "TOP", 0, 4},
+        strata = "HIGH"})
+    found, info = toolkit.FindUnitBar("target")
+    toolkit.DrawPrediction(found, "target", 900, 500, STYLE, info)
+    equal(badge.point[1], "BOTTOM")
+    equal(badge.point[3], "TOP")
+    equal(badge.point[5], 4)
+    equal(badge.calls.SetFrameStrata[1], "HIGH")
+    -- avoid: the adapter says its frame writes on the right.
+    api.RegisterAdapter({name = "Mine", unit = function() return bar end,
+        avoid = function(plate, b) return b == bar and plate == nil and {left = true} or nil end})
+    found, info = toolkit.FindUnitBar("target")
+    equal(select(2, toolkit.DrawPrediction(found, "target", 900, 500, STYLE, info)), "right", "left avoided")
+end)
+
+test("HealthBars: suppress and SetSuppressed draw nothing on a bar", function()
+    local state = fixture()
+    barWorld(state)
+    local api, toolkit = state.toolkit.HealthBars, state.toolkit
+    local bar, busy = healthBar(), true
+    api.RegisterAdapter({name = "Mine", unit = function() return bar end,
+        suppress = function(b, unit) return busy and b == bar and unit == "target" end})
+    local found, info = toolkit.FindUnitBar("target")
+    equal(toolkit.DrawPrediction(found, "target", 900, 500, STYLE, info), false)
+    equal(#state.made, 0, "no block made")
+    busy = false
+    equal(toolkit.DrawPrediction(found, "target", 900, 500, STYLE, info), true)
+    equal(api.SetSuppressed(bar, true), true)
+    equal(state.made[1].shown, false, "hidden at once")
+    equal(toolkit.DrawPrediction(found, "target", 900, 500, STYLE, info), false)
+    api.SetSuppressed(bar, false)
+    equal(toolkit.DrawPrediction(found, "target", 900, 500, STYLE, info), true)
+    equal(api.SetSuppressed(nil, true), false)
+end)
+
+test("HealthBars: a failing hook is turned off, falls through, and is said only in debug mode", function()
+    local state = fixture()
+    local env = barWorld(state)
+    local api, toolkit = state.toolkit.HealthBars, state.toolkit
+    local blizzard = healthBar()
+    env.TargetFrame = {healthbar = blizzard}
+    local calls = 0
+    api.RegisterAdapter({name = "Broken", unit = function() calls = calls + 1; error("boom") end})
+    local before = #state.messages
+    local bar, info = toolkit.FindUnitBar("target")
+    equal(bar, blizzard, "Blizzard's bar instead")
+    equal(info.name, "Blizzard")
+    equal(#state.messages, before, "nothing in chat outside debug mode")
+    toolkit.FindUnitBar("target")
+    equal(calls, 1, "off until reload")
+    state.slash("debug")
+    equal(state.said("Debug mode is on"), true)
+    equal(state.said("\"Broken\" failed and is off until you reload"), true, "the failures so far")
+    api.RegisterAdapter({name = "Also broken", unit = function() error("bang") end})
+    toolkit.FindUnitBar("target")
+    equal(state.said("\"Also broken\" failed"), true, "said at once in debug mode")
+    state.slash("debug")
+    equal(state.said("Debug mode is off."), true)
+end)
+
+local function family(env, groups)
+    env.C_AddOns = {GetAddOnMetadata = function(addon, field)
+        return field == "Group" and groups[addon] or nil
+    end}
+end
+
+test("HealthBars: damage sources are Dyre's AddOns only, and the highest priority wins", function()
+    local state = fixture()
+    local env = barWorld(state)
+    family(env, {DyresDebuffTracker = "DyresToolkit", WarlockToolsForever = "DyresToolkit"})
+    local api = state.toolkit.HealthBars
+    equal(api.GetPredictedDamage("target"), nil, "no source")
+    equal(api.RegisterSource({addon = "SomeoneElse", priority = 99, damage = function() return 1 end}), false)
+    equal(api.RegisterSource({addon = "WarlockToolsForever", priority = 10, damage = function() return 300 end}),
+        true)
+    equal(api.IsActiveSource("WarlockToolsForever"), true)
+    equal(api.GetPredictedDamage("target"), 300)
+    api.RegisterSource({addon = "DyresDebuffTracker", priority = 20, damage = function(unit)
+        return unit == "target" and 450 or nil
+    end})
+    equal(api.IsActiveSource("DyresDebuffTracker"), true)
+    equal(api.IsActiveSource("WarlockToolsForever"), false, "counted once")
+    equal(api.GetPredictedDamage("target"), 450)
+    equal(api.GetPredictedDamage("focus"), nil)
+    api.SetSourceEnabled("DyresDebuffTracker", false)
+    equal(api.GetPredictedDamage("target"), 300, "steps aside while its prediction is off")
+end)
+
+test("HealthBars.WillDie: true or false from readable health, nil for a secret one", function()
+    local state = fixture()
+    local env = barWorld(state)
+    family(env, {DyresDebuffTracker = "DyresToolkit"})
+    state.units.target = mob("Creature-1", "Grunt")
+    local health = 400
+    env.UnitHealth = function() return health end
+    local api = state.toolkit.HealthBars
+    api.RegisterSource({addon = "DyresDebuffTracker", priority = 20, damage = function(unit)
+        return unit ~= "focus" and 450 or 0
+    end})
+    equal(api.WillDie("target"), true)
+    equal(api.WillDie("Creature-1"), true, "by GUID")
+    health = 600
+    equal(api.WillDie("target"), false)
+    health = SECRET
+    equal(api.WillDie("target"), nil, "secret health")
+    equal(api.WillDie("focus"), false, "no damage")
+    equal(api.WillDie("Creature-9"), nil, "not found")
+end)
+
+test("HealthBars: PREDICTION_CHANGED from the active source only; a failing callback is dropped", function()
+    local state = fixture()
+    local env = barWorld(state)
+    family(env, {DyresDebuffTracker = "DyresToolkit", WarlockToolsForever = "DyresToolkit"})
+    local api = state.toolkit.HealthBars
+    api.RegisterSource({addon = "WarlockToolsForever", priority = 10, damage = function() end})
+    api.RegisterSource({addon = "DyresDebuffTracker", priority = 20, damage = function() end})
+    local heard = {}
+    local function listen(event, unit, guid) heard[#heard + 1] = event .. ":" .. tostring(unit) .. ":" .. tostring(guid) end
+    equal(api.RegisterCallback("PREDICTION_CHANGED", listen), true)
+    equal(api.RegisterCallback("PREDICTION_CHANGED", listen), true, "once")
+    equal(api.RegisterCallback("OTHER", listen), false)
+    local failing = 0
+    api.RegisterCallback("PREDICTION_CHANGED", function() failing = failing + 1; error("x") end)
+    equal(api.NotifyChanged("WarlockToolsForever", "target"), false, "not the active source")
+    equal(api.NotifyChanged("DyresDebuffTracker", "target", "Creature-1"), true)
+    api.NotifyChanged("DyresDebuffTracker", nil, "Creature-2")
+    equal(#heard, 2)
+    equal(heard[1], "PREDICTION_CHANGED:target:Creature-1")
+    equal(failing, 1, "dropped after failing")
+    equal(api.UnregisterCallback("PREDICTION_CHANGED", listen), true)
+    api.NotifyChanged("DyresDebuffTracker", "target")
+    equal(#heard, 2)
+end)
+
+test("HealthBars.Refresh asks the active source to draw again, once, on the next frame", function()
+    local state = fixture()
+    local env = barWorld(state)
+    family(env, {DyresDebuffTracker = "DyresToolkit"})
+    local later = {}
+    env.C_Timer = {After = function(_, callback) later[#later + 1] = callback end}
+    local api = state.toolkit.HealthBars
+    local drawn = {}
+    api.RegisterSource({addon = "DyresDebuffTracker", priority = 20, damage = function() end,
+        refresh = function(unit) drawn[#drawn + 1] = tostring(unit) end})
+    api.Refresh("nameplate1")
+    api.Refresh("nameplate1")
+    api.Refresh("target")
+    equal(#later, 1, "one timer")
+    equal(#drawn, 0, "not yet")
+    later[1]()
+    equal(#drawn, 2, "each unit once")
+    api.Refresh("target")
+    api.Refresh(nil)
+    later[2]()
+    equal(#drawn, 3, "nil: every unit, in one call")
+    equal(drawn[3], "nil")
+    equal(api.Refresh(5), false)
 end)
 
 local failed = 0
