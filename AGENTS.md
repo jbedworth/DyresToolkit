@@ -224,7 +224,8 @@ stays 2, so a dependent checks that the functions it uses exist.
   ("PREDICTION_CHANGED"). For the family only (TOC `## Group:
   DyresToolkit`): `RegisterSource{addon, priority, damage, willDie,
   refresh}`, `SetSourceEnabled`, `IsActiveSource` (draw only when true;
-  Debuff Tracker 20 above WTF 10, so a mob is drawn once),
+  WTF 10 above the Debuff Tracker's 5, so a mob is drawn once: a class Tools
+  AddOn wins for its class; lead, 2026-11-01),
   `NotifyChanged(addon, unit, guid)`. Every outside function runs in pcall;
   a failing one is off until reload. Its chat line shows only in debug mode
   (`/dyre debug`, session-only, lists the failures so far; John,
@@ -251,6 +252,148 @@ Switch-over (not in 2.4.0; each owner session, in its own release):
   AuraContainer made by toolkit code shows auras in combat with no taint
   blamed on DyresToolkit (as in 2.2.1).
 
+### Tracking engine, stage A (2.5.0; lead plan, 2026-11-01)
+
+The DoT and crowd-control tracking moves here from WTF and MTF in stages
+(Dyre's Debuff Tracker's docs/ENGINE_SPLIT.md: A spells, macros, announce,
+class data; B `CreateControlTracker`; C the DoT tracker and prediction; D
+WTF and MTF switch; E the Debuff Tracker's wrapper). Rules for every
+engine: it never owns SavedVariables (the owner passes a `store` table and
+keeps its sanitizers and migrations; the one exception, in stage C, is the
+learned ticks in `DyresToolkitDB.ticks`); frame names are passed in; class
+rules are data; CONTRACT stays 2; WTF 1.4.1 and MTF 1.2.3 keep working.
+
+- Spells.lua: `SpellName(id)` (nil for secret or missing),
+  `SpellbookIDsByName()` (byName, learned; FutureSpell is not learned),
+  `SpellSet(ids, names, book)` (set, names, known), `IndexSpells(defs)`
+  (byID, sets by key, known by key), `KnowsAny(list or set)`,
+  `PetKnows(spellID)` (the bank enum, else the legacy call, else the pet
+  spellbook by name, as Era needs).
+- Macros.lua: `CharacterMacroLimit()`, `MacrosAvailable()` (ok, missing),
+  `OutOfCombat(key, fn)` (now, else once at PLAYER_REGEN_ENABLED, the latest
+  per key), `CreateMacroKeeper{owned, warn, icon}` (`owned`: the caller's saved
+  name -> true table, so "adopted" comes once, not at every login) with `:Available()`, `:Has`,
+  `:Write(name, body, oldNames)` ("created", "adopted", "renamed",
+  "edited", "unchanged", else nil and "combat", "unavailable", or "full";
+  two character slots stay free, warned once), `:Delete(name)`.
+  `MarkLine(unit, marker)` and `FocusCastMacro{spell, marker, condition,
+  chain, shift, untargeted}`: WTF 1.4.1's Fear, Banish, and Seduction text
+  exactly, and MTF 1.2.3's Polymorph text once focus works. Its chained /tm
+  is WTF's `[@focus...][@mouseover...][harm,nodead] !5`, not MTF's
+  `; `-separated form: the same mob, other text.
+- Announce.lua: `RAID_MARKERS`, `ValidMarker`, `MarkerCode`,
+  `GroupChannel(say)`, `SendChat`, `FormatAnnouncement(text, values)` (MTF's
+  values table; false or "" drops the token and the space before it;
+  secrets give ""), `CreateAnnouncer{repeatSeconds = 3, say, enabled}` with
+  `:SendGroup(key, message)`, throttled per key.
+- ClassData.lua: `ClassData` and `ClassSpells(classFile)`: WARLOCK (dots,
+  ranks, families, familyOrder, control, macros) and MAGE (control, macros),
+  every ID from WTF 1.4.1 and MTF 1.2.3. Agony's ramp is `weights`
+  (`TickWeight(family, tick)`), Fear's plate timer `plateTimer`, Seduction's
+  pet check `pet`. Another class or ID only once checked on both clients.
+  Polymorph has `single` (one up at a time: a new cast replaces the row).
+
+### Tracking engine, stage B (2.5.0; lead plan, 2026-11-01)
+
+- Owners.lua (lead decision 7a): one owner per kind, as the HealthBars
+  sources. Kinds are "control:<CLASS>", "macros:<CLASS>",
+  "announce:<CLASS>". `ClaimOwner(kind, addon, priority)` (a second claim
+  changes the priority), `SetOwnerEnabled(kind, addon, on)`,
+  `KindOwner(kind)`, `IsOwner(kind, addon)`, `OnOwnerChanged(kind,
+  callback(owner, kind))`. The highest enabled claim owns; a tie goes to
+  the first. A class Tools AddOn claims at 10 and wins for its class; Dyre's
+  Debuff Tracker at 5. A listener that fails is off until reload, said only
+  in debug mode.
+- Control.lua: `FocusRecastMacro(spell)` and `CreateControlTracker(spec)`,
+  WTF 1.4.1's Control.lua and MTF 1.2.3's Polymorph.lua merged; their rules
+  are its spec (the file's head). The tracker owns the spell sets, the cast
+  pipeline (lock at UNIT_SPELLCAST_SENT, land at SUCCEEDED, give back on
+  FAILED/INTERRUPTED), rows and their timeouts, binding, focus loss, death
+  by GUID, the secure click slots, the Focus box, the nameplate timers, the
+  announcements, and the macros; its own event frame. The owner keeps its
+  saved table (`store`, read live: enabled, plateTimers, macros, markers, or
+  `markerFor`), the anchor's place and moving (`parent`; without one, as
+  MTF's widget, the owner places the slot), and its settings pages.
+  - Names are passed in: `names.row`, `names.click` (a prefix + index, or a
+    table of exact names), `names.focus`. WTF's
+    WarlockToolsForeverControlRow<n>/Click<n>/Focus and MTF's
+    MageToolsForeverPolymorphBar/MageToolsForeverPolymorph come out exact.
+  - Orders are spec fields (lead decision 2a): `find` (FindUnit; default
+    the Toolkit's), `lock` (default WTF Control's: focus, mouseover, target,
+    plates, with memory and secretHostile), `focusLock` (default focus with
+    secretHostile). MTF passes `find = {focus, target, plates}`, `lock =
+    {focus, mouseover, target; stopAt mouseover}`, `focusLock = {focus}`.
+  - A `click` spell cast while focus works is focus-only (its row binds to
+    "focus", goes with it, and clicks `FocusRecastMacro`); otherwise rows
+    start from the cast and take no click. `single` spells reuse their row.
+  - `countdown` (MTF): without focus, a row no unit shows has its name
+    count the time down from the last aura read (C_UnitAuras, readable on
+    those clients), a 1 s C_Timer only while one shows. `clickThrough`
+    (MTF): the slot stays while the bar does, with the mouse only for a click
+    or while unlocked.
+  - Owners: the tracker claims control, macros, and (with `announce`)
+    announce for its class at `priority`. Not the owner: no rows, no
+    timers, no announcements, and no macro writes or deletes (the owner
+    keeps them). `store.enabled == false` steps aside for control.
+  - Macros: a `CreateMacroKeeper{owned}` (the owner's saved table) writes
+    each ClassData macro you know (`pet` through PetKnows), out of combat;
+    `store.macros == false` deletes ours; `onAdopt(name)` once for another
+    AddOn's macro of that name.
+  - Methods: `Refresh()`, `SetScale(scale)` (rows, with the slots, out of
+    combat), `Rebuild()` (a new look: regions at once, engine slots out of
+    combat), `KnowsAny()`, `MacroBody(def)`, `ApplyMacros()`, `IsOwner(what)`,
+    `Owner(what)`, `DebugLines()`; fields `rows`, `focusBox`, `plateTimers`.
+  - Not the engine's: the anchor and its mover, WTF's own tooltips (pass
+    `tooltip`), drag (`onDragStart`/`onDragStop`), and MTF's size widget,
+    which calls `SetScale` and `Rebuild` from its onLayout/onOpacity.
+- Owner claims are for Dyre's AddOns only (`## Group: DyresToolkit`, the
+  HealthBars source gate, `ns.InFamily` in HealthBars.lua): an outside
+  AddOn's ClaimOwner and SetOwnerEnabled give false and why.
+
+### Tracking engine, stage C (2.5.0; lead plan, 2026-11-01)
+
+WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
+(each file's head); WTF's tests' cases are ported.
+
+- DotTracker.lua: `HexColor(hex)` and `CreateDotTracker(spec)`. spec:
+  `addon`, `priority` (owner kind "dots:<CLASS>"), `class` or `slots`
+  (ClassData `dots`), `store` (the owner's db.tracker, read live: enabled,
+  theme, sizes.compact/bars, order, health, healthText, panelOpacity,
+  position, sections, and each slot's `lastUsed` key, which the tracker
+  writes), `names` {target, focus, list} (WTF's WarlockToolsForeverTracker,
+  ...TrackerFocus, ...TrackerList), `point`, `slotColor(key)`,
+  `panelColor(key)`, `movable` {register(frame, save), beginDrag, endDrag}
+  (the owner's layout; `save` writes `store.sections[key]`), `locked()`,
+  `ctrlMove`, `predictor`, `find` (default plates, memory, target, focus),
+  `lock` (default target, focus, mouseover, plates with stopAtName and
+  allowDead), `onSpellsChanged()`. Methods: `Refresh`, `Rebuild` (theme,
+  sizes, order, colors, health: out of combat), `ApplyPanelColors`,
+  `ApplyPanelOpacity`, `ResetPosition` (after the owner cleared its
+  places), `RefreshPrediction(guid)`, `CandidateFilters(key)`,
+  `KnowsSlot(key)`, `SlotIcon(key)`, `OrderedSlots()`, `SlotColor(key)`,
+  `IsOwner()`, `DebugLines()`; fields `rows`, `pinned`, `sections`, `shown`.
+  Every secure change (pinned recasts, state drivers, rebuilds) goes
+  through `OutOfCombat`. Not the owner: the sections hide and nothing is
+  tracked.
+- PlateDots.lua: `CreatePlateDots{tracker, store, slots, color}` (store:
+  enabled, plateDots, plateDotsOffset, plateDotsOpacity, onPlates);
+  `Refresh`, `ApplyColors`, `ApplyOpacity`; fields `byUnit`, `known`. Only
+  while its tracker owns the class's DoTs.
+- DotPredict.lua: `CombatLogUsable()`, `LearnedTicks()`, and
+  `CreateDotPredictor(spec)`: `addon`, `priority` (its HealthBars source),
+  `class` or `ranks`/`families`/`familyOrder`, `store` (enabled, plates,
+  dies, fill, opacity, outline), `color()`, `legacyTicks`. Nil and "the
+  combat log" where it is restricted (Forever), or why RegisterSource
+  refused. Methods: `Available`, `PredictedDamage(guid)`, `DrawRow(bar,
+  guid, health, place)`, `Refresh`, `SetTracker` (DotTracker calls it),
+  `DebugLines`. The tick weights are ClassData's (`TickWeight`).
+- The learned ticks (lead decision 1, the one engine store):
+  `DyresToolkitDB.ticks[rank] = {tick, power}`, repaired once a session
+  (tick > 0, power >= 0, a rank some ClassData table lists), shared by every
+  Dyre's AddOn. `legacyTicks` (WTF's WarlockToolsForeverAccountDB.ticks) is
+  copied once per owner (`DyresToolkitDB.ticksImported[addon]`), only for
+  ranks not saved yet.
+
 ### Rules
 
 - Frames always start locked at login. Frames move only out of combat.
@@ -266,10 +409,12 @@ Switch-over (not in 2.4.0; each owner session, in its own release):
 - Runtime: DyresToolkit.toc, Libs/ (LibStub, CallbackHandler-1.0,
   LibDataBroker-1.1, LibDBIcon-1.0, and Ace3-LICENSE.txt), Core.lua,
   Layout.lua, Widgets.lua, Settings.lua, Minimap.lua, Auras.lua, Units.lua,
-  HealthBars.lua, loaded in that order; Textures/Stripes.tga.
+  HealthBars.lua, Spells.lua, Macros.lua, Announce.lua, ClassData.lua,
+  Owners.lua, Control.lua, DotTracker.lua, PlateDots.lua, DotPredict.lua,
+  loaded in that order; Textures/Stripes.tga.
 - tests/run.lua: the Lua 5.1 mock suite. tests/test_*.py: the release helpers.
 - Package only the TOC, Libs/ files listed in scripts/build_release.py, the
-  eight runtime files, Textures/Stripes.tga, and LICENSE, under `DyresToolkit/`, named
+  seventeen runtime files, Textures/Stripes.tga, and LICENSE, under `DyresToolkit/`, named
   `DyresToolkit-<version>-forever.zip`, with `release.json` for WowUp.
 
 ## Client and API verification

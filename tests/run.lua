@@ -10,7 +10,8 @@ end
 
 local ADDON = "DyresToolkit"
 local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua", "Auras.lua", "Units.lua",
-    "HealthBars.lua"}
+    "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua", "ClassData.lua", "Owners.lua",
+    "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua"}
 local tests = {}
 
 local function test(name, body)
@@ -1048,7 +1049,9 @@ test("the TOC loads the libraries, then the runtime, in order", function()
     end
     equal(table.concat(files, ","), "Libs\\LibStub\\LibStub.lua,Libs\\CallbackHandler-1.0\\CallbackHandler-1.0.lua,"
         .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
-        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Minimap.lua,Auras.lua,Units.lua,HealthBars.lua")
+        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Minimap.lua,Auras.lua,Units.lua,HealthBars.lua,"
+        .. "Spells.lua,Macros.lua,Announce.lua,ClassData.lua,Owners.lua,Control.lua,DotTracker.lua,"
+        .. "PlateDots.lua,DotPredict.lua")
 end)
 
 -- Shared code for trackers (2.4.0) -------------------------------------------------
@@ -1879,6 +1882,1305 @@ test("HealthBars.Refresh asks the active source to draw again, once, on the next
     equal(#drawn, 3, "nil: every unit, in one call")
     equal(drawn[3], "nil")
     equal(api.Refresh(5), false)
+end)
+
+-- Engine stage A (2.5.0): spells, macros, announcements, class data ----------------
+
+-- The client's spells: names by ID, a spellbook of {id, name, future}, the IDs
+-- you know, and your pet's spells.
+local function spellbook(state, options)
+    local env = state.env
+    options = options or {}
+    local names = options.names or {}
+    env.issecretvalue = function(value) return rawequal(value, SECRET) end
+    env.C_Spell = {GetSpellName = function(id) return names[id] end}
+    env.Enum = {SpellBookItemType = {Spell = 1, FutureSpell = 2}}
+    if not options.noEnum then
+        env.Enum.SpellBookSpellBank = {Player = 0, Pet = 1}
+    end
+    local items = options.book or {}
+    local known = options.known or {}
+    local pet = options.pet or {}
+    state.knownCalls = {}
+    env.C_SpellBook = {
+        GetNumSpellBookSkillLines = function() return 1 end,
+        GetSpellBookSkillLineInfo = function() return {itemIndexOffset = 0, numSpellBookItems = #items} end,
+        GetSpellBookItemInfo = function(index, bank)
+            if bank == 1 then
+                return pet[index] and {name = pet[index]}
+            end
+            local item = items[index]
+            return item and {spellID = item[1], name = item[2], itemType = item[3] and 2 or 1}
+        end,
+        IsSpellKnown = function(id, bank)
+            state.knownCalls[#state.knownCalls + 1] = {id, bank}
+            if bank == 1 then
+                return options.petKnown and options.petKnown[id] == true
+            end
+            return known[id] == true
+        end,
+        HasPetSpells = function() return #pet end,
+    }
+    if options.era then
+        -- Classic Era: no GetSpellBookItemInfo, only the pet spellbook by name.
+        env.C_SpellBook.GetSpellBookItemInfo = nil
+        env.GetSpellBookItemName = function(index, book) return book == "pet" and pet[index] or nil end
+    end
+    return env
+end
+
+test("spells by name: Classic IDs plus every spellbook rank, learned names only", function()
+    local state = fixture()
+    spellbook(state, {names = {[5782] = "Fear", [6213] = "Fear", [980] = "Bane of Agony"},
+        book = {{9001, "Fear"}, {9002, "Fear"}, {9100, "Bane of Doom"}, {9200, "Fear", true}}})
+    local toolkit = state.toolkit
+    local byName, learned = toolkit.SpellbookIDsByName()
+    equal(#byName.Fear, 3, "every Fear in the book, the future one too")
+    equal(learned.Fear, true)
+    equal(learned["Bane of Doom"], true)
+    local set, names, known = toolkit.SpellSet({5782, 6213})
+    equal(set[5782] and set[6213] and set[9001] and set[9002] and set[9200], true, "the book's ranks join")
+    equal(names.Fear, true)
+    equal(known, true)
+    local banes, _, banesKnown = toolkit.SpellSet({980}, {"Bane of Doom", "Bane of Havoc"})
+    equal(banes[9100], true, "a name-only spell")
+    equal(banesKnown, true)
+    local _, _, nothing = toolkit.SpellSet({12345})
+    equal(nothing, false, "a spell not in the book is not learned")
+    local byID, sets, keys = toolkit.IndexSpells({{key = "fear", ids = {5782}}, {key = "again", ids = {5782}},
+        {key = "bane", ids = {980}, names = {"Bane of Doom"}}})
+    equal(byID[9001].key, "fear")
+    equal(byID[5782].key, "fear", "the first def listing an ID wins")
+    equal(sets.bane[9100], true)
+    equal(keys.fear, true)
+end)
+
+test("spells by name: no spellbook API, or a secret name, gives nothing and no error", function()
+    local state = fixture()
+    spellbook(state, {names = {[5782] = SECRET}})
+    state.env.C_SpellBook.GetNumSpellBookSkillLines = nil
+    local toolkit = state.toolkit
+    local byName = toolkit.SpellbookIDsByName()
+    equal(next(byName), nil)
+    local set, names, known = toolkit.SpellSet({5782})
+    equal(set[5782], true)
+    equal(next(names), nil, "a secret name is not used")
+    equal(known, false)
+    equal(toolkit.SpellName(5782), nil)
+end)
+
+test("KnowsAny takes a list or a set; without IsSpellKnown it is false", function()
+    local state = fixture()
+    spellbook(state, {known = {[6213] = true}})
+    local toolkit = state.toolkit
+    equal(toolkit.KnowsAny({5782, 6213}), true)
+    equal(toolkit.KnowsAny({[5782] = true, [6213] = true}), true)
+    equal(toolkit.KnowsAny({5782}), false)
+    equal(toolkit.KnowsAny(nil), false)
+    state.env.C_SpellBook.IsSpellKnown = nil
+    equal(toolkit.KnowsAny({6213}), false)
+end)
+
+test("PetKnows: by ID with the bank enum, else the legacy call, else the pet spellbook by name", function()
+    local state = fixture()
+    spellbook(state, {names = {[6358] = "Seduction"}, petKnown = {[6358] = true}})
+    local toolkit = state.toolkit
+    equal(toolkit.PetKnows(6358), true)
+    equal(state.knownCalls[1][2], 1, "the Pet bank enum, never true")
+    -- Forever's Incubus: another ID, the same name.
+    spellbook(state, {names = {[6358] = "Seduction"}, pet = {"Lash of Pain", "Seduction"}})
+    equal(toolkit.PetKnows(6358), true)
+    spellbook(state, {names = {[6358] = "Seduction"}, pet = {"Lash of Pain"}})
+    equal(toolkit.PetKnows(6358), false)
+    -- Classic Era: no enum, no GetSpellBookItemInfo.
+    spellbook(state, {names = {[6358] = "Seduction"}, pet = {"Seduction"}, era = true, noEnum = true})
+    state.env.IsSpellKnown = function(id, isPet) return false end
+    equal(toolkit.PetKnows(6358), true, "found by name in the pet book")
+    spellbook(state, {names = {[6358] = "Seduction"}, era = true, noEnum = true})
+    state.env.IsSpellKnown = function(id, isPet) return isPet == true and id == 6358 end
+    equal(toolkit.PetKnows(6358), true, "the legacy call")
+    state.env.C_SpellBook = nil
+    equal(toolkit.PetKnows(6358), false)
+end)
+
+-- The client's character macros: {name, body} by index, character ones only.
+local function macroClient(state, limit)
+    local env = state.env
+    state.macros = {}
+    env.Constants = {MacroConsts = {MAX_CHARACTER_MACROS = limit or 18}}
+    env.GetMacroIndexByName = function(name)
+        for index, macro in ipairs(state.macros) do
+            if macro.name == name then return index end
+        end
+        return 0
+    end
+    env.GetNumMacros = function() return 120, #state.macros end
+    env.GetMacroBody = function(index) return state.macros[index].body end
+    env.CreateMacro = function(name, icon, body, perCharacter)
+        assert(perCharacter == true, "a character macro")
+        state.macros[#state.macros + 1] = {name = name, body = body, icon = icon}
+    end
+    env.EditMacro = function(index, name, icon, body)
+        state.macros[index] = {name = name, body = body, icon = icon}
+        state.edits = (state.edits or 0) + 1
+    end
+    env.DeleteMacro = function(index) table.remove(state.macros, index) end
+    env.SetRaidTarget = function() error("never SetRaidTarget") end
+end
+
+test("a macro keeper creates, adopts by exact name, renames old names, and edits only on change", function()
+    local state = fixture()
+    macroClient(state)
+    local toolkit = state.toolkit
+    local warned = {}
+    local keeper = toolkit.CreateMacroKeeper({warn = function(text) warned[#warned + 1] = text end})
+    equal(keeper:Available(), true)
+    equal(keeper:Write("! Polymorph", "one"), "created")
+    equal(state.macros[1].icon, 134400, "the question mark, filled by #showtooltip")
+    equal(keeper:Write("! Polymorph", "one"), "unchanged")
+    equal(state.edits, nil, "no edit for the same text")
+    equal(keeper:Write("! Polymorph", "two"), "edited")
+    -- Another AddOn's macro of the same name: kept in place, never a copy.
+    state.macros[2] = {name = "! Fear", body = "theirs"}
+    equal(keeper:Write("! Fear", "ours"), "adopted")
+    equal(#state.macros, 2, "no second copy")
+    equal(state.macros[2].body, "ours")
+    equal(keeper:Write("! Fear", "ours"), "unchanged", "adopted once")
+    state.macros[3] = {name = "WTF Healthstone", body = "old"}
+    equal(keeper:Write("! Healthstone", "new", {"!WTF Healthstone", "WTF Healthstone"}), "renamed")
+    equal(state.macros[3].name, "! Healthstone")
+    equal(keeper:Has("! Healthstone"), true)
+    state.combat = true
+    local result, why = keeper:Write("! Banish", "x")
+    equal(result, nil)
+    equal(why, "combat")
+    equal(keeper:Delete("! Fear"), false, "nothing changes in combat")
+    state.combat = false
+    equal(keeper:Delete("! Fear"), true)
+    equal(keeper:Delete("! Fear"), false)
+    equal(keeper:Write("! Fear", "ours"), "created", "deleted, then made again")
+end)
+
+test("a macro keeper's ownership lives in the caller's saved table, so a reload never adopts again", function()
+    local state = fixture()
+    macroClient(state)
+    local toolkit = state.toolkit
+    local store = {owned = {}}
+    state.macros[1] = {name = "! Fear", body = "WTF's"}
+    local keeper = toolkit.CreateMacroKeeper({owned = store.owned})
+    equal(keeper:Write("! Fear", "ours"), "adopted", "the first time")
+    equal(keeper:Write("! Banish", "ours"), "created")
+    equal(store.owned["! Fear"] and store.owned["! Banish"], true, "kept in the caller's table")
+    -- /reload: a new keeper on the same saved table.
+    local reloaded = toolkit.CreateMacroKeeper({owned = store.owned})
+    equal(reloaded:Write("! Fear", "ours"), "unchanged", "never adopted again")
+    equal(reloaded:Write("! Banish", "new"), "edited")
+    equal(reloaded:Delete("! Banish"), true)
+    equal(store.owned["! Banish"], nil, "a deleted macro is no longer ours")
+    state.macros[#state.macros + 1] = {name = "! Banish", body = "someone's"}
+    equal(toolkit.CreateMacroKeeper({owned = store.owned}):Write("! Banish", "ours"), "adopted")
+end)
+
+test("a macro keeper leaves the last character slots free and warns once", function()
+    local state = fixture()
+    macroClient(state, 4)
+    local toolkit = state.toolkit
+    local warned = {}
+    local keeper = toolkit.CreateMacroKeeper({warn = function(text) warned[#warned + 1] = text end})
+    equal(keeper:Write("a", "1"), "created")
+    equal(keeper:Write("b", "1"), "created")
+    local result, why = keeper:Write("c", "1")
+    equal(result, nil)
+    equal(why, "full")
+    keeper:Write("d", "1")
+    equal(#warned, 1, "warned once")
+    contains(warned[1], "\"c\"")
+    equal(keeper:Write("a", "2"), "edited", "an existing macro still changes")
+end)
+
+test("without a macro function or the slot constant, macros stay off", function()
+    local state = fixture()
+    macroClient(state)
+    local toolkit = state.toolkit
+    state.env.Constants = nil
+    local ok, missing = toolkit.MacrosAvailable()
+    equal(ok, false)
+    equal(missing, "Constants.MacroConsts.MAX_CHARACTER_MACROS")
+    state.env.MAX_CHARACTER_MACROS = 18
+    equal((toolkit.MacrosAvailable()), true, "the global, once the Macro window loaded")
+    state.env.EditMacro = nil
+    ok, missing = toolkit.MacrosAvailable()
+    equal(missing, "EditMacro")
+    local result, why = toolkit.CreateMacroKeeper():Write("x", "y")
+    equal(result, nil)
+    equal(why, "unavailable")
+end)
+
+test("OutOfCombat runs now, or once when combat ends with the latest request per key", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local runs = {}
+    equal(toolkit.OutOfCombat("macros", function() runs[#runs + 1] = "now" end), true)
+    state.combat = true
+    local before = #state.frames
+    equal(toolkit.OutOfCombat("macros", function() runs[#runs + 1] = "first" end), false)
+    toolkit.OutOfCombat("other", function() runs[#runs + 1] = "other" end)
+    toolkit.OutOfCombat("macros", function() runs[#runs + 1] = "latest" end)
+    local regen = state.frames[before + 1]
+    equal(regen.events.PLAYER_REGEN_ENABLED, true)
+    state.combat = false
+    regen.scripts.OnEvent(regen, "PLAYER_REGEN_ENABLED")
+    equal(table.concat(runs, ","), "now,latest,other")
+    equal(regen.events.PLAYER_REGEN_ENABLED, nil, "no event left registered")
+    regen.scripts.OnEvent(regen, "PLAYER_REGEN_ENABLED")
+    equal(#runs, 3, "each ran once")
+end)
+
+local function macroSpells(state, focusWorks)
+    spellbook(state, {names = {[710] = "Banish", [5782] = "Fear", [6358] = "Seduction", [118] = "Polymorph",
+        [5484] = "Howl of Terror"}})
+    state.toolkit.FocusWorks = function() return focusWorks end
+end
+
+test("MarkLine: /tm for a marker, nothing for none", function()
+    local toolkit = fixture().toolkit
+    equal(toolkit.MarkLine("focus", 5), "/tm [@focus,harm,nodead,exists] !5")
+    equal(toolkit.MarkLine("focus", 0), nil)
+    equal(toolkit.MarkLine("focus", nil), nil)
+end)
+
+test("FocusCastMacro writes WTF 1.4.1's Banish and Seduction macros, focus or chain", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    macroSpells(state, true)
+    equal(toolkit.FocusCastMacro({spell = 710, marker = 5}), "#showtooltip Banish\n"
+        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
+        .. "/tm [@focus,harm,nodead,exists] !5\n"
+        .. "/use [@focus,exists,harm,nodead] Banish")
+    equal(toolkit.FocusCastMacro({spell = 6358, condition = ",pet:Succubus/Incubus"}), "#showtooltip Seduction\n"
+        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
+        .. "/use [@focus,exists,harm,nodead,pet:Succubus/Incubus] Seduction")
+    macroSpells(state, false)
+    equal(toolkit.FocusCastMacro({spell = 710, marker = 5}), "#showtooltip Banish\n"
+        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
+        .. "/tm [@focus,harm,nodead,exists][@mouseover,harm,nodead][harm,nodead] !5\n"
+        .. "/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead] Banish")
+    equal(toolkit.FocusCastMacro({spell = 6358, condition = ",pet:Succubus/Incubus"}), "#showtooltip Seduction\n"
+        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
+        .. "/use [@focus,exists,harm,nodead,pet:Succubus/Incubus][@mouseover,harm,nodead,pet:Succubus/Incubus]"
+        .. "[harm,nodead,pet:Succubus/Incubus] Seduction")
+    equal(toolkit.FocusCastMacro({spell = 710, marker = 5, chain = false}):find("%[@mouseover,harm,nodead%] !"),
+        nil, "chain = false overrides the flag")
+end)
+
+test("FocusCastMacro writes WTF 1.4.1's Fear macro: Shift keeps your focus", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    macroSpells(state, true)
+    equal(toolkit.FocusCastMacro({spell = 5782, shift = true}), "#showtooltip Fear\n"
+        .. "/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]\n"
+        .. "/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead] Fear")
+    macroSpells(state, false)
+    equal(toolkit.FocusCastMacro({spell = 5782, shift = true, marker = 8}), "#showtooltip Fear\n"
+        .. "/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]\n"
+        .. "/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead]"
+        .. "[@mouseover,harm,nodead][harm,nodead] Fear", "no marker in the Shift form")
+end)
+
+test("FocusCastMacro writes MTF 1.2.3's Polymorph macro once focus works; untargeted and unknown spells", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    macroSpells(state, true)
+    equal(toolkit.FocusCastMacro({spell = 118, marker = 5}), "#showtooltip Polymorph\n"
+        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
+        .. "/tm [@focus,harm,nodead,exists] !5\n"
+        .. "/use [@focus,exists,harm,nodead] Polymorph")
+    equal(toolkit.FocusCastMacro({spell = 118}), "#showtooltip Polymorph\n"
+        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
+        .. "/use [@focus,exists,harm,nodead] Polymorph", "the mark switch off: no /tm")
+    equal(toolkit.FocusCastMacro({spell = 5484, untargeted = true}), "#showtooltip Howl of Terror\n/use Howl of Terror")
+    equal(toolkit.FocusCastMacro({spell = 99999}), nil, "a spell this client lacks")
+    equal(toolkit.FocusCastMacro({spell = "Shackle Undead", chain = false}):sub(-14), "Shackle Undead")
+end)
+
+test("GroupChannel: raid, party, nothing alone, or Say", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local raid, party = false, false
+    state.env.IsInRaid = function() return raid end
+    state.env.IsInGroup = function() return party end
+    equal(toolkit.GroupChannel(), nil)
+    party = true
+    equal(toolkit.GroupChannel(), "PARTY")
+    raid = true
+    equal(toolkit.GroupChannel(), "RAID")
+    equal(toolkit.GroupChannel(true), "SAY")
+end)
+
+test("FormatAnnouncement fills tokens from a values table; a missing marker takes its space", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    state.env.issecretvalue = function(value) return rawequal(value, SECRET) end
+    equal(toolkit.FormatAnnouncement("Banishing %T %M!", {T = "Grunt", M = "{moon}"}), "Banishing Grunt {moon}!")
+    equal(toolkit.FormatAnnouncement("Banishing %T %M!", {T = "Grunt", M = ""}), "Banishing Grunt!")
+    equal(toolkit.FormatAnnouncement("Banishing %T %M!", {T = "Grunt", M = false}), "Banishing Grunt!")
+    equal(toolkit.FormatAnnouncement("Summoning %T in %Z", {T = "100% Bob", Z = "Orgrimmar"}),
+        "Summoning 100% Bob in Orgrimmar", "a % in a name is kept as it is")
+    equal(toolkit.FormatAnnouncement("%C %I for %X", {C = 20, I = "Water"}), "20 Water for %X",
+        "an unknown token stays")
+    equal(toolkit.FormatAnnouncement("Sheep %T", {T = SECRET}), "Sheep", "a secret name is never used")
+    equal(toolkit.MarkerCode(5), "{moon}")
+    equal(toolkit.MarkerCode(0), "")
+    equal(toolkit.MarkerCode(42), "")
+    equal(toolkit.ValidMarker(8), true)
+    equal(toolkit.ValidMarker(9), false)
+    equal(#toolkit.RAID_MARKERS, 9)
+end)
+
+test("an announcer sends each kind at most once every few seconds, only in a group", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local sent = {}
+    state.now = 100
+    state.env.GetTime = function() return state.now end
+    state.env.C_ChatInfo = {SendChatMessage = function(message, chatType) sent[#sent + 1] = chatType .. ":" .. message end}
+    local party, say, enabled = false, false, true
+    state.env.IsInRaid = function() return false end
+    state.env.IsInGroup = function() return party end
+    local announcer = toolkit.CreateAnnouncer({say = function() return say end, enabled = function() return enabled end})
+    equal(announcer:SendGroup("fear", "Fear on Grunt"), false, "alone")
+    party = true
+    equal(announcer:SendGroup("fear", "Fear on Grunt"), true, "alone is no throttle")
+    equal(announcer:SendGroup("fear", "Fear on Grunt"), false, "the same kind within 3 seconds")
+    equal(announcer:SendGroup("banish", "Banish on Imp"), true, "another kind")
+    state.now = 103
+    say = true
+    equal(announcer:SendGroup("fear", "Fear on Grunt"), true)
+    enabled = false
+    state.now = 200
+    equal(announcer:SendGroup("fear", "Fear on Grunt"), false, "switched off")
+    equal(table.concat(sent, "|"), "PARTY:Fear on Grunt|PARTY:Banish on Imp|SAY:Fear on Grunt")
+end)
+
+test("class data: Warlock and Mage tables are whole, and Agony's weights match WTF's ramp", function()
+    local toolkit = fixture().toolkit
+    equal(toolkit.ClassSpells("PRIEST"), nil, "no table until its IDs are checked")
+    for _, class in ipairs({"WARLOCK", "MAGE"}) do
+        local data = toolkit.ClassSpells(class)
+        local controls, ids = {}, {}
+        for _, spell in ipairs(data.control) do
+            assert(type(spell.key) == "string" and type(spell.label) == "string" and #spell.ids > 0, class)
+            controls[spell.key] = spell
+            for _, id in ipairs(spell.ids) do
+                assert(not ids[id], class .. ": " .. id .. " twice")
+                ids[id] = true
+            end
+            if spell.bar then
+                assert(spell.longest > 0, spell.key)
+            end
+        end
+        for _, macro in ipairs(data.macros) do
+            assert(macro.name:sub(1, 2) == "! " and #macro.name <= 16, macro.name)
+            assert(macro.pet or controls[macro.known], macro.name .. " knows a control spell")
+            assert(not macro.marker or controls[macro.marker].marker, macro.name .. " marker")
+        end
+        for _, slot in ipairs(data.dots) do
+            assert(slot.color:match("^%x%x%x%x%x%x%x%x$"), slot.key)
+        end
+        for id, rank in pairs(data.ranks) do
+            assert(data.families[rank[1]], id .. " has a family")
+        end
+    end
+    local warlock = toolkit.ClassSpells("WARLOCK")
+    -- WTF 1.4.1 Predict.lua Weight(): ticks 1-4 half, 5-8 one, then one and a half.
+    for tick = 1, 12 do
+        local expected = tick <= 4 and 0.5 or tick <= 8 and 1 or 1.5
+        equal(toolkit.TickWeight(warlock.families.agony, tick), expected, "agony tick " .. tick)
+        equal(toolkit.TickWeight(warlock.families.corruption, tick), 1)
+    end
+    equal(toolkit.ClassSpells("MAGE").control[1].longest, 50)
+    equal(warlock.control[1].plateTimer, true, "Fear's plate timer is data")
+end)
+
+-- Engine stage B (2.5.0): one owner per kind, the control tracker ------------------
+
+-- Every AddOn named in these tests is a Dyre's AddOn unless listed here.
+local function familyAll(env, outsiders)
+    outsiders = outsiders or {}
+    family(env, setmetatable({}, {__index = function(_, addon)
+        return not outsiders[addon] and "DyresToolkit" or nil
+    end}))
+end
+
+test("owners: the highest enabled claim owns a kind; a tie goes to the first", function()
+    local state = fixture()
+    familyAll(state.env)
+    local toolkit = state.toolkit
+    local heard = {}
+    toolkit.OnOwnerChanged("control:WARLOCK", function(owner, kind) heard[#heard + 1] = tostring(owner) end)
+    equal(toolkit.ClaimOwner("control:WARLOCK", "DyresDebuffTracker", 5), true, "alone, it owns")
+    equal(toolkit.ClaimOwner("control:WARLOCK", "WarlockToolsForever", 10), true, "the class AddOn wins")
+    equal(toolkit.IsOwner("control:WARLOCK", "DyresDebuffTracker"), false)
+    equal(toolkit.KindOwner("control:WARLOCK"), "WarlockToolsForever")
+    toolkit.SetOwnerEnabled("control:WARLOCK", "WarlockToolsForever", false)
+    equal(toolkit.KindOwner("control:WARLOCK"), "DyresDebuffTracker", "switched off steps aside")
+    toolkit.SetOwnerEnabled("control:WARLOCK", "WarlockToolsForever", true)
+    equal(table.concat(heard, ","), "DyresDebuffTracker,WarlockToolsForever,DyresDebuffTracker,WarlockToolsForever")
+    toolkit.ClaimOwner("macros:MAGE", "A", 5)
+    toolkit.ClaimOwner("macros:MAGE", "B", 5)
+    equal(toolkit.KindOwner("macros:MAGE"), "A", "a tie: the first claim")
+    equal(toolkit.KindOwner("announce:MAGE"), nil)
+    equal(toolkit.SetOwnerEnabled("announce:MAGE", "A", false), false, "never claimed")
+    equal(toolkit.ClaimOwner(nil, "A", 1), false)
+end)
+
+test("the plate memory is idempotent: two engines feeding the same plate events agree", function()
+    local state = fixture()
+    local target = mob("Creature-7", "Grunt")
+    world(state, {nameplate4 = mob(SECRET, "Grunt", {same = "target"}), target = target})
+    local toolkit = state.toolkit
+    toolkit.LearnPlate("nameplate4")
+    toolkit.LearnPlate("nameplate4")
+    toolkit.LearnPlates()
+    toolkit.LearnPlates()
+    equal(toolkit.PlateGUID("nameplate4"), "Creature-7", "learned once, the same after twice")
+    equal(toolkit.KnownPlate("Creature-7"), "nameplate4")
+    toolkit.ForgetPlate("nameplate4")
+    toolkit.ForgetPlate("nameplate4")
+    equal(toolkit.PlateGUID("nameplate4"), nil)
+    equal(toolkit.KnownPlate("Creature-7"), nil)
+end)
+
+test("owners: only Dyre's AddOns may claim, so no other AddOn silences one", function()
+    local state = fixture()
+    familyAll(state.env, {Outsider = true})
+    local toolkit = state.toolkit
+    toolkit.ClaimOwner("control:WARLOCK", "WarlockToolsForever", 10)
+    local ok, why = toolkit.ClaimOwner("control:WARLOCK", "Outsider", 999)
+    equal(ok, false)
+    equal(why, "owner claims are for Dyre's AddOns")
+    equal(toolkit.KindOwner("control:WARLOCK"), "WarlockToolsForever", "WTF still owns it")
+    ok, why = toolkit.SetOwnerEnabled("control:WARLOCK", "Outsider", true)
+    equal(ok, false)
+    state.env.C_AddOns = nil
+    equal((toolkit.ClaimOwner("control:MAGE", "MageToolsForever", 10)), false, "no metadata API: no claim")
+end)
+
+test("owners: a failing listener is off until reload, said only in debug mode", function()
+    local state = fixture()
+    familyAll(state.env)
+    local toolkit = state.toolkit
+    local calls = 0
+    toolkit.OnOwnerChanged("bar:X", function() calls = calls + 1; error("boom") end)
+    toolkit.ClaimOwner("bar:X", "A", 1)
+    toolkit.ClaimOwner("bar:X", "B", 2)
+    equal(calls, 1, "off after its first failure")
+    equal(state.said("boom"), false, "quiet outside debug mode")
+end)
+
+-- A client frame for the tracker: shown state, attributes, events, and the
+-- client's rule that a secure frame changes nothing in combat.
+local SECURE_IN_COMBAT = {SetAttribute = true, Show = true, Hide = true, SetShown = true, SetScale = true,
+    EnableMouse = true, SetSize = true, SetPoint = true, ClearAllPoints = true}
+
+local function uiFrame(state, kind, name, parent, template)
+    local frame = stub({kind = kind, name = name, parent = parent, template = template, shown = true,
+        attributes = {}, events = {}, scripts = {}, alpha = 1, scale = 1})
+    local secure = template == "SecureActionButtonTemplate"
+    local methods = {}
+    function methods:Show() self.shown = true end
+    function methods:Hide() self.shown = false end
+    function methods:SetShown(shown) self.shown = shown and true or false end
+    function methods:SetAttribute(key, value) self.attributes[key] = value end
+    function methods:SetScale(scale) self.scale = scale end
+    function methods:EnableMouse(enabled) self.mouse = enabled end
+    function methods:SetSize(width, height) self.width, self.height = width, height end
+    function methods:SetPoint(...) self.point = {...} end
+    function methods:ClearAllPoints() self.point = nil end
+    for key, method in pairs(methods) do
+        frame[key] = function(self, ...)
+            if secure and state.combat and SECURE_IN_COMBAT[key] then
+                error(key .. " on a secure frame in combat")
+            end
+            return method(self, ...)
+        end
+    end
+    function frame:IsShown() return self.shown end
+    function frame:IsVisible()
+        return self.shown and (not self.parent or type(self.parent.IsVisible) ~= "function" or self.parent:IsVisible())
+    end
+    function frame:GetAttribute(key) return self.attributes[key] end
+    function frame:RegisterEvent(event) self.events[event] = true end
+    function frame:UnregisterEvent(event) self.events[event] = nil end
+    function frame:RegisterUnitEvent(event) self.events[event] = true end
+    function frame:SetScript(script, callback) self.scripts[script] = callback end
+    function frame:SetAlpha(alpha) self.alpha = alpha end
+    function frame:SetParent(newParent) self.parent = newParent end
+    function frame:IsForbidden() return false end
+    frame.level = 1
+    function frame:GetFrameLevel() return self.level end
+    function frame:SetFrameLevel(level) self.level = level end
+    function frame:UnregisterAllEvents() self.events = {} end
+    function frame:CreateFontString()
+        local text = stub()
+        function text:SetText(value) self.text = value end
+        function text:GetFont() return "Fonts\\FRIZQT__.TTF", 10, "" end
+        function text:SetFont(font, size) self.size = size end
+        return text
+    end
+    function frame:CreateTexture() return stub() end
+    function frame:CreateMaskTexture() return stub() end
+    state.uiFrames[#state.uiFrames + 1] = frame
+    if name then
+        state.named[name] = frame
+    end
+    return frame
+end
+
+local function emit(state, event, ...)
+    for _, frame in ipairs(state.uiFrames) do
+        if frame.events[event] and frame.scripts.OnEvent then
+            frame.scripts.OnEvent(frame, event, ...)
+        end
+    end
+end
+
+-- Runs the timers due by now.
+local function advance(state, seconds)
+    state.now = state.now + seconds
+    local due = {}
+    for index = #state.timers, 1, -1 do
+        if state.timers[index].at <= state.now then
+            due[#due + 1] = table.remove(state.timers, index)
+        end
+    end
+    for index = #due, 1, -1 do
+        due[index].fn()
+    end
+end
+
+local CONTROL_NAMES = {[5782] = "Fear", [6213] = "Fear", [6215] = "Fear", [710] = "Banish", [18647] = "Banish",
+    [1098] = "Enslave Demon", [5484] = "Howl of Terror", [6358] = "Seduction", [118] = "Polymorph",
+    [12824] = "Polymorph", [28272] = "Polymorph: Pig"}
+
+local function controlWorld(state, units, options)
+    options = options or {}
+    local env = world(state, units)
+    familyAll(env)
+    spellbook(state, {names = CONTROL_NAMES, known = options.known or {[5782] = true, [710] = true, [118] = true},
+        petKnown = options.petKnown})
+    macroClient(state)
+    state.uiFrames, state.named, state.timers, state.sent, state.drivers = {}, {}, {}, {}, {}
+    state.now, state.auras, state.plateFrames = 100, {}, {}
+    env.Enum.StatusBarTimerDirection = {RemainingTime = 1}
+    env.GetTime = function() return state.now end
+    env.C_Timer = {After = function(delay, fn) state.timers[#state.timers + 1] = {at = state.now + delay, fn = fn} end}
+    env.C_XMLUtil = nil
+    env.C_UnitAuras = {GetAuraDataByIndex = function(unit, index)
+        local list = state.auras[unit]
+        return list and list[index]
+    end}
+    env.C_Spell.GetSpellTexture = function() return 136183 end
+    env.GetZoneText = function() return "Orgrimmar" end
+    env.IsInRaid = function() return false end
+    env.IsInGroup = function() return state.group == true end
+    env.C_ChatInfo = {SendChatMessage = function(message, channel) state.sent[#state.sent + 1] = channel .. ":" .. message end}
+    env.RegisterStateDriver = function(frame, _, value) state.drivers[frame] = value end
+    env.UnregisterStateDriver = function(frame) state.drivers[frame] = nil end
+    env.GameTooltip = stub()
+    env.C_NamePlate = {GetNamePlateForUnit = function(unit) return state.plateFrames[unit] end}
+    env.CreateFrame = function(kind, name, parent, template) return uiFrame(state, kind, name, parent, template) end
+    state.focusWorks = function(works) state.toolkit.FocusWorks = function() return works end end
+    return env
+end
+
+-- The player's cast: its start names the mob, its success lands it.
+local function cast(state, target, spellID, castGUID, land)
+    emit(state, "UNIT_SPELLCAST_SENT", "player", target, castGUID, spellID)
+    if land ~= false then
+        emit(state, "UNIT_SPELLCAST_SUCCEEDED", "player", castGUID, spellID)
+    end
+end
+
+local function warlockTracker(state, extra)
+    local store = {enabled = true, markers = {banish = 5}, plateTimers = true, macros = true}
+    local anchor = uiFrame(state, "Frame", "WarlockToolsForeverControl", state.UIParent)
+    local texts = {fear = "Fearing %T", banish = "Banishing %T %M", howl = "Howling"}
+    local spec = {addon = "WarlockToolsForever", priority = 10, class = "WARLOCK", store = store,
+        names = {row = "WarlockToolsForeverControlRow", click = "WarlockToolsForeverControlClick",
+            focus = "WarlockToolsForeverControlFocus"},
+        parent = anchor, rows = 5, locked = function() return state.locked ~= false end,
+        samples = {"Fear (sample)", "Banish (sample)"}, focusBox = {key = "fear"},
+        announce = {text = function(key) return texts[key] end},
+        keeper = {owned = {}}}
+    for key, value in pairs(extra or {}) do spec[key] = value end
+    local tracker, missing = state.toolkit.CreateControlTracker(spec)
+    assert(tracker, tostring(missing))
+    return tracker, store, spec
+end
+
+test("the control tracker keeps every frame name it is given", function()
+    local state = fixture()
+    controlWorld(state)
+    state.focusWorks(true)
+    local tracker = warlockTracker(state)
+    for index = 1, 5 do
+        assert(state.named["WarlockToolsForeverControlRow" .. index], "row " .. index)
+        assert(state.named["WarlockToolsForeverControlClick" .. index], "click " .. index)
+        equal(state.named["WarlockToolsForeverControlClick" .. index].template, "SecureActionButtonTemplate")
+    end
+    assert(state.named.WarlockToolsForeverControlFocus, "the Focus box")
+    equal(#tracker.rows, 5)
+    equal(state.toolkit.CreateControlTracker({addon = "X"}), nil, "a spec without store and names")
+end)
+
+test("a Fear locks its mob as it starts and binds the row by GUID, never by name later", function()
+    local state = fixture()
+    controlWorld(state, {target = mob("Creature-1", "Grunt"), nameplate2 = mob("Creature-2", "Grunt")})
+    state.focusWorks(true)
+    state.group = true
+    local tracker = warlockTracker(state)
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", "cast-1", 5782)
+    -- A tab mid-cast: the target is the other Grunt now.
+    state.units.target = state.units.nameplate2
+    state.units.nameplate1 = mob("Creature-1", "Grunt")
+    emit(state, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", 5782)
+    local row = tracker.rows[1]
+    equal(row.guid, "Creature-1", "the mob locked as the cast started")
+    equal(row.boundUnit, "nameplate1")
+    equal(row.name.text, "Grunt")
+    equal(row.shown, true)
+    equal(state.sent[1], "PARTY:Fearing Grunt", "told as it starts")
+    equal(row.holder.attributes.type1, nil, "a Fear row has no click")
+    contains(tracker:DebugLines()[3], "lastSent spell=5782 target=Grunt unit=target locked=true")
+    -- Gone after the longest Fear plus 5 s.
+    advance(state, 24)
+    equal(row.guid, "Creature-1")
+    advance(state, 1)
+    equal(row.guid, nil)
+    equal(row.boundUnit, "none")
+end)
+
+test("a recast keeps its row; a death through any unit forgets it; a dead mob gets none", function()
+    local state = fixture()
+    controlWorld(state, {target = mob("Creature-1", "Grunt"), nameplate3 = mob("Creature-1", "Grunt")})
+    state.focusWorks(true)
+    local tracker = warlockTracker(state)
+    cast(state, "Grunt", 5782, "c1")
+    cast(state, "Grunt", 6213, "c2")
+    equal(tracker.rows[1].guid, "Creature-1")
+    equal(tracker.rows[2].guid, nil, "the same mob, the same row")
+    state.units.nameplate3.dead = true
+    emit(state, "UNIT_HEALTH", "nameplate3")
+    equal(tracker.rows[1].guid, nil, "dead, seen on its plate")
+    state.units.target.dead = true
+    cast(state, "Grunt", 5782, "c3")
+    equal(tracker.rows[1].guid, nil, "no row for a dead mob")
+end)
+
+test("a secret cast, target, or spell ID is never read", function()
+    local state = fixture()
+    controlWorld(state, {target = mob("Creature-1", "Grunt")})
+    local tracker = warlockTracker(state)
+    emit(state, "UNIT_SPELLCAST_SENT", "player", SECRET, "c1", 5782)
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", SECRET, 5782)
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", "c1", SECRET)
+    emit(state, "UNIT_SPELLCAST_SUCCEEDED", "player", SECRET, 5782)
+    emit(state, "UNIT_SPELLCAST_FAILED", "player", SECRET, 5782)
+    emit(state, "UNIT_HEALTH", SECRET)
+    equal(tracker.rows[1].guid, nil)
+end)
+
+test("Banish with a working focus counts only at your focus, clicks to recast, and goes with the focus", function()
+    local state = fixture()
+    controlWorld(state, {focus = mob("Creature-9", "Imp"), target = mob("Creature-3", "Felhound")})
+    state.focusWorks(true)
+    state.group = true
+    local tracker = warlockTracker(state)
+    cast(state, "Felhound", 710, "c1")
+    equal(tracker.rows[1].guid, nil, "not your focus: no row")
+    equal(state.sent[1], "PARTY:Banishing Felhound", "no marker named off your focus")
+    advance(state, 5)
+    cast(state, "Imp", 710, "c2")
+    local row = tracker.rows[1]
+    equal(row.guid, "Creature-9")
+    equal(row.boundUnit, "focus")
+    equal(row.holder.attributes.type1, "macro")
+    equal(row.holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Banish")
+    equal(row.holder.shown, true)
+    equal(state.sent[2], "PARTY:Banishing Imp {moon}", "%M: the moon the macro gives your focus")
+    state.units.focus = mob("Creature-10", "Imp")
+    emit(state, "PLAYER_FOCUS_CHANGED")
+    equal(row.guid, nil, "your focus became another mob")
+    equal(row.holder.attributes.macrotext1, nil)
+end)
+
+test("a click is set as a pull's cast starts; in combat it waits, and a failed cast gives it back", function()
+    local state = fixture()
+    controlWorld(state, {focus = mob("Creature-9", "Imp")})
+    state.focusWorks(true)
+    local tracker = warlockTracker(state)
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Imp", "c1", 710)
+    local holder = tracker.rows[1].holder
+    equal(holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Banish", "before combat")
+    emit(state, "UNIT_SPELLCAST_FAILED", "player", "c1", 710)
+    equal(holder.attributes.macrotext1, nil, "a cast that never landed gives the row back")
+    state.combat = true
+    cast(state, "Imp", 710, "c2")
+    equal(tracker.rows[1].guid, "Creature-9", "the row shows in combat")
+    equal(holder.attributes.macrotext1, nil, "no secure change in combat")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Banish", "set when combat ends")
+end)
+
+test("the Focus box: Fear on your focus shows there, not twice; its click fears your focus", function()
+    local state = fixture()
+    local focus = mob("Creature-9", "Grunt")
+    controlWorld(state, {focus = focus})
+    state.focusWorks(true)
+    local tracker = warlockTracker(state)
+    local box = state.named.WarlockToolsForeverControlFocus
+    equal(box.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Fear")
+    equal(state.drivers[box], "[@focus,exists,harm,nodead] show; hide")
+    cast(state, "Grunt", 5782, "c1")
+    equal(tracker.rows[1].guid, "Creature-9")
+    equal(tracker.rows[1].shown, false, "the box shows it")
+    equal(box.display.name.text, "Focus: Grunt")
+    state.units.focus = nil
+    emit(state, "PLAYER_FOCUS_CHANGED")
+    equal(tracker.rows[1].shown, true, "back once it is not your focus")
+    state.focusWorks(false)
+    tracker:Refresh()
+    equal(state.drivers[box], "hide", "no box until focus works")
+end)
+
+test("while unlocked, samples show; turned off, nothing shows and nothing is tracked", function()
+    local state = fixture()
+    controlWorld(state, {target = mob("Creature-1", "Grunt")})
+    state.focusWorks(true)
+    state.locked = false
+    local tracker, store = warlockTracker(state)
+    equal(tracker.rows[1].name.text, "Fear (sample)")
+    equal(tracker.rows[1].holder.shown, true, "a slot to drag by")
+    equal(tracker.rows[3].shown, false)
+    state.locked = true
+    store.enabled = false
+    tracker:Refresh()
+    cast(state, "Grunt", 5782, "c1")
+    equal(tracker.rows[1].guid, nil)
+    equal(tracker.rows[1].shown, false)
+    equal(tracker:IsOwner("control"), false, "off steps aside")
+end)
+
+test("without a working focus, Banish rows start from the cast and take no click", function()
+    local state = fixture()
+    controlWorld(state, {mouseover = mob("Creature-4", "Imp")})
+    state.focusWorks(false)
+    local tracker = warlockTracker(state)
+    cast(state, "Imp", 710, "c1")
+    local row = tracker.rows[1]
+    equal(row.guid, "Creature-4", "locked through the mouseover")
+    equal(row.focusOnly, nil)
+    equal(row.holder.attributes.macrotext1, nil)
+    equal(state.drivers[state.named.WarlockToolsForeverControlFocus], "hide")
+end)
+
+test("Fear timers attach to nameplates and come off with them; the switch turns them off", function()
+    local state = fixture()
+    controlWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})
+    state.focusWorks(true)
+    state.plateFrames.nameplate1 = uiFrame(state, "Frame", nil, state.UIParent)
+    local tracker, store = warlockTracker(state)
+    local timer = tracker.plateTimers.nameplate1
+    assert(timer, "attached at Refresh")
+    equal(timer.parent, state.plateFrames.nameplate1)
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    equal(tracker.plateTimers.nameplate1, nil)
+    equal(timer.shown, false)
+    emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(tracker.plateTimers.nameplate1, timer, "pooled")
+    store.plateTimers = false
+    tracker:Refresh()
+    equal(tracker.plateTimers.nameplate1, nil)
+end)
+
+test("Howl of Terror only announces; announcements need the announce kind", function()
+    local state = fixture()
+    controlWorld(state)
+    state.group = true
+    local tracker = warlockTracker(state)
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "", "c1", 5484)
+    equal(state.sent[1], "PARTY:Howling")
+    equal(tracker.rows[1].guid, nil)
+    state.toolkit.ClaimOwner("announce:WARLOCK", "SomeClassAddOn", 20)
+    advance(state, 5)
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "", "c2", 5484)
+    equal(#state.sent, 1, "another AddOn owns it: said once")
+end)
+
+test("the control macros: WTF's text, written only while known, owned, and out of combat", function()
+    local state = fixture()
+    controlWorld(state)
+    state.focusWorks(true)
+    local adopted = {}
+    state.macros[1] = {name = "! Fear", body = "older"}
+    local tracker, store = warlockTracker(state, {onAdopt = function(name) adopted[#adopted + 1] = name end})
+    local byName = {}
+    for _, macro in ipairs(state.macros) do byName[macro.name] = macro.body end
+    equal(byName["! Fear"], state.toolkit.FocusCastMacro({spell = 5782, shift = true}))
+    equal(byName["! Banish"], state.toolkit.FocusCastMacro({spell = 710, marker = 5}))
+    equal(byName["! Seduction"], nil, "no demon that knows it")
+    equal(table.concat(adopted, ","), "! Fear", "another AddOn's macro, kept in place")
+    -- A demon that knows Seduction.
+    state.env.C_SpellBook.IsSpellKnown = function(id, bank) return bank == 1 and id == 6358 or id == 5782 or id == 710 end
+    state.combat = true
+    emit(state, "UNIT_PET", "player")
+    equal(state.toolkit.FocusCastMacro({spell = 6358}) ~= nil, true)
+    for _, macro in ipairs(state.macros) do byName[macro.name] = macro.body end
+    equal(byName["! Seduction"], nil, "in combat it waits")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    byName = {}
+    for _, macro in ipairs(state.macros) do byName[macro.name] = macro.body end
+    contains(byName["! Seduction"], "/use [@focus,exists,harm,nodead,pet:Succubus/Incubus] Seduction")
+    store.macros = false
+    tracker:Refresh()
+    equal(#state.macros, 0, "off deletes them")
+end)
+
+test("a class Tools AddOn owns its class over Dyre's Debuff Tracker: bars, macros, announcements", function()
+    local state = fixture()
+    controlWorld(state, {target = mob("Creature-1", "Grunt")})
+    state.focusWorks(true)
+    state.group = true
+    local wtf, wtfStore = warlockTracker(state)
+    local ddt = warlockTracker(state, {addon = "DyresDebuffTracker", priority = 5,
+        names = {row = "DyresDebuffTrackerControlRow", click = "DyresDebuffTrackerControlClick"}})
+    equal(ddt:IsOwner("control"), false)
+    equal(ddt:Owner("macros"), "WarlockToolsForever")
+    cast(state, "Grunt", 5782, "c1")
+    equal(wtf.rows[1].guid, "Creature-1")
+    equal(ddt.rows[1].guid, nil, "one bar only")
+    equal(#state.sent, 1, "one announcement only")
+    wtfStore.enabled = false
+    wtf:Refresh()
+    equal(ddt:IsOwner("control"), true, "WTF's bar off: the Debuff Tracker's shows")
+    equal(wtf.rows[1].shown, false)
+end)
+
+local function mageTracker(state, extra)
+    local store = {enabled = true, macros = true}
+    local spec = {addon = "MageToolsForever", priority = 10, class = "MAGE", store = store, rows = 1,
+        names = {row = {"MageToolsForeverPolymorphBar"}, click = {"MageToolsForeverPolymorph"}},
+        markerFor = function() return store.mark ~= false and 5 or 0 end,
+        find = {"focus", "target", "plates"},
+        lock = {units = {"focus", "mouseover", "target"}, stopAt = {mouseover = true}},
+        focusLock = {units = {"focus"}}, countdown = true, clickThrough = true, look = {color = {0.75, 0.45, 0.95},
+            label = true}, locked = function() return state.locked ~= false end,
+        announce = {text = function(key) return key == "polymorph" and "Sheeping %T" or nil end},
+        keeper = {owned = {}}}
+    for key, value in pairs(extra or {}) do spec[key] = value end
+    local tracker, missing = state.toolkit.CreateControlTracker(spec)
+    assert(tracker, tostring(missing))
+    return tracker, store
+end
+
+test("MTF's Polymorph bar: one row, its exact names, and a new sheep replaces the old", function()
+    local state = fixture()
+    controlWorld(state, {focus = mob("Creature-1", "Boar")})
+    state.focusWorks(true)
+    local tracker = mageTracker(state)
+    assert(state.named.MageToolsForeverPolymorph and state.named.MageToolsForeverPolymorphBar, "exact names")
+    cast(state, "Boar", 118, "c1")
+    equal(tracker.rows[1].guid, "Creature-1")
+    equal(tracker.rows[1].holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Polymorph")
+    state.units.focus = mob("Creature-2", "Wolf")
+    cast(state, "Wolf", 28272, "c2")
+    equal(tracker.rows[1].guid, "Creature-2", "the next sheep at your focus")
+    equal(tracker.rows[1].holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Polymorph: Pig")
+    equal(tracker.rows[1].holder.mouse, true, "a sheep to click")
+    local byName = {}
+    for _, macro in ipairs(state.macros) do byName[macro.name] = macro.body end
+    equal(byName["! Polymorph"], "#showtooltip Polymorph\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
+        .. "/tm [@focus,harm,nodead,exists] !5\n/use [@focus,exists,harm,nodead] Polymorph", "MTF 1.2.3's macro")
+end)
+
+test("MTF without focus: the chain locks the mob, and with no unit the name counts the time down", function()
+    local state = fixture()
+    controlWorld(state, {target = mob("Creature-5", "Boar"), mouseover = mob("Creature-6", "Wolf")})
+    state.focusWorks(false)
+    local tracker = mageTracker(state)
+    cast(state, "Boar", 118, "c1")
+    equal(tracker.rows[1].guid, nil, "a mouseover is there: only the mouseover counts (MTF's chain)")
+    state.units.mouseover = nil
+    state.auras.target = {{spellId = 118, expirationTime = 150}}
+    cast(state, "Boar", 118, "c2")
+    local row = tracker.rows[1]
+    equal(row.guid, "Creature-5")
+    equal(row.boundUnit, "target")
+    equal(row.holder.attributes.macrotext1, nil, "no click without a focus")
+    equal(row.holder.mouse, false, "clicks pass through while locked")
+    equal(row.holder.shown, true, "the holder stays with the bar")
+    state.units.target = nil
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(row.boundUnit, "none")
+    equal(row.name.text, "Boar  |cff999999" .. "50 s|r")
+    advance(state, 1)
+    equal(row.name.text, "Boar  |cff999999" .. "49 s|r", "counts down while no unit shows it")
+    equal(#state.timers > 0, true)
+    advance(state, 60)
+    equal(row.guid, nil, "forgotten after the longest Polymorph plus 5 s")
+    local before = #state.timers
+    advance(state, 1)
+    equal(#state.timers <= before, true, "the countdown stops on its own")
+end)
+
+test("a counted-down mob whose nameplate comes into view drops its countdown text at once", function()
+    local state = fixture()
+    controlWorld(state, {target = mob("Creature-5", "Boar")})
+    state.focusWorks(false)
+    local tracker = mageTracker(state)
+    state.auras.target = {{spellId = 118, expirationTime = 150}}
+    cast(state, "Boar", 118, "c1")
+    local row = tracker.rows[1]
+    state.units.target = nil
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(row.name.text, "Boar  |cff999999" .. "50 s|r")
+    state.units.nameplate1 = mob("Creature-5", "Boar")
+    emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(row.boundUnit, "nameplate1")
+    equal(row.name.text, "Boar", "no countdown once a unit shows the mob, before the next tick")
+end)
+
+test("ApplyLook resizes the rows at once, also in combat, and rebuilds no engine slot", function()
+    local state = fixture()
+    controlWorld(state, {focus = mob("Creature-1", "Boar")})
+    state.focusWorks(true)
+    local tracker = mageTracker(state)
+    local frames = #state.uiFrames
+    local width = tracker.rows[1].width
+    state.inCombat = true
+    tracker:ApplyLook()
+    equal(#state.uiFrames, frames, "no new frame")
+    equal(tracker.rows[1].width, width, "same look, same size")
+    state.inCombat = false
+end)
+
+test("without either aura engine the tracker stays off and says what is missing", function()
+    local state = fixture()
+    controlWorld(state)
+    state.env.C_UnitAuras = nil
+    local tracker, missing = state.toolkit.CreateControlTracker({addon = "X", store = {}, class = "WARLOCK",
+        names = {row = "R", click = "C"}})
+    equal(tracker, nil)
+    contains(missing, "CustomAuraContainerTemplate")
+end)
+
+-- Engine stage C (2.5.0): the DoT tracker, the plate dots, the prediction --------------
+
+local DOT_NAMES = {[172] = "Corruption", [6222] = "Corruption", [348] = "Immolate", [980] = "Curse of Agony",
+    [603] = "Curse of Doom", [702] = "Curse of Weakness", [18265] = "Siphon Life", [5782] = "Fear"}
+
+-- WTF's db.tracker at its defaults, as the owner repairs it.
+local function trackerStore(extra)
+    local store = {enabled = true, theme = "bars", order = {"curse", "bane", "corruption", "immolate", "siphon", "control"},
+        sizes = {compact = {iconSize = 22, nameWidth = 110, textScale = 100, namePosition = "left"},
+            bars = {barWidth = 290, lineHeight = 16, textScale = 100, namePosition = "above"}},
+        health = false, healthText = "none", panelOpacity = {target = 100, focus = 100, list = 100}, sections = {},
+        onPlates = {curse = true, bane = true, corruption = true, immolate = true, siphon = true},
+        plateDots = true, plateDotsOffset = 50, plateDotsOpacity = 100}
+    for key, value in pairs(extra or {}) do store[key] = value end
+    return store
+end
+
+local function dotWorld(state, units, known)
+    local env = controlWorld(state, units)
+    spellbook(state, {names = DOT_NAMES, book = known or {{172, "Corruption"}, {348, "Immolate"}, {980, "Curse of Agony"}}})
+    env.Enum.StatusBarTimerDirection = {RemainingTime = 1}
+    env.C_Spell.GetSpellTexture = function() return 136183 end
+    return env
+end
+
+local function dotTracker(state, extra)
+    local store = trackerStore(extra and extra.store)
+    local saved = {}
+    local spec = {addon = "WarlockToolsForever", priority = 10, class = "WARLOCK", store = store,
+        names = {target = "WarlockToolsForeverTracker", focus = "WarlockToolsForeverTrackerFocus",
+            list = "WarlockToolsForeverTrackerList"},
+        locked = function() return state.locked ~= false end,
+        movable = {register = function(frame, save) saved[frame] = save end}}
+    for key, value in pairs(extra or {}) do
+        if key ~= "store" then spec[key] = value end
+    end
+    local tracker, missing = state.toolkit.CreateDotTracker(spec)
+    assert(tracker, tostring(missing))
+    return tracker, store, saved
+end
+
+test("the DoT tracker keeps WTF's three section names and its pinned recasts", function()
+    local state = fixture()
+    dotWorld(state)
+    local tracker, store, saved = dotTracker(state)
+    for _, name in ipairs({"WarlockToolsForeverTracker", "WarlockToolsForeverTrackerFocus",
+        "WarlockToolsForeverTrackerList"}) do
+        assert(state.named[name], name)
+    end
+    equal(tracker.sections.focus, state.named.WarlockToolsForeverTrackerFocus)
+    -- One slot per family you know, in the saved order: Bane, Corruption, Immolate.
+    equal(#tracker.shown, 3)
+    local macros = {}
+    for _, button in pairs(tracker.pinned.target.casts) do macros[#macros + 1] = button.attributes.macrotext1 end
+    table.sort(macros)
+    equal(table.concat(macros, "|"), "/use [@target,harm,nodead] Corruption|/use [@target,harm,nodead] Curse of Agony|"
+        .. "/use [@target,harm,nodead] Immolate")
+    local focusCast = next(tracker.pinned.focus.casts) and select(2, next(tracker.pinned.focus.casts))
+    contains(focusCast.attributes.macrotext1, "[@focus,exists,harm,nodead]")
+    equal(state.drivers[tracker.pinned.target], "[@target,harm,nodead] show; hide")
+    saved[tracker.sections.list]({point = "TOP", relativePoint = "TOP", x = 1, y = 2})
+    equal(store.sections.list.x, 1, "a drag saves into the owner's table")
+    equal(state.toolkit.CreateDotTracker({addon = "X"}), nil)
+end)
+
+test("a DoT lists the mob it was aimed at as it started, not the one you tabbed to", function()
+    local state = fixture()
+    local first = mob("Creature-1", "Grunt")
+    dotWorld(state, {target = first, nameplate1 = first})
+    local tracker = dotTracker(state)
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", "c1", 172)
+    state.units.target = mob("Creature-2", "Grunt")
+    emit(state, "UNIT_SPELLCAST_SUCCEEDED", "player", "c1", 172)
+    local row = tracker.rows[1]
+    equal(row.guid, "Creature-1")
+    equal(row.boundUnit, "nameplate1", "its nameplate first")
+    equal(row.shown, true, "listed: not your target any more")
+    equal(row.name.text, "Grunt")
+    contains(tracker:DebugLines()[1], "owner=WarlockToolsForever")
+    -- Your target is never listed twice.
+    state.units.target = first
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(row.shown, false)
+end)
+
+test("a DoT row goes with its mob's death, after combat, and out of combat when unseen 10 s", function()
+    local state = fixture()
+    dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt"), mouseover = mob("Creature-3", "Imp")})
+    local tracker = dotTracker(state)
+    cast(state, "Grunt", 172, "c1")
+    equal(tracker.rows[1].guid, "Creature-1")
+    state.units.nameplate1.dead = true
+    emit(state, "UNIT_HEALTH", "nameplate1")
+    equal(tracker.rows[1].guid, nil, "dead")
+    cast(state, "Grunt", 348, "c2")
+    equal(tracker.rows[1].guid, nil, "a dead mob is not listed again until combat ends")
+    emit(state, "PLAYER_REGEN_ENABLED")
+    cast(state, "Imp", 172, "c3")
+    local row = tracker.rows[1]
+    equal(row.guid, "Creature-3")
+    state.units.mouseover = nil
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate9")
+    equal(row.boundUnit, "none")
+    advance(state, 11)
+    equal(row.guid, nil, "unseen out of combat")
+end)
+
+test("a Bane cast is remembered in the owner's store, and the pinned slot recasts it", function()
+    local state = fixture()
+    dotWorld(state, {target = mob("Creature-1", "Grunt")}, {{980, "Curse of Agony"}, {603, "Curse of Doom"}})
+    local tracker, store = dotTracker(state)
+    cast(state, "Grunt", 603, "c1")
+    equal(store.lastBane, "Curse of Doom")
+    local recast
+    for _, button in pairs(tracker.pinned.target.casts) do
+        if button.spellName == "Curse of Doom" then recast = button end
+    end
+    assert(recast, "the Bane slot recasts the last one")
+    equal(recast.attributes.macrotext1, "/use [@target,harm,nodead] Curse of Doom")
+end)
+
+test("a rebuild in combat waits; the tracker never changes a secure row in combat", function()
+    local state = fixture()
+    dotWorld(state)
+    local tracker, store = dotTracker(state)
+    local before = tracker.pinned.target
+    state.combat = true
+    store.theme = "compact"
+    tracker:Rebuild()
+    equal(tracker.pinned.target, before, "not yet")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    assert(tracker.pinned.target ~= before, "rebuilt when combat ends")
+    equal(tracker.theme, "compact")
+end)
+
+test("Dyre's Debuff Tracker's DoT tracker steps aside for the class AddOn's", function()
+    local state = fixture()
+    dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})
+    local wtf, wtfStore = dotTracker(state)
+    local ddt = dotTracker(state, {addon = "DyresDebuffTracker", priority = 5,
+        names = {target = "DDTTarget", focus = "DDTFocus", list = "DDTList"}})
+    equal(ddt:IsOwner(), false)
+    equal(ddt.sections.target.shown, false, "hidden")
+    cast(state, "Grunt", 172, "c1")
+    equal(wtf.rows[1].guid, "Creature-1")
+    equal(ddt.rows[1].guid, nil, "one tracker only")
+    wtfStore.enabled = false
+    wtf:Refresh()
+    equal(ddt:IsOwner(), true)
+    equal(ddt.sections.target.shown, true)
+end)
+
+test("mob health on a row: the predictor draws the damage to come with the row's health", function()
+    local state = fixture()
+    local grunt = mob("Creature-1", "Grunt")
+    dotWorld(state, {nameplate1 = grunt})
+    state.env.UnitHealth = function() return 300 end
+    state.env.UnitHealthMax = function() return 500 end
+    local drawn = {}
+    local predictor = {Available = function() return true end,
+        DrawRow = function(_, bar, guid, health) drawn[#drawn + 1] = tostring(guid) .. ":" .. tostring(health); return false end,
+        SetTracker = function(self, tracker) self.tracker = tracker end}
+    local tracker = dotTracker(state, {store = {health = true, healthText = "both"}, predictor = predictor})
+    equal(predictor.tracker, tracker, "the predictor redraws these rows")
+    cast(state, "Grunt", 172, "c1")
+    equal(drawn[#drawn], "Creature-1:300")
+    equal(tracker.rows[1].knownHealth.health, 300, "kept for when no unit shows it")
+    tracker:RefreshPrediction("Creature-1")
+    equal(drawn[#drawn], "Creature-1:300")
+end)
+
+test("plate dots: a bubble per live hostile plate in combat, one dot per known DoT you chose", function()
+    local state = fixture()
+    dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})
+    state.env.UnitAffectingCombat = function() return false end
+    state.plateFrames.nameplate1 = uiFrame(state, "Frame", nil, state.UIParent)
+    local tracker, store = dotTracker(state)
+    local dots = assert(state.toolkit.CreatePlateDots({tracker = tracker, store = store}))
+    local bubble = dots.byUnit.nameplate1
+    assert(bubble, "attached")
+    equal(bubble.parent, state.plateFrames.nameplate1)
+    equal(#dots.known, 3, "Bane, Corruption, Immolate")
+    equal(bubble.shown, false, "out of combat")
+    emit(state, "PLAYER_REGEN_DISABLED")
+    equal(bubble.shown, true)
+    state.units.nameplate1.dead = true
+    emit(state, "UNIT_HEALTH", "nameplate1")
+    equal(bubble.shown, false, "a dead mob")
+    store.plateDotsOpacity = 40
+    dots:ApplyOpacity()
+    equal(bubble.alpha, 0.4)
+    store.onPlates.corruption = false
+    dots:Refresh()
+    equal(#dots.known, 2)
+    store.plateDots = false
+    dots:Refresh()
+    equal(dots.byUnit.nameplate1, nil, "switched off")
+end)
+
+-- The combat log, as the client gives it: one event at a time.
+local function combatLog(state)
+    local env = state.env
+    state.cleu = {}
+    env.C_CombatLog = {GetCurrentEventInfo = function() return unpack(state.cleu) end,
+        IsCombatLogRestricted = function() return state.restricted == true end}
+    state.log = function(subevent, source, dest, spellID, amount)
+        state.cleu = {state.now, subevent, false, source, "Me", 0, 0, dest, "Grunt", 0, 0, spellID,
+            DOT_NAMES[spellID], 1, amount}
+        emit(state, "COMBAT_LOG_EVENT_UNFILTERED")
+    end
+end
+
+local function predictWorld(state)
+    dotWorld(state, {player = {guid = "Player-1", name = "Me"}, target = mob("Creature-1", "Grunt")})
+    combatLog(state)
+    state.env.TargetFrame = nil
+end
+
+local function predictor(state, extra)
+    local store = {enabled = true, plates = true, dies = true, fill = "stripes", opacity = 70, outline = "solid"}
+    local spec = {addon = "WarlockToolsForever", priority = 10, class = "WARLOCK", store = store}
+    for key, value in pairs(extra or {}) do spec[key] = value end
+    local made, why = state.toolkit.CreateDotPredictor(spec)
+    assert(made, tostring(why))
+    return made, store
+end
+
+test("the predictor learns each DoT's tick from the combat log and saves it for the toolkit", function()
+    local state = fixture()
+    predictWorld(state)
+    local made = predictor(state)
+    state.log("SPELL_AURA_APPLIED", "Player-1", "Creature-1", 172, "DEBUFF")
+    -- Corruption rank 1: 40 over 12 s, 4 ticks; learned at level 4 with no spell power.
+    equal(made:PredictedDamage("Creature-1"), 40)
+    state.now = state.now + 3
+    state.log("SPELL_PERIODIC_DAMAGE", "Player-1", "Creature-1", 172, 12)
+    equal(made:PredictedDamage("Creature-1"), 36, "3 ticks of the learned 12")
+    equal(state.toolkit.LearnedTicks()[172].tick, 12, "in DyresToolkitDB.ticks")
+    equal(state.toolkit.HealthBars.GetPredictedDamage("Creature-1"), 36, "the active HealthBars source")
+    state.log("SPELL_PERIODIC_DAMAGE", "Player-2", "Creature-1", 172, 999)
+    equal(made:PredictedDamage("Creature-1"), 36, "someone else's DoT never counts")
+    state.log("UNIT_DIED", "", "Creature-1", 0)
+    equal(made:PredictedDamage("Creature-1"), 0, "dead")
+    contains(table.concat(made:DebugLines(), "|"), "No DoTs of yours")
+end)
+
+test("Curse of Agony's ramp comes from the class data's weights", function()
+    local state = fixture()
+    predictWorld(state)
+    local made = predictor(state)
+    state.log("SPELL_AURA_APPLIED", "Player-1", "Creature-1", 980, "DEBUFF")
+    -- 84 over 24 s: four ticks of 3.5, four of 7, four of 10.5.
+    equal(made:PredictedDamage("Creature-1"), 84)
+    state.now = state.now + 2
+    state.log("SPELL_PERIODIC_DAMAGE", "Player-1", "Creature-1", 980, 3.5)
+    -- A first tick of 3.5 at weight 0.5 stands for an average of 7: the rest
+    -- is 3 x 3.5 + 4 x 7 + 4 x 10.5 = 80.5.
+    equal(made:PredictedDamage("Creature-1"), 81)
+    equal(state.toolkit.LearnedTicks()[980].tick, 7, "saved as the average it stands for")
+end)
+
+test("WTF's older ticks are copied once, never over a newer one; unknown ranks are dropped", function()
+    local state = fixture()
+    predictWorld(state)
+    predictor(state, {legacyTicks = {[172] = {tick = 11, power = 0}, [99999] = {tick = 5, power = 0},
+        [348] = {tick = -1, power = 0}}})
+    local ticks = state.toolkit.LearnedTicks()
+    equal(ticks[172].tick, 11)
+    equal(ticks[99999], nil, "not a known rank")
+    equal(ticks[348], nil, "repaired")
+    ticks[172] = {tick = 14, power = 0}
+    state.toolkit.HealthBars.SetSourceEnabled("WarlockToolsForever", false)
+    local again = state.toolkit.CreateDotPredictor({addon = "WarlockToolsForever", priority = 10, class = "WARLOCK",
+        store = {enabled = true}, legacyTicks = {[172] = {tick = 9, power = 0}}})
+    assert(again)
+    equal(state.toolkit.LearnedTicks()[172].tick, 14, "copied once only")
+end)
+
+test("no predictor where the combat log is restricted, or for an AddOn outside the family", function()
+    local state = fixture()
+    predictWorld(state)
+    state.restricted = true
+    local made, why = state.toolkit.CreateDotPredictor({addon = "WarlockToolsForever", class = "WARLOCK", store = {}})
+    equal(made, nil)
+    equal(why, "the combat log")
+    state.restricted = false
+    familyAll(state.env, {Outsider = true})
+    made, why = state.toolkit.CreateDotPredictor({addon = "Outsider", class = "WARLOCK", store = {}})
+    equal(made, nil)
+    contains(why, "Dyre's AddOns")
+end)
+
+test("WTF at 10 draws over Dyre's Debuff Tracker at 5; its rows show the active source's damage", function()
+    local state = fixture()
+    predictWorld(state)
+    local wtf, wtfStore = predictor(state)
+    local ddt = predictor(state, {addon = "DyresDebuffTracker", priority = 5})
+    equal(state.toolkit.HealthBars.IsActiveSource("WarlockToolsForever"), true)
+    equal(state.toolkit.HealthBars.IsActiveSource("DyresDebuffTracker"), false)
+    wtfStore.enabled = false
+    wtf:Refresh()
+    equal(state.toolkit.HealthBars.IsActiveSource("DyresDebuffTracker"), true, "off steps aside")
+    assert(ddt)
 end)
 
 local failed = 0

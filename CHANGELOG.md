@@ -4,6 +4,13 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.5.0
+
+### Other changes
+- For AddOn authors: the first part of the shared tracking engine. `SpellbookIDsByName`, `SpellSet`, `IndexSpells`, `KnowsAny`, and `PetKnows` find a spell by name in every client's spellbook; `CreateMacroKeeper`, `OutOfCombat`, `MarkLine`, and `FocusCastMacro` keep character macros, out of combat only, and take over another Dyre's AddOn's macro by its name instead of making a second one; `CreateAnnouncer`, `FormatAnnouncement`, `GroupChannel`, and `RAID_MARKERS` send group messages; `ClassData` holds the Warlock and Mage spell tables. Contracts 1 and 2 are unchanged.
+- For AddOn authors: `CreateControlTracker` is the crowd-control bar of Warlock Tools Forever and Mage Tools Forever in one engine: a row per mob you Fear, Banish, or Polymorph, its click to cast again on your focus, the Focus box, timers under nameplates, the group messages, and the macros. `ClaimOwner`, `IsOwner`, and `OnOwnerChanged` make sure that with two Dyre's AddOns on, only one shows a bar, writes the macros, or tells your group: a class's own Tools AddOn first.
+- For AddOn authors: `CreateDotTracker`, `CreatePlateDots`, and `CreateDotPredictor` are Warlock Tools Forever's DoT tracker, nameplate dots, and damage to come in one engine. The ticks each DoT has shown are now kept once for every Dyre's AddOn, and Warlock Tools Forever's are carried over the first time.
+
 ## 2.4.0
 
 ### Features

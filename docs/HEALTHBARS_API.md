@@ -129,7 +129,7 @@ TOC has `## Group: DyresToolkit`.
 ```lua
 api.RegisterSource({
     addon = "DyresDebuffTracker",
-    priority = 20,                           -- Warlock Tools Forever uses 10
+    priority = 5,                            -- Warlock Tools Forever uses 10, and wins
     damage = function(unitOrGUID) ... end,   -- number or nil
     willDie = function(unitOrGUID) ... end,  -- optional: true, false, or nil
     refresh = function(unit) ... end,        -- optional: draw again (unit nil: all)
