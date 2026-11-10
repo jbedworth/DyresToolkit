@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.7.0
+
+### Other changes
+- For AddOn authors: the smart curse for the DoT tracker. With `curseMode` "smart" in the tracker's store, the Curse slot on your target and focus casts Curse of Tongues on a mob with mana, else Curse of the Elements, else Curse of Weakness; Ctrl-click casts Tongues, Shift-click Weakness, Alt-click Recklessness. The game lets a click change only out of combat, so the pick is set before the pull; a letter on the slot (T, E, or W) shows the best curse for the mob, also in combat. `names.smartCurse` adds a button for a keybind, and `onSmartCurse(body)` gives the owner the text for a "! Curse" macro. Without Curse of Weakness, there is none of this.
+
 ## 2.6.0
 
 ### Features

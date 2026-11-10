@@ -398,6 +398,22 @@ WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
   Every secure change (pinned recasts, state drivers, rebuilds) goes
   through `OutOfCombat`. Not the owner: the sections hide and nothing is
   tracked.
+- Smart curse (2.7.0; John, 2026-11-10, from a WTF player comment): the
+  Curse slot's ClassData `smart` = {weakness, tongues, elements,
+  recklessness} (first ranks; cast by name). A secure click cannot read the
+  mob in combat (no macro condition tests mana or class; attributes lock),
+  so: Alt Recklessness, Shift Weakness, Ctrl Tongues (else Weakness), no
+  modifier the smart pick (`SmartCursePick`: Tongues on a mob with mana
+  (`UnitHasMana`: power type 0 with a max above 0; nil for secret), else
+  Elements, else Weakness), set out of combat on target, focus, and power
+  changes, only when a pick changed. `SmartCurseMacro(names, pick, unit)`.
+  `store.curseMode` "smart" makes the pinned Curse slot cast it ("last", the
+  default, keeps the last-used recast); the marker (T, E, W on the icon's
+  corner) reads the mob at any time, in smart mode, unless
+  `store.curseMarker == false`. `names.smartCurse` makes a hidden secure
+  button for a CLICK keybind; `onSmartCurse(body)` gives the owner the
+  "! Curse" macro body (nil without Weakness: no macro, no click). Methods
+  `ApplySmartCurse()`, `SmartCurseBody()`. Not checked in client yet.
 - PlateDots.lua: `CreatePlateDots{tracker, store, slots, color}` (store:
   enabled, plateDots, plateDotsOffset, plateDotsOpacity, onPlates);
   `Refresh`, `ApplyColors`, `ApplyOpacity`; fields `byUnit`, `known`. Only

@@ -3413,6 +3413,113 @@ test("plate dots: a bubble per live hostile plate in combat, one dot per known D
 end)
 
 -- The combat log, as the client gives it: one event at a time.
+-- The smart curse (2.7.0) ---------------------------------------------------------------
+
+local CURSE_BOOK = {{702, "Curse of Weakness"}, {1714, "Curse of Tongues"}, {1490, "Curse of the Elements"},
+    {704, "Curse of Recklessness"}, {172, "Corruption"}}
+
+local function curseWorld(state, units, book)
+    local env = dotWorld(state, units, book or CURSE_BOOK)
+    local names = {}
+    for id, name in pairs(DOT_NAMES) do names[id] = name end
+    for _, item in ipairs(CURSE_BOOK) do names[item[1]] = item[2] end
+    env.C_Spell.GetSpellName = function(id) return names[id] end
+    env.UnitPowerType = function(unit) return state.units[unit] and state.units[unit].power end
+    env.UnitPowerMax = function(unit) return state.units[unit] and state.units[unit].mana end
+    return env
+end
+
+local function curseButton(tracker, key)
+    for slotIndex, button in pairs(tracker.pinned[key].casts) do
+        if button.mark then return button, slotIndex end
+    end
+end
+
+test("the smart curse macro: modifiers first, then the pick; only known curses", function()
+    local state = fixture()
+    curseWorld(state, {target = mob("Creature-1", "Shaman", {power = 0, mana = 500})})
+    local toolkit = state.toolkit
+    local all = {weakness = "Curse of Weakness", tongues = "Curse of Tongues", elements = "Curse of the Elements",
+        recklessness = "Curse of Recklessness"}
+    equal(toolkit.SmartCurseMacro(all, nil), "/use [mod:alt] Curse of Recklessness; [mod:shift] Curse of Weakness; "
+        .. "[mod:ctrl] Curse of Tongues; Curse of the Elements")
+    equal(toolkit.SmartCurseMacro(all, "Curse of Tongues", "focus"),
+        "/use [@focus,exists,harm,nodead,mod:alt] Curse of Recklessness; [@focus,exists,harm,nodead,mod:shift] "
+        .. "Curse of Weakness; [@focus,exists,harm,nodead,mod:ctrl] Curse of Tongues; "
+        .. "[@focus,exists,harm,nodead] Curse of Tongues")
+    equal(toolkit.SmartCurseMacro({weakness = "Curse of Weakness"}),
+        "/use [mod:shift] Curse of Weakness; [mod:ctrl] Curse of Weakness; Curse of Weakness",
+        "Weakness alone: every click is Weakness")
+    equal(toolkit.SmartCurseMacro({tongues = "Curse of Tongues"}), nil, "nothing without Weakness")
+    equal(toolkit.SmartCursePick(all, "target"), "Curse of Tongues", "a mob with mana")
+    state.units.target.power = 1
+    equal(toolkit.SmartCursePick(all, "target"), "Curse of the Elements", "a mob with rage")
+    state.units.target.power, state.units.target.mana = 0, 0
+    equal(toolkit.SmartCursePick(all, "target"), "Curse of the Elements", "a mana bar with no mana")
+    state.units.target.power = SECRET
+    equal(toolkit.UnitHasMana("target"), nil, "secret: unknown")
+    equal(toolkit.SmartCursePick(all, "target"), "Curse of the Elements", "unknown: the default")
+    equal(toolkit.SmartCursePick({weakness = "Curse of Weakness"}, "target"), "Curse of Weakness")
+end)
+
+test("smart mode: the pinned Curse slot picks by mob out of combat, and the marker follows in combat", function()
+    local state = fixture()
+    curseWorld(state, {target = mob("Creature-1", "Shaman", {power = 0, mana = 500})})
+    local bodies = {}
+    local tracker, store = dotTracker(state, {store = {curseMode = "smart", lastCurse = "Curse of Weakness"},
+        names = {target = "T", focus = "F", list = "L", smartCurse = "WarlockToolsForeverSmartCurse"},
+        onSmartCurse = function(body) bodies[#bodies + 1] = body end})
+    local button = curseButton(tracker, "target")
+    assert(button, "a marker on the Curse slot")
+    contains(button.attributes.macrotext1, "[@target,harm,nodead] Curse of Tongues", "a caster gets Tongues")
+    contains(button.attributes.macrotext1, "[@target,harm,nodead,mod:alt] Curse of Recklessness")
+    equal(button.mark.text, "T")
+    local key = state.named.WarlockToolsForeverSmartCurse
+    equal(key.shown, false, "the keybind's button never shows")
+    equal(key.attributes.macrotext1, "#showtooltip\n/use [mod:alt] Curse of Recklessness; [mod:shift] Curse of "
+        .. "Weakness; [mod:ctrl] Curse of Tongues; Curse of Tongues")
+    equal(bodies[#bodies], key.attributes.macrotext1, "the owner gets the macro body")
+    equal(tracker:SmartCurseBody(), key.attributes.macrotext1)
+    -- In combat, a melee mob: the marker changes, the secure click waits.
+    state.combat = true
+    state.units.target = mob("Creature-2", "Grunt", {power = 1})
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(button.mark.text, "E", "the marker reads the mob in combat")
+    contains(button.attributes.macrotext1, "[@target,harm,nodead] Curse of Tongues", "no secure change in combat")
+    local count = #bodies
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    contains(button.attributes.macrotext1, "[@target,harm,nodead] Curse of the Elements", "set when combat ends")
+    equal(#bodies, count + 1, "one new macro body")
+    -- The same pick again rewrites nothing.
+    state.units.target = mob("Creature-3", "Grunt", {power = 1})
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(#bodies, count + 1)
+    -- Last-used mode: the slot recasts the last curse; no marker.
+    store.curseMode = "last"
+    tracker:ApplySmartCurse()
+    equal(button.attributes.macrotext1, "/use [@target,harm,nodead] Curse of Weakness")
+    equal(button.mark.text, "")
+    -- The marker can be turned off in smart mode.
+    store.curseMode, store.curseMarker = "smart", false
+    tracker:ApplySmartCurse()
+    equal(button.mark.text, "")
+end)
+
+test("no Curse of Weakness: no smart curse, no macro body, no keybind click", function()
+    local state = fixture()
+    curseWorld(state, {target = mob("Creature-1", "Grunt")}, {{1714, "Curse of Tongues"}, {172, "Corruption"}})
+    local bodies = {}
+    local tracker = dotTracker(state, {store = {curseMode = "smart", lastCurse = "Curse of Tongues"},
+        names = {target = "T", focus = "F", list = "L", smartCurse = "SmartKey"},
+        onSmartCurse = function(body) bodies[#bodies + 1] = tostring(body) end})
+    equal(tracker:SmartCurseBody(), nil)
+    equal(state.named.SmartKey.attributes.macrotext1, nil)
+    equal(#bodies, 0, "never told: there is no macro to write")
+    local button = curseButton(tracker, "target")
+    equal(button.attributes.macrotext1, "/use [@target,harm,nodead] Curse of Tongues", "the last-used rule")
+end)
+
 local function combatLog(state)
     local env = state.env
     state.cleu = {}
