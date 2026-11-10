@@ -4,6 +4,22 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.6.0
+
+### Features
+- DoT damage prediction now works on WoW: Forever. The purple damage-to-come block and the red skull **DIES** badge show on your target, focus, nameplates, and DoT tracker rows, as on Classic Era. Forever has no combat log for AddOns and hides damage numbers in combat, so the toolkit follows your casts, the DoT's tooltip, and when each tick lands. After each fight, it learns your real tick sizes from Blizzard's damage meter. The method comes from Does It Die, by Joe Greive.
+- On a DoT tracker row on Forever, **DIES** shows just left of the health numbers, which stay; with no health text, at the right end of the health bar.
+
+### Fixes
+- In dungeons and raids, the DoT tracker's list of other mobs and the crowd-control bar now show your mobs. The game hides mob IDs there, so the toolkit follows each mob by its enemy nameplate. In those places, the list needs enemy nameplates on, and a row goes when the mob's nameplate goes.
+- **DIES** now shows on EllesmereUI's target and focus frames. Before, only the damage-to-come block showed there: EllesmereUI cuts off what is drawn outside its frames.
+- On Forever, a DoT you cast at the mob under your mouse, or at a mob the game hides and that has no nameplate, is no longer counted on your target. With a friendly target or a corpse targeted, a DoT counts on your soft enemy, as the game casts it.
+
+### Other changes
+- For AddOn authors: `DrawPrediction`'s style takes the DIES places `"center"`, `"above"`, and `"below"`, and offsets `x` and `y` (whole pixels, at most 200 each way); `CreateDotPredictor` reads them from its store (`diesPlace`, `diesX`, `diesY` for the target and focus frames; `plateDiesPlace`, `plateDiesX`, `plateDiesY` for nameplates; `"auto"` is the toolkit's choice).
+- For AddOn authors: `PlateToken`, `PlateKey`, `KeyPlate`, and `MobKey` give a key for a mob whose GUID is secret, and `LockCast` takes `plateKey`. A key of the form `plate:nameplateN` is good only until that plate goes.
+- For AddOn authors: `CreateDotPredictor` now gives a predictor where the combat log is restricted (`predictor.hidden` is true), and `DrawPrediction` draws with a secret health: it then returns nil for "DIES shows", which Lua cannot know there.
+
 ## 2.5.0
 
 ### Other changes

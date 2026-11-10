@@ -71,8 +71,9 @@ api.RegisterAdapter({
   value without `GetStatusBarTexture` counts as nil.
 - Registered adapters come before the built-in ones, in the order they
   registered.
-- Where the badge goes: the player's own side setting in a Dyre's AddOn,
-  then your `anchor`, then your `side`, then the toolkit's own choice (left
+- Where the badge goes: the player's own place setting in a Dyre's AddOn
+  (since 2.6.0 also center, above, or below the bar, moved by the player's
+  offsets), then your `anchor`, then your `side`, then the toolkit's own choice (left
   of unit frames, right of nameplates, skipping a side that `avoid` or a
   text anchored there says is taken).
 - `avoid` gets `plate` nil for unit frames. It is called each time the toolkit
@@ -114,11 +115,13 @@ api.UnregisterCallback("PREDICTION_CHANGED", callback)
 
 Use these to draw the prediction your own way. Each mob is counted once: when
 several Dyre's AddOns predict damage, only the highest-priority one answers
-(Dyre's Debuff Tracker before Warlock Tools Forever).
+(a class's own Tools AddOn, such as Warlock Tools Forever, before Dyre's
+Debuff Tracker).
 
 On WoW: Forever, unit health is a secret value, so `WillDie` returns nil
-there unless the predicting AddOn can tell by itself. The toolkit draws no
-block or badge where the health is secret.
+there unless the predicting AddOn can tell by itself. Since 2.6.0 the toolkit
+still draws the block and the **DIES** badge there: its own StatusBars take
+the secret health and compare it with the damage, so no Lua code reads it.
 
 ## For Dyre's AddOns only
 

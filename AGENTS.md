@@ -164,8 +164,17 @@ stays 2, so a dependent checks that the functions it uses exist.
   `FindUnit(guid, order)` (tokens, "plates", "memory"; default focus,
   target, plates, memory). `LockCast(targetName, opts)` returns guid, unit,
   look: the mob a cast goes to as it starts, with `units`, `memory`,
-  `secretHostile`, `allowDead`, `stopAtName`, `stopAt`, so WTF's tracker,
-  WTF's Control bar, and MTF's chain each keep their own rules.
+  `secretHostile`, `allowDead`, `stopAtName`, `stopAt`, `plateKey`, so WTF's
+  tracker, WTF's Control bar, and MTF's chain each keep their own rules.
+- Plate keys (2.6.0; John, 2026-11-09, on two WTF player reports; not yet
+  checked in client): creature GUIDs are secret in instances, so
+  `MobKey(unit)` gives the GUID, else the plate memory's, else
+  `plate:nameplateN` (`PlateToken`, `PlateKey`, `KeyPlate`). `FindUnit` takes
+  such a key. A holder must drop it at NAME_PLATE_UNIT_REMOVED, because the
+  token then may show another mob, and must never keep it past that (the DoT
+  tracker's `dead` table holds only real GUIDs). The default locks of the DoT
+  tracker and the Control bar set `plateKey`, and so do MTF's own locks (MTF
+  1.3.2; its focus lock also takes a secret "can attack"). Without a plate, a mob with a secret GUID gets no row.
 - focusWorks: whether this client has a focus target. One flag for the
   whole family in `DyresToolkitDB.focusWorks` (coordinator: a fact about the
   client, and each client install has its own SavedVariables). Nil until
@@ -207,12 +216,25 @@ stays 2, so a dependent checks that the functions it uses exist.
   left while the threat widget shows (in groups); Plater, the side of its
   cast target name from the profile (castbar_target_show and
   castbar_target_anchor sides 1-3 left, 5-7 right; John's: 6) and the raid
-  marker's side while its icon shows. Also when a shown text of the bar or
+  marker's side while its icon shows. A player's own place wins (2.6.0;
+  John, 2026-11-09, "DIES centered in the middle of the target frame"):
+  style `side` "left", "right", "inside", "center", "above", or "below",
+  plus `x` and `y` offsets (whole, at most 200), the owner's store keys
+  `diesPlace`/`diesX`/`diesY` (target and focus) and `plateDiesPlace`/
+  `plateDiesX`/`plateDiesY`; "auto" is the toolkit's choice. Rows keep theirs.
+  Also when a shown text of the bar or
   its parent is anchored just outside that edge (GetPoint only, never
   GetLeft or GetCenter; a secret anchor is never compared). Then the other
   side, then inside the bar's right end. A caller's `style.side` wins.
   Platynator keeps its 22 px place (its layout is per design; checked in
   client by John).
+- Clipping frames (2.6.0; John's screenshot, 2026-11-09: EllesmereUI's
+  target frame showed the block and no DIES): when a frame above the bar
+  clips its children (EllesmereUI 9.8.3's bar clip, the whole unit frame),
+  the badge and the gate go on a holder made on that frame's parent, at its
+  level + 25, shown and hidden with the block (the overlay's OnShow and
+  OnHide). The badge is still placed from the bar. Checked in client by John
+  on Forever, 2026-11-09: DIES left of EllesmereUI's target frame, in a fight.
 - Public HealthBars API (John, 2026-10-31: in 2.4.0; docs/HEALTHBARS_API.md):
   `DyresToolkit.HealthBars`, `API_VERSION` 1, no new global. For outside
   AddOns: `RegisterAdapter{name, plate, unit, side, anchor, strata, level,
@@ -320,9 +342,10 @@ rules are data; CONTRACT stays 2; WTF 1.4.1 and MTF 1.2.3 keep working.
     MageToolsForeverPolymorphBar/MageToolsForeverPolymorph come out exact.
   - Orders are spec fields (lead decision 2a): `find` (FindUnit; default
     the Toolkit's), `lock` (default WTF Control's: focus, mouseover, target,
-    plates, with memory and secretHostile), `focusLock` (default focus with
-    secretHostile). MTF passes `find = {focus, target, plates}`, `lock =
-    {focus, mouseover, target; stopAt mouseover}`, `focusLock = {focus}`.
+    plates, with memory, secretHostile, and plateKey), `focusLock` (default
+    focus with secretHostile and plateKey). MTF passes `find = {focus,
+    target, plates}`, `lock = {focus, mouseover, target; stopAt mouseover;
+    plateKey}`, `focusLock = {focus; plateKey, secretHostile}`.
   - A `click` spell cast while focus works is focus-only (its row binds to
     "focus", goes with it, and clicks `FocusRecastMacro`); otherwise rows
     start from the cast and take no click. `single` spells reuse their row.
@@ -382,9 +405,15 @@ WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
 - DotPredict.lua: `CombatLogUsable()`, `LearnedTicks()`, and
   `CreateDotPredictor(spec)`: `addon`, `priority` (its HealthBars source),
   `class` or `ranks`/`families`/`familyOrder`, `store` (enabled, plates,
-  dies, fill, opacity, outline), `color()`, `legacyTicks`. Nil and "the
-  combat log" where it is restricted (Forever), or why RegisterSource
-  refused. Methods: `Available`, `PredictedDamage(guid)`, `DrawRow(bar,
+  dies, fill, opacity, outline), `color()`, `legacyTicks`. Where the combat
+  log is restricted (Forever), the hidden-ticks path (2.6.0; John,
+  2026-11-08; docs/FOREVER_PREDICT.md and the file's head): casts, tooltips,
+  UNIT_COMBAT timing and school, the damage meter after combat, and
+  `predictor.hidden` true; it never registers the combat log there (the
+  client's popup). Nil and "the combat log" only without C_Timer, or why
+  RegisterSource refused. `DrawPrediction` takes a secret health (the DIES
+  gate: a clip window and a 10000 px StatusBar, Does It Die's method) and
+  returns nil for DIES then; a row then puts DIES just left of its health texts (its `secretPlace`; the numbers stay), else at the bar's end. Methods: `Available`, `PredictedDamage(guid)`, `DrawRow(bar,
   guid, health, place)`, `Refresh`, `SetTracker` (DotTracker calls it),
   `DebugLines`. The tick weights are ClassData's (`TickWeight`).
 - The learned ticks (lead decision 1, the one engine store):

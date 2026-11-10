@@ -1341,11 +1341,18 @@ end
 local function barWorld(state)
     local env = world(state, {})
     state.made = {}
-    env.CreateFrame = function(kind)
-        local frame = stub({kind = kind, shown = true})
-        function frame:Show() self.shown = true end
-        function frame:Hide() self.shown = false end
-        function frame:SetShown(shown) self.shown = shown end
+    env.CreateFrame = function(kind, _, parent)
+        local frame = stub({kind = kind, shown = true, parentFrame = parent, hooks = {}})
+        function frame:HookScript(script, callback) self.hooks[script] = callback end
+        function frame:Show()
+            self.shown = true
+            if self.hooks.OnShow then self.hooks.OnShow(self) end
+        end
+        function frame:Hide()
+            self.shown = false
+            if self.hooks.OnHide then self.hooks.OnHide(self) end
+        end
+        function frame:SetShown(shown) if shown then self:Show() else self:Hide() end end
         function frame:GetStatusBarTexture() return self.span end
         function frame:GetEffectiveScale() return 0.5 end
         function frame:SetValue(value) self.value = value end
@@ -1384,9 +1391,9 @@ test("the block shows the damage to come, and DIES when it kills", function()
     equal(state.made[2].point[3], "LEFT")
     equal(state.made[2].shown, true)
     equal(toolkit.DrawPrediction(bar, "target", 1200, 1000, {dies = false}), false, "DIES off")
-    for _, health in ipairs({SECRET, 0, nil}) do
+    for _, health in ipairs({0, nil}) do
         toolkit.DrawPrediction(bar, "target", 300, health, STYLE)
-        equal(overlay.shown, false, "no readable health: hidden")
+        equal(overlay.shown, false, "no health: hidden")
         overlay.shown = true
     end
     toolkit.DrawPrediction(bar, "target", 0, 1000, STYLE)
@@ -1398,6 +1405,108 @@ test("the block shows the damage to come, and DIES when it kills", function()
     equal(overlay.shown, false)
 end)
 
+test("a secret health still draws: the bars compare it, and DIES goes through the gate", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local bar = healthBar()
+    local dies = toolkit.DrawPrediction(bar, "target", 300, SECRET, STYLE)
+    equal(dies, nil, "unknown to Lua")
+    local overlay = state.made[1]
+    equal(rawequal(overlay.max, SECRET), true, "the secret health is the block's scale")
+    equal(overlay.value, 300, "the bar clamps it, Lua does not")
+    equal(overlay.shown, true)
+    equal(overlay.dies.shown, false, "the plain badge stays hidden")
+    local gate = overlay.gate
+    equal(gate.calls.SetClipsChildren[1], true, "a clip window")
+    equal(gate.calls.SetSize[1], overlay.dies.width, "the badge's size")
+    equal(gate.shown, true)
+    equal(rawequal(gate.meter.max, SECRET), true)
+    equal(gate.meter.value, 300)
+    equal(gate.meter.calls.SetSize[1], 10000, "1% short of lethal is 100 px out of view")
+    equal(gate.meter.point[1], "RIGHT")
+    equal(gate.meter.point[2], gate, "its right edge on the window's")
+    equal(gate.badge.point[1], "RIGHT")
+    equal(gate.badge.point[2], gate.meter.span, "the badge rides the fill's end")
+    equal(gate.point[1], "RIGHT", "the window where the badge goes: left of a unit frame's bar")
+    equal(gate.point[3], "LEFT")
+    toolkit.DrawPrediction(bar, "target", 300, SECRET, {dies = false})
+    equal(gate.shown, false, "DIES off")
+    toolkit.DrawPrediction(bar, "target", 1200, 1000, STYLE)
+    equal(gate.shown, false, "a readable health uses the plain badge")
+    equal(overlay.dies.shown, true)
+    toolkit.MoveDies(bar, nil)
+    equal(gate.point[1], "RIGHT", "a row's place moves the gate too")
+    equal(gate.point[2], bar)
+end)
+
+test("under a frame that clips (EllesmereUI's unit frames), DIES goes on a holder above it", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local unitFrame = stub({GetFrameLevel = function() return 10 end})
+    local clip = stub({GetParent = function() return unitFrame end, DoesClipChildren = function() return true end})
+    local bar = healthBar({parent = clip})
+    toolkit.DrawPrediction(bar, "target", 1200, 1000, STYLE)
+    local overlay = state.made[1]
+    local holder = overlay.holder
+    assert(holder, "a holder")
+    equal(holder.parentFrame, unitFrame, "on the clipping frame's parent")
+    equal(overlay.dies.parentFrame, holder)
+    equal(holder.shown, true, "shows with the block")
+    equal(overlay.dies.shown, true)
+    equal(overlay.dies.calls.SetFrameLevel[1], 35, "above the unit frame's texts and portrait")
+    equal(overlay.dies.point[2], bar, "still placed from the bar")
+    toolkit.DrawPrediction(bar, "target", 300, SECRET, STYLE)
+    equal(overlay.gate.parentFrame, holder, "the gate too")
+    toolkit.HidePrediction(bar)
+    equal(holder.shown, false, "hides with the block")
+    -- No clipping frame: the badge stays on the block.
+    local plain = healthBar()
+    toolkit.DrawPrediction(plain, "target", 1200, 1000, STYLE)
+    local other
+    for _, frame in ipairs(state.made) do
+        if frame.kind == "StatusBar" and frame ~= overlay and frame.dies then other = frame end
+    end
+    assert(other, "the plain bar's block")
+    equal(other.holder, nil)
+    equal(other.dies.parentFrame, other)
+end)
+
+test("the player's DIES place and offsets move the badge and the gate; bad offsets are 0", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local bar = healthBar()
+    local style = {dies = true, side = "center", x = 5, y = -3}
+    local dies, side = toolkit.DrawPrediction(bar, "target", 1200, 1000, style)
+    equal(dies, true)
+    equal(side, "center")
+    local badge = state.made[1].dies
+    equal(badge.point[1], "CENTER")
+    equal(badge.point[2], bar)
+    equal(badge.point[3], "CENTER")
+    equal(badge.point[4], 5)
+    equal(badge.point[5], -3)
+    toolkit.DrawPrediction(bar, "target", 1200, 1000, {dies = true, side = "above", x = 999, y = "up"})
+    equal(badge.point[1], "BOTTOM")
+    equal(badge.point[3], "TOP")
+    equal(badge.point[4], 200, "at most 200 px")
+    equal(badge.point[5], 2, "not a number: no offset")
+    toolkit.DrawPrediction(bar, "target", 1200, 1000, {dies = true, side = "nowhere", x = -4})
+    equal(badge.point[1], "RIGHT", "an unknown place is the toolkit's choice: left of a unit frame's bar")
+    equal(badge.point[4], -7, "the offset still applies")
+    local plate = healthBar()
+    toolkit.DrawPrediction(plate, "plate", 300, SECRET, {dies = true, side = "below", y = -6})
+    local gate
+    for _, frame in ipairs(state.made) do
+        if frame.meter then gate = frame end
+    end
+    equal(gate.point[1], "TOP")
+    equal(gate.point[3], "BOTTOM")
+    equal(gate.point[5], -8, "the gate goes where the badge would")
+end)
+
 test("a reverse-filled bar gets the mirror block", function()
     local state = fixture()
     barWorld(state)
@@ -1407,6 +1516,38 @@ test("a reverse-filled bar gets the mirror block", function()
     local plain = healthBar()
     state.toolkit.DrawPrediction(plain, "target", 300, 1000, STYLE)
     equal(state.made[3].calls.SetReverseFill[1], true, "fills from the right, from the health's end")
+end)
+
+test("DIES draws past a restricted text (Threat Plates' target-of-target on Forever)", function()
+    local state = fixture()
+    barWorld(state)
+    local toolkit = state.toolkit
+    local bar = healthBar({})
+    -- In client: "Can't measure restricted regions" from FontString:GetPoint().
+    local reads = 0
+    local flagged = sideText(bar, "LEFT", "RIGHT")
+    function flagged:IsAnchoringRestricted() return true end
+    function flagged:GetPoint()
+        reads = reads + 1
+        error("Action[FrameMeasurement] failed because[Can't measure restricted regions]")
+    end
+    bar.regions = {flagged}
+    local _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, STYLE)
+    equal(side, "right", "a restricted text leaves its side free")
+    equal(reads, 0, "a region that says it is restricted is not read")
+    function flagged:IsAnchoringRestricted() return SECRET end
+    _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, STYLE)
+    equal(side, "right", "a secret answer counts as restricted")
+    equal(reads, 0, "and it is not read")
+    function flagged:IsAnchoringRestricted() return false end
+    _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, STYLE)
+    equal(side, "right", "an error from GetPoint stops nothing")
+    equal(reads > 0, true, "that text was read")
+    local free = sideText(bar, "LEFT", "RIGHT")
+    function free:IsAnchoringRestricted() return false end
+    bar.regions = {flagged, free}
+    _, side = toolkit.DrawPrediction(bar, "plate", 900, 500, STYLE)
+    equal(side, "left", "the next text is still read")
 end)
 
 test("DIES avoids a side another AddOn writes on (Plater's target-of-target)", function()
@@ -2984,6 +3125,179 @@ test("a DoT row goes with its mob's death, after combat, and out of combat when 
     equal(row.guid, nil, "unseen out of combat")
 end)
 
+-- Instances: creature GUIDs are secret (WTF player reports, 2026-11).
+test("secret GUIDs: a DoT lists the mob by its plate, leaves out your target, and goes with the plate", function()
+    local state = fixture()
+    local grunt, orc = mob(SECRET, "Grunt"), mob(SECRET, "Orc")
+    dotWorld(state, {target = grunt, nameplate1 = grunt, nameplate2 = orc})
+    local tracker = dotTracker(state)
+    cast(state, "Grunt", 172, "c1")
+    local row = tracker.rows[1]
+    equal(row.guid, "plate:nameplate1")
+    equal(row.boundUnit, "nameplate1", "the engine reads its auras through the plate")
+    equal(row.shown, false, "your target has its pinned row")
+    cast(state, "Grunt", 348, "c2")
+    equal(tracker.rows[2].guid, nil, "a second DoT, the same row")
+    state.units.target = orc
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(row.shown, true, "listed once you tab away")
+    equal(row.name.text, "Grunt")
+    cast(state, "Orc", 172, "c3")
+    equal(tracker.rows[2].guid, "plate:nameplate2")
+    equal(tracker.rows[2].shown, false)
+    local text = table.concat(tracker:DebugLines(), "\n")
+    contains(text, "slot=corruption mob=plate")
+    contains(text, "name=Grunt key=plate unit=nameplate1")
+    -- The token may show another mob next, so the row goes now.
+    state.units.nameplate1 = nil
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    equal(row.guid, nil, "gone with its plate")
+    equal(row.shown, false)
+    state.units.nameplate1 = mob(SECRET, "Imp")
+    emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(row.guid, nil, "the new mob on that token is not listed")
+    equal(tracker.rows[2].guid, "plate:nameplate2", "another plate's row stays")
+end)
+
+test("secret GUIDs: the target's plate comes from GetNamePlateForUnit while UnitIsUnit is secret", function()
+    local state = fixture()
+    local env = dotWorld(state, {target = mob(SECRET, "Grunt"), nameplate7 = mob(SECRET, "Grunt")})
+    env.UnitIsUnit = function() return SECRET end
+    state.plateFrames.target = {namePlateUnitToken = "nameplate7"}
+    equal(state.toolkit.PlateToken("target"), "nameplate7")
+    equal(state.toolkit.MobKey("target"), "plate:nameplate7")
+    state.plateFrames.target = {UnitFrame = {unit = "nameplate7"}}
+    equal(state.toolkit.PlateToken("target"), "nameplate7", "the plate's unit frame")
+    state.plateFrames.target = {namePlateUnitToken = "nameplate7", IsForbidden = function() return true end}
+    equal(state.toolkit.PlateToken("target"), nil, "a forbidden plate is not read")
+    state.plateFrames.target = {namePlateUnitToken = SECRET}
+    equal(state.toolkit.PlateToken("target"), nil, "a secret token is not read")
+    env.C_NamePlate.GetNamePlateForUnit = function() error("not allowed") end
+    equal(state.toolkit.PlateToken("target"), nil, "an error is no plate")
+    equal(state.toolkit.FindUnit("plate:nameplate7"), "nameplate7")
+    equal(state.toolkit.FindUnit("plate:nameplate8"), nil, "no plate now")
+    equal(state.toolkit.KeyPlate("Creature-1"), nil)
+end)
+
+test("secret GUIDs: no plate lists nothing; the plate memory's GUID is the mob's key", function()
+    local state = fixture()
+    local grunt = mob(SECRET, "Grunt")
+    dotWorld(state, {target = grunt})
+    local tracker = dotTracker(state)
+    cast(state, "Grunt", 172, "c1")
+    equal(tracker.rows[1].guid, nil, "enemy nameplates off: only the pinned row shows it")
+    contains(table.concat(tracker:DebugLines(), "\n"), "mob=none")
+    state.units.nameplate1 = grunt
+    state.toolkit.LearnPlate("nameplate1")
+    equal(state.toolkit.PlateGUID("nameplate1"), nil)
+    state.units.focus = mob("Creature-5", "Orc")
+    state.units.nameplate2 = mob(SECRET, "Orc", {same = "focus"})
+    state.toolkit.LearnPlate("nameplate2")
+    equal(state.toolkit.MobKey("nameplate2"), "Creature-5", "a real GUID when one is known")
+end)
+
+test("secret GUIDs: a secret name goes to your target, and its text takes the secret", function()
+    local state = fixture()
+    local grunt = mob(SECRET, SECRET)
+    dotWorld(state, {target = grunt, nameplate1 = grunt})
+    local tracker = dotTracker(state)
+    cast(state, SECRET, 172, "c1")
+    local row = tracker.rows[1]
+    equal(row.guid, "plate:nameplate1")
+    state.units.target = nil
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(rawequal(row.name.text, SECRET), true)
+    contains(table.concat(tracker:DebugLines(), "\n"), "name=secret key=plate")
+    -- A readable name for the cast, with your target's secret: the same.
+    state.units.target = mob(SECRET, SECRET)
+    state.units.nameplate2 = state.units.target
+    cast(state, "Orc", 172, "c2")
+    equal(tracker.rows[2].guid, "plate:nameplate2")
+    equal(rawequal(tracker.rows[2].mobName, SECRET), true, "the name your target shows")
+end)
+
+test("secret GUIDs: a death frees the row and never bars the token; a cast dies with its plate", function()
+    local state = fixture()
+    local grunt = mob(SECRET, "Grunt")
+    dotWorld(state, {target = grunt, nameplate1 = grunt})
+    local tracker = dotTracker(state)
+    cast(state, "Grunt", 172, "c1")
+    grunt.dead = true
+    emit(state, "UNIT_HEALTH", "nameplate1")
+    equal(tracker.rows[1].guid, nil, "dead")
+    local next_mob = mob(SECRET, "Grunt")
+    state.units.target, state.units.nameplate1 = next_mob, next_mob
+    cast(state, "Grunt", 172, "c2")
+    equal(tracker.rows[1].guid, "plate:nameplate1", "the token shows a new mob now")
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(tracker.rows[1].guid, nil, "combat ended")
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", "c3", 172)
+    state.units.nameplate1 = nil
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    state.units.nameplate1 = mob(SECRET, "Imp")
+    emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    emit(state, "UNIT_SPELLCAST_SUCCEEDED", "player", "c3", 172)
+    equal(tracker.rows[1].guid, nil, "the token now shows another mob")
+end)
+
+test("secret GUIDs: a pinned row's prediction asks the predictor for the mob's key", function()
+    local state = fixture()
+    local grunt = mob(SECRET, "Grunt")
+    local env = dotWorld(state, {target = grunt, nameplate1 = grunt})
+    env.UnitHealth = function() return SECRET end
+    env.UnitHealthMax = function() return SECRET end
+    local seen
+    local stubPredictor = {Available = function() return true end, Key = function() return "plate:nameplate1" end,
+        DrawRow = function(_, _, guid) seen = guid or seen return false end}
+    dotTracker(state, {predictor = stubPredictor, store = {health = true}})
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(seen, "plate:nameplate1")
+end)
+
+test("secret GUIDs: the control bar keeps a Banish by its plate, and a focus row through plate changes", function()
+    local state = fixture()
+    local grunt = mob(SECRET, "Grunt")
+    controlWorld(state, {target = grunt, nameplate1 = grunt})
+    state.focusWorks(false)
+    local tracker = warlockTracker(state)
+    cast(state, "Grunt", 710, "c1")
+    local row = tracker.rows[1]
+    equal(row.guid, "plate:nameplate1")
+    equal(row.boundUnit, "nameplate1")
+    grunt.dead = true
+    emit(state, "UNIT_HEALTH", "nameplate1")
+    equal(row.guid, nil, "dead")
+    grunt.dead = false
+    cast(state, "Grunt", 710, "c2")
+    equal(row.guid, "plate:nameplate1")
+    state.units.nameplate1 = nil
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    equal(row.guid, nil, "gone with its plate")
+    state.units.nameplate1 = grunt
+    emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", "c3", 710)
+    state.units.nameplate1 = nil
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    emit(state, "UNIT_SPELLCAST_SUCCEEDED", "player", "c3", 710)
+    equal(row.guid, nil, "the plate went during the cast")
+
+    state.focusWorks(true)
+    state.units.target = nil
+    state.units.focus, state.units.nameplate2 = grunt, grunt
+    cast(state, "Grunt", 710, "c4")
+    equal(row.guid, "plate:nameplate2")
+    equal(row.boundUnit, "focus")
+    state.units.nameplate2 = nil
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate2")
+    equal(row.guid, "plate:nameplate2", "your focus left its plate, not you")
+    state.units.nameplate5 = grunt
+    emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate5")
+    equal(row.guid, "plate:nameplate2", "back under another token: the same focus")
+    state.units.focus = mob(SECRET, "Orc")
+    emit(state, "PLAYER_FOCUS_CHANGED")
+    equal(row.guid, nil, "a new focus ends it")
+end)
+
 test("a Bane cast is remembered in the owner's store, and the pinned slot recasts it", function()
     local state = fixture()
     dotWorld(state, {target = mob("Creature-1", "Grunt")}, {{980, "Curse of Agony"}, {603, "Curse of Doom"}})
@@ -3047,6 +3361,27 @@ test("mob health on a row: the predictor draws the damage to come with the row's
     equal(tracker.rows[1].knownHealth.health, 300, "kept for when no unit shows it")
     tracker:RefreshPrediction("Creature-1")
     equal(drawn[#drawn], "Creature-1:300")
+end)
+
+test("with a secret health a row keeps its numbers, and DIES goes just left of them", function()
+    local state = fixture()
+    dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})
+    local health = 300
+    state.env.UnitHealth = function() return health end
+    state.env.UnitHealthMax = function() return 500 end
+    local places = {}
+    local predictor = {Available = function() return true end, SetTracker = function() end,
+        DrawRow = function(_, _, _, _, place, secretPlace)
+            places.place, places.secret = place, secretPlace
+            return false
+        end}
+    local tracker = dotTracker(state, {store = {health = true, healthText = "both"}, predictor = predictor})
+    cast(state, "Grunt", 172, "c1")
+    local row = tracker.rows[1]
+    equal(places.place[2], row.healthNumber, "readable: in place of the number")
+    equal(places.secret[1], "RIGHT")
+    equal(places.secret[2], row.healthPercent, "secret: left of the first text")
+    equal(places.secret[3], "LEFT")
 end)
 
 test("plate dots: a bubble per live hostile plate in combat, one dot per known DoT you chose", function()
@@ -3156,18 +3491,229 @@ test("WTF's older ticks are copied once, never over a newer one; unknown ranks a
     equal(state.toolkit.LearnedTicks()[172].tick, 14, "copied once only")
 end)
 
-test("no predictor where the combat log is restricted, or for an AddOn outside the family", function()
+test("where the combat log is restricted, hidden ticks; with neither, no predictor; none outside the family", function()
     local state = fixture()
     predictWorld(state)
     state.restricted = true
-    local made, why = state.toolkit.CreateDotPredictor({addon = "WarlockToolsForever", class = "WARLOCK", store = {}})
+    local made = state.toolkit.CreateDotPredictor({addon = "WarlockToolsForever", class = "WARLOCK", store = {}})
+    equal(made.hidden, true)
+    local frame = state.uiFrames[#state.uiFrames]
+    equal(frame.events.COMBAT_LOG_EVENT_UNFILTERED, nil, "never registered where restricted: the client's popup")
+    equal(frame.events.UNIT_COMBAT, true)
+    state.toolkit.HealthBars.SetSourceEnabled("WarlockToolsForever", false)
+    local timers = state.env.C_Timer
+    state.env.C_Timer = nil
+    local why
+    made, why = state.toolkit.CreateDotPredictor({addon = "DyresDebuffTracker", class = "WARLOCK", store = {}})
     equal(made, nil)
     equal(why, "the combat log")
+    state.env.C_Timer = timers
     state.restricted = false
     familyAll(state.env, {Outsider = true})
     made, why = state.toolkit.CreateDotPredictor({addon = "Outsider", class = "WARLOCK", store = {}})
     equal(made, nil)
     contains(why, "Dyre's AddOns")
+end)
+
+-- Forever: no combat log, secret amounts; tooltips without spell power.
+local TOOLTIPS = {
+    [172] = "Corrupts the target, causing 40 Shadow damage over 12 sec.",
+    [348] = "Burns the enemy for 11 Fire damage and then an additional 20 Fire damage over 15 sec.",
+    [18265] = "Transfers 15 health from the target to the caster every 3 sec. Lasts 30 sec.",
+}
+
+local function hiddenWorld(state, units)
+    dotWorld(state, units or {player = {guid = "Player-1", name = "Me"}, target = mob("Creature-1", "Grunt")})
+    combatLog(state)
+    state.restricted = true
+    state.env.TargetFrame = nil
+    state.env.C_Spell.GetSpellDescription = function(id) return TOOLTIPS[id] end
+    state.env.UnitLevel = function() return 60 end
+    state.hit = function(unit, action, amount, school)
+        emit(state, "UNIT_COMBAT", unit, action, "", amount, school)
+    end
+end
+
+local SHADOW, FIRE = 32, 4
+
+test("the owner's DIES place and offsets reach the target frame's draw; auto is the toolkit's choice", function()
+    local state = fixture()
+    hiddenWorld(state)
+    state.env.UnitHealth = function() return 1000 end
+    local made, store = predictor(state)
+    local bar = healthBar()
+    state.toolkit.RegisterBarAdapter("unit", {name = "Test", bar = function() return bar end})
+    local styles = {}
+    state.toolkit.DrawPrediction = function(_, kind, _, _, style)
+        styles[kind] = style
+        return false
+    end
+    store.diesPlace, store.diesX, store.diesY = "center", 4, -2
+    cast(state, "Grunt", 172, "Cast-1")
+    made:Refresh()
+    equal(styles.target.side, "center")
+    equal(styles.target.x, 4)
+    equal(styles.target.y, -2)
+    store.diesPlace = "auto"
+    made:Refresh()
+    equal(styles.target.side, nil, "auto")
+end)
+
+test("Forever: a cast starts the DoT, its hidden ticks count it down, and its tooltip gives the damage", function()
+    local state = fixture()
+    hiddenWorld(state)
+    local made = predictor(state)
+    equal(made.hidden, true)
+    cast(state, "Grunt", 172, "Cast-1")
+    equal(made:PredictedDamage("Creature-1"), 40, "the tooltip's 40, 4 ticks of 10")
+    state.now = state.now + 3.1
+    state.hit("target", "WOUND", SECRET, SHADOW)
+    equal(made:PredictedDamage("Creature-1"), 30, "a tick by school and time, its amount secret")
+    state.hit("nameplate1", "WOUND", SECRET, SHADOW)
+    equal(made:PredictedDamage("Creature-1"), 30, "no nameplate shows it: not ours to count")
+    state.hit("target", "WOUND", SECRET, FIRE)
+    state.now = state.now + 1
+    state.hit("target", "WOUND", SECRET, SHADOW)
+    equal(made:PredictedDamage("Creature-1"), 30, "another school, or off the rhythm: not a tick")
+    equal(made.mobs["Creature-1"].dots.corruption.applied, 100.1, "the rhythm from the first tick")
+    contains(table.concat(made:DebugLines(), "|"), "hidden ticks")
+end)
+
+test("Forever: a resist in the DoT's school drops it; a melee avoid or another school does not", function()
+    local state = fixture()
+    hiddenWorld(state)
+    local made = predictor(state)
+    cast(state, "Grunt", 348, "Cast-1")
+    equal(made:PredictedDamage("Creature-1"), 20, "Immolate's periodic part only")
+    state.hit("target", "DODGE", nil, 1)
+    state.hit("target", "MISS", nil, SHADOW)
+    equal(made:PredictedDamage("Creature-1"), 20)
+    state.hit("target", "RESIST", nil, FIRE)
+    equal(made:PredictedDamage("Creature-1"), 0, "resisted")
+    cast(state, "Grunt", 172, "Cast-2")
+    state.hit("target", "MISS", nil, SECRET)
+    equal(made:PredictedDamage("Creature-1"), 0, "a secret school: doubtful, shown from its first tick")
+    state.now = state.now + 3
+    state.hit("target", "WOUND", SECRET, SHADOW)
+    equal(made:PredictedDamage("Creature-1"), 30)
+end)
+
+test("Forever: missed ticks on a mob you see drop the DoT; a mob no unit shows keeps it", function()
+    local state = fixture()
+    hiddenWorld(state)
+    local made = predictor(state)
+    cast(state, "Grunt", 172, "Cast-1")
+    advance(state, 3.5)
+    equal(made:PredictedDamage("Creature-1"), 30, "one missed tick: still on")
+    advance(state, 3)
+    equal(made:PredictedDamage("Creature-1"), 0, "two: resisted, removed, or dead")
+    cast(state, "Grunt", 172, "Cast-2")
+    state.units.target = nil
+    advance(state, 3.5)
+    advance(state, 3)
+    equal(made:PredictedDamage("Creature-1"), 20, "unseen: it runs on time")
+    equal(made.mobs["Creature-1"].dots.corruption.unseen, true)
+end)
+
+test("Forever: a secret GUID tracks the mob by its nameplate, and the same hit on two tokens counts once", function()
+    local state = fixture()
+    local grunt = mob(SECRET, "Grunt")
+    hiddenWorld(state, {player = {guid = "Player-1", name = "Me"}, target = grunt, nameplate1 = grunt})
+    local made = predictor(state)
+    cast(state, "Grunt", 172, "Cast-1")
+    equal(made:PredictedDamage("plate:nameplate1"), 40)
+    state.now = state.now + 3
+    state.hit("target", "WOUND", SECRET, SHADOW)
+    state.hit("nameplate1", "WOUND", SECRET, SHADOW)
+    equal(made:PredictedDamage("plate:nameplate1"), 30, "once")
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    equal(made:PredictedDamage("plate:nameplate1"), 0, "a token key goes with its plate")
+    state.units.nameplate1 = nil
+    cast(state, "Grunt", 172, "Cast-2")
+    equal(made:PredictedDamage("target"), 40, "no plate: the target only")
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(made:PredictedDamage("target"), 0)
+end)
+
+test("Forever: a mouseover cast goes on that mob, and is skipped when the mob has no key", function()
+    local state = fixture()
+    hiddenWorld(state, {player = {guid = "Player-1", name = "Me"}, target = mob("Creature-1", "Grunt"),
+        mouseover = mob("Creature-2", "Wolf")})
+    local made = predictor(state)
+    cast(state, "Wolf", 172, "Cast-1")
+    equal(made:PredictedDamage("Creature-2"), 40, "the mob under the mouse")
+    equal(made:PredictedDamage("Creature-1"), 0)
+    -- A secret GUID and no plate: no key, so the cast is not put on your target.
+    state.units.mouseover = mob(SECRET, "Bear")
+    cast(state, "Bear", 348, "Cast-2")
+    equal(made:PredictedDamage("Creature-1"), 0, "never on your target")
+end)
+
+test("Forever: with a friendly or dead target, a cast at no named mob goes to the soft enemy", function()
+    local state = fixture()
+    hiddenWorld(state, {player = {guid = "Player-1", name = "Me"},
+        target = mob("Creature-1", "Grunt", {dead = true}), softenemy = mob("Creature-2", "Grunt")})
+    local made = predictor(state)
+    cast(state, "Grunt", 172, "Cast-1")
+    equal(made:PredictedDamage("Creature-2"), 40, "the corpse is skipped: the next mob")
+    equal(made:PredictedDamage("Creature-1"), 0)
+    state.units.target = {guid = "Player-3", name = "Healer", canAttack = false, dead = false}
+    cast(state, SECRET, 348, "Cast-2")
+    equal(made:PredictedDamage("Creature-2"), 60, "a secret name: the soft enemy, not your friend")
+    equal(made:PredictedDamage("Player-3"), 0)
+    state.units.target = mob("Creature-1", "Grunt")
+    state.units.softenemy = nil
+    cast(state, SECRET, 18265, "Cast-3")
+    assert(made:PredictedDamage("Creature-1") > 0, "an attackable target keeps the cast")
+end)
+
+test("Forever: after combat the damage meter teaches the tick, once it reads; never for Immolate", function()
+    local state = fixture()
+    hiddenWorld(state)
+    local made = predictor(state)
+    local reads = 0
+    state.env.C_DamageMeter = {GetCombatSessionSourceFromType = function(_, _, guid)
+        equal(guid, "Player-1")
+        reads = reads + 1
+        if reads == 1 then return SECRET end
+        return {combatSpells = {{spellID = 172, totalAmount = 24}, {spellID = 348, totalAmount = 90}}}
+    end}
+    state.combat = true
+    cast(state, "Grunt", 172, "Cast-1")
+    cast(state, "Grunt", 348, "Cast-2")
+    for _ = 1, 2 do
+        state.now = state.now + 3
+        state.hit("target", "WOUND", SECRET, SHADOW)
+        state.hit("target", "WOUND", SECRET, FIRE)
+    end
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    advance(state, 0.5)
+    equal(state.toolkit.LearnedTicks()[172], nil, "the totals are not readable yet")
+    advance(state, 0.5)
+    local learned = state.toolkit.LearnedTicks()[172]
+    equal(learned.tick, 12, "24 over the 2 ticks seen")
+    equal(learned.family, "corruption")
+    equal(state.toolkit.LearnedTicks()[348], nil, "a direct hit is in Immolate's total")
+end)
+
+test("Forever: a meter total far from the guess, or a fight with an unseen DoT, teaches nothing", function()
+    local state = fixture()
+    hiddenWorld(state)
+    predictor(state)
+    state.env.C_DamageMeter = {GetCombatSessionSourceFromType = function()
+        return {combatSpells = {{spellID = 172, totalAmount = 200}}}
+    end}
+    state.combat = true
+    cast(state, "Grunt", 172, "Cast-1")
+    for _ = 1, 2 do
+        state.now = state.now + 3
+        state.hit("target", "WOUND", SECRET, SHADOW)
+    end
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    advance(state, 0.5)
+    equal(state.toolkit.LearnedTicks()[172], nil, "100 a tick is ten times the guess")
 end)
 
 test("WTF at 10 draws over Dyre's Debuff Tracker at 5; its rows show the active source's damage", function()
