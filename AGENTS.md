@@ -414,6 +414,12 @@ WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
   button for a CLICK keybind; `onSmartCurse(body)` gives the owner the
   "! Curse" macro body (nil without Weakness: no macro, no click). Methods
   `ApplySmartCurse()`, `SmartCurseBody()`. Not checked in client yet.
+- Outline width (2.8.0; John, 2026-11-11, from a WTF player asking to hide
+  the border): `store.outlineWidth`, whole pixels 0-20 (`TRACKER_OUTLINE`,
+  default 3, the old constant), sets the pinned rows' solid outline; 0 makes
+  none. The stacked rows' step is the width + 4, so the default does not move
+  anything and 0 closes them up. Read at each pinned row's build: a change
+  needs `Rebuild` (out of combat). The rows' tooltip-style edge is not this.
 - PlateDots.lua: `CreatePlateDots{tracker, store, slots, color}` (store:
   enabled, plateDots, plateDotsOffset, plateDotsOpacity, onPlates);
   `Refresh`, `ApplyColors`, `ApplyOpacity`; fields `byUnit`, `known`. Only

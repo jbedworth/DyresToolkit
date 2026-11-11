@@ -3327,6 +3327,27 @@ test("a rebuild in combat waits; the tracker never changes a secure row in comba
     equal(tracker.theme, "compact")
 end)
 
+test("the pinned rows' outline width: 3 px by default, 0 draws none, at most 20, the stack follows", function()
+    local state = fixture()
+    dotWorld(state)
+    local tracker, store = dotTracker(state)
+    equal(state.toolkit.TRACKER_OUTLINE.default, 3)
+    assert(tracker.pinned.target.outline and tracker.pinned.focus.outline, "an outline by default")
+    local defaultHeight = tracker.stack.height
+    store.outlineWidth = 0
+    tracker:Rebuild()
+    equal(tracker.pinned.target.outline, nil, "0 draws no outline")
+    equal(tracker.pinned.focus.outline, nil)
+    equal(tracker.stack.height, defaultHeight - 2 * 3, "the rows close up by the outline")
+    store.outlineWidth = 99
+    tracker:Rebuild()
+    assert(tracker.pinned.target.outline, "an outline again")
+    equal(tracker.stack.height, defaultHeight + 2 * 17, "clamped to 20 px")
+    store.outlineWidth = "junk"
+    tracker:Rebuild()
+    equal(tracker.stack.height, defaultHeight, "a bad value is the default")
+end)
+
 test("Dyre's Debuff Tracker's DoT tracker steps aside for the class AddOn's", function()
     local state = fixture()
     dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})

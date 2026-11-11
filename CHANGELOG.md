@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.8.0
+
+### Other changes
+- For AddOn authors: the DoT tracker's target and focus rows take `outlineWidth` from the tracker's store: the solid outline's width in whole pixels, 0 to 20 (`TRACKER_OUTLINE`), 3 by default as before. At 0 there is no outline, and the stacked rows close up by the same amount. A change applies with `Rebuild`, out of combat.
+
 ## 2.7.0
 
 ### Other changes
