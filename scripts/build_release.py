@@ -31,15 +31,22 @@ LIBRARY_NOTICES = ("Libs/Ace3-LICENSE.txt",)
 RUNTIME_FILES = ("Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua",
                  "Auras.lua", "Units.lua", "HealthBars.lua", "Spells.lua", "Macros.lua",
                  "Announce.lua", "ClassData.lua", "Owners.lua", "Control.lua", "DotTracker.lua",
-                 "PlateDots.lua", "DotPredict.lua")
+                 "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",
+                 "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua")
+# Key bindings for the tank buttons (2.9.0): the client loads Bindings.xml
+# from the AddOn's folder by itself, so the TOC does not list it.
+BINDING_FILES = ("Bindings.xml",)
 # The TOC names files with backslashes, as the client expects.
 TOC_LOADS = tuple(name.replace("/", "\\") for name in LIBRARY_FILES) + RUNTIME_FILES
-TEXT_FILES = (ADDON + ".toc",) + LIBRARY_FILES + RUNTIME_FILES + ("LICENSE",) + LIBRARY_NOTICES
+TEXT_FILES = (ADDON + ".toc",) + LIBRARY_FILES + RUNTIME_FILES + BINDING_FILES + ("LICENSE",) + LIBRARY_NOTICES
 # Runtime textures shipped in the package: since 2.4.0 the damage-to-come
 # block's stripes for HealthBars.lua (copied byte for byte from Warlock Tools
-# Forever 1.4.0, John's own art, made by its scripts/make_stripes.py). Each
-# must be an uncompressed 32-bit, square, power-of-two TGA. No sounds.
-MEDIA_FILES = ("Textures/Stripes.tga",)
+# Forever 1.4.0, John's own art, made by its scripts/make_stripes.py); since
+# 2.9.0 the threat label's tinted icons, a fill and an outline each, made by
+# scripts/make_icons.py. Each must be an uncompressed 32-bit, square,
+# power-of-two TGA. No sounds.
+MEDIA_FILES = ("Textures/Stripes.tga", "Textures/ShieldFill.tga", "Textures/ShieldEdge.tga",
+               "Textures/SwordsFill.tga", "Textures/SwordsEdge.tga")
 PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
 TGA_HEADER_SIZE = 18
 TGA_TRUECOLOR = 2
@@ -48,7 +55,7 @@ TGA_SIZES = (16, 32, 64, 128, 256)
 # targeted. The runtime itself detects features, not builds.
 INTERFACE = 16001
 GAME_VERSION = "1.60.1"
-TARGET_BUILD = 70450
+TARGET_BUILD = 70888
 # Classic Era (one package serves both; the TOC lists both Interfaces).
 CLASSIC_INTERFACE = 11509
 CLASSIC_GAME_VERSION = "1.15.9"

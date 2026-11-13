@@ -24,7 +24,7 @@ tested.
 
 ## Summary
 
-The shared toolkit for Dyre's AddOns on WoW: Forever: includes a shared layout mode, grid, mini-map button, and one settings home for all of them.
+Threat warnings and tank tools for every player, and the shared layout mode, grid, mini-map button, and settings home for Dyre's AddOns on WoW: Forever.
 
 ## Description
 
@@ -35,7 +35,17 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 `CHANGELOG.md` section, through `release-notes.md`.
 
 ```markdown
-**Dyre's Toolkit** ties Dyre's AddOns together on WoW: Forever. It does very little on its own: the Dyre's AddOns you install use it, and the CurseForge app installs it with them.
+**Dyre's Toolkit** ties Dyre's AddOns together on WoW: Forever. The Dyre's AddOns you install use it, and the CurseForge app installs it with them. It also gives every player threat warnings and tank tools.
+
+### Group warnings
+- **Threat** beside enemy nameplates and above your target: a shield (tank view) or crossed swords (DPS and healer view) and your threat percent, the icon and the text both in green, yellow, or red. In the tank view, yellow comes early when another player nears the pull point, and a mob another tank holds is blue. A sound you choose plays when a mob turns red (by default Bell buzz from Dyre's Sounds 1.5.0 or later; without it, the game's raid warning).
+- Auto uses the tank bar's rule: the tank view for the group's Tank or raid main tank, a Druid in Bear Form, a Paladin with Righteous Fury, or a Warrior in Defensive Stance.
+- **Pet taunt on**: a message when Growl, Torment, or Suffering is on autocast in a group where you are not the tank.
+
+### Tank tools
+- Skull, Next marker, and pings in combat with no "blocked from an action" popup, on a bar and as key bindings.
+- A PULL button and `/dyre pull 10`, handed to Deadly Boss Mods or BigWigs when one is loaded, else the game's countdown.
+- Dyre's countdown on screen: when anyone in your group starts a pull, a big animated countdown with a draining bar, who started it, and a "PULL!" splash, in place of the game's own (it never overrides another AddOn: hidden with BigWigs, and with Deadly Boss Mods unless DBM's own pull bar is turned off).
 
 ### One layout mode
 - `/dyre unlock` shows every Dyre's AddOn's frames, so you can drag them where you want. `/dyre lock` locks them all again. Each AddOn's own unlock command does the same.
@@ -60,10 +70,11 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 ### Commands
 - `/dyre` opens the settings; `/dyre unlock`, `/dyre lock`.
 - `/dyre grid`, `/dyre snap`, `/dyre minimap` switch the grid, snapping, and the minimap button.
+- `/dyre pull [seconds]`, `/dyre tank_reset`, `/dyre tank_debug`, `/dyre threat_debug`, `/dyre taunt_debug`; `/dtt` and `/tanktools` take the short tank words.
 - `/dyretoolkit` works the same, in case another AddOn uses `/dyre`.
 
 ### Compatibility
-For World of Warcraft: Forever 1.60.1 (tested on build 70450).
+For World of Warcraft: Forever 1.60.1 (tested on build 70888).
 
 Source, issues, and license (MIT): https://github.com/jbedworth/DyresToolkit
 ```

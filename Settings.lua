@@ -35,6 +35,11 @@ local function Home()
     return home, homeLayout
 end
 
+-- The toolkit's own page and its layout (its sections: GroupSettings.lua).
+function ns.HomeCategory()
+    return Home()
+end
+
 function DyresToolkit.SettingsCategory()
     return (Home())
 end

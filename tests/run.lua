@@ -11,7 +11,8 @@ end
 local ADDON = "DyresToolkit"
 local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua", "Auras.lua", "Units.lua",
     "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua", "ClassData.lua", "Owners.lua",
-    "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua"}
+    "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",
+    "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua"}
 local tests = {}
 
 local function test(name, body)
@@ -1051,7 +1052,8 @@ test("the TOC loads the libraries, then the runtime, in order", function()
         .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
         .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Minimap.lua,Auras.lua,Units.lua,HealthBars.lua,"
         .. "Spells.lua,Macros.lua,Announce.lua,ClassData.lua,Owners.lua,Control.lua,DotTracker.lua,"
-        .. "PlateDots.lua,DotPredict.lua")
+        .. "PlateDots.lua,DotPredict.lua,Tank.lua,Threat.lua,PetTaunt.lua,TankButtons.lua,Pull.lua,"
+        .. "TankProbe.lua,GroupSettings.lua")
 end)
 
 -- Shared code for trackers (2.4.0) -------------------------------------------------
@@ -2285,7 +2287,7 @@ end
 
 test("MarkLine: /tm for a marker, nothing for none", function()
     local toolkit = fixture().toolkit
-    equal(toolkit.MarkLine("focus", 5), "/tm [@focus,harm,nodead,exists] !5")
+    equal(toolkit.MarkLine("focus", 5), "/tm [@focus,harm,nodead] !5")
     equal(toolkit.MarkLine("focus", 0), nil)
     equal(toolkit.MarkLine("focus", nil), nil)
 end)
@@ -2295,20 +2297,22 @@ test("FocusCastMacro writes WTF 1.4.1's Banish and Seduction macros, focus or ch
     local toolkit = state.toolkit
     macroSpells(state, true)
     equal(toolkit.FocusCastMacro({spell = 710, marker = 5}), "#showtooltip Banish\n"
-        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
-        .. "/tm [@focus,harm,nodead,exists] !5\n"
-        .. "/use [@focus,exists,harm,nodead] Banish")
+        .. "/clearfocus [mod:shift][btn:2]\n"
+        .. "/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]\n"
+        .. "/tm [@focus,harm,nodead] !5\n"
+        .. "/use [@focus,harm,nodead] Banish")
     equal(toolkit.FocusCastMacro({spell = 6358, condition = ",pet:Succubus/Incubus"}), "#showtooltip Seduction\n"
-        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
-        .. "/use [@focus,exists,harm,nodead,pet:Succubus/Incubus] Seduction")
+        .. "/clearfocus [mod:shift][btn:2]\n"
+        .. "/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]\n"
+        .. "/use [@focus,harm,nodead,pet:Succubus/Incubus] Seduction")
     macroSpells(state, false)
     equal(toolkit.FocusCastMacro({spell = 710, marker = 5}), "#showtooltip Banish\n"
-        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
-        .. "/tm [@focus,harm,nodead,exists][@mouseover,harm,nodead][harm,nodead] !5\n"
-        .. "/use [@focus,exists,harm,nodead][@mouseover,harm,nodead][harm,nodead] Banish")
+        .. "/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]\n"
+        .. "/tm [@focus,harm,nodead][@mouseover,harm,nodead][harm,nodead] !5\n"
+        .. "/use [@focus,harm,nodead][@mouseover,harm,nodead][harm,nodead] Banish")
     equal(toolkit.FocusCastMacro({spell = 6358, condition = ",pet:Succubus/Incubus"}), "#showtooltip Seduction\n"
-        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
-        .. "/use [@focus,exists,harm,nodead,pet:Succubus/Incubus][@mouseover,harm,nodead,pet:Succubus/Incubus]"
+        .. "/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]\n"
+        .. "/use [@focus,harm,nodead,pet:Succubus/Incubus][@mouseover,harm,nodead,pet:Succubus/Incubus]"
         .. "[harm,nodead,pet:Succubus/Incubus] Seduction")
     equal(toolkit.FocusCastMacro({spell = 710, marker = 5, chain = false}):find("%[@mouseover,harm,nodead%] !"),
         nil, "chain = false overrides the flag")
@@ -2320,11 +2324,11 @@ test("FocusCastMacro writes WTF 1.4.1's Fear macro: Shift keeps your focus", fun
     macroSpells(state, true)
     equal(toolkit.FocusCastMacro({spell = 5782, shift = true}), "#showtooltip Fear\n"
         .. "/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]\n"
-        .. "/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead] Fear")
+        .. "/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,harm,nodead] Fear")
     macroSpells(state, false)
     equal(toolkit.FocusCastMacro({spell = 5782, shift = true, marker = 8}), "#showtooltip Fear\n"
         .. "/focus [nomod:shift,@mouseover,harm,nodead][nomod:shift,harm,nodead]\n"
-        .. "/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,exists,harm,nodead]"
+        .. "/use [mod:shift,@mouseover,harm,nodead][mod:shift,harm,nodead][@focus,harm,nodead]"
         .. "[@mouseover,harm,nodead][harm,nodead] Fear", "no marker in the Shift form")
 end)
 
@@ -2333,15 +2337,33 @@ test("FocusCastMacro writes MTF 1.2.3's Polymorph macro once focus works; untarg
     local toolkit = state.toolkit
     macroSpells(state, true)
     equal(toolkit.FocusCastMacro({spell = 118, marker = 5}), "#showtooltip Polymorph\n"
-        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
-        .. "/tm [@focus,harm,nodead,exists] !5\n"
-        .. "/use [@focus,exists,harm,nodead] Polymorph")
+        .. "/clearfocus [mod:shift][btn:2]\n"
+        .. "/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]\n"
+        .. "/tm [@focus,harm,nodead] !5\n"
+        .. "/use [@focus,harm,nodead] Polymorph")
     equal(toolkit.FocusCastMacro({spell = 118}), "#showtooltip Polymorph\n"
-        .. "/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
-        .. "/use [@focus,exists,harm,nodead] Polymorph", "the mark switch off: no /tm")
+        .. "/clearfocus [mod:shift][btn:2]\n"
+        .. "/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]\n"
+        .. "/use [@focus,harm,nodead] Polymorph", "the mark switch off: no /tm")
     equal(toolkit.FocusCastMacro({spell = 5484, untargeted = true}), "#showtooltip Howl of Terror\n/use Howl of Terror")
     equal(toolkit.FocusCastMacro({spell = 99999}), nil, "a spell this client lacks")
     equal(toolkit.FocusCastMacro({spell = "Shackle Undead", chain = false}):sub(-14), "Shackle Undead")
+end)
+
+test("FocusCastMacro: every control macro fits the 255-letter macro limit", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    for _, works in ipairs({true, false}) do
+        macroSpells(state, works)
+        for _, options in ipairs({
+            {spell = 710, marker = 8}, {spell = 6358, condition = ",pet:Succubus/Incubus"},
+            {spell = 5782, shift = true, marker = 8}, {spell = 118, marker = 8},
+            {spell = "Polymorph: Turtle", marker = 8},
+        }) do
+            local body = toolkit.FocusCastMacro(options)
+            assert(body and #body <= 255, tostring(options.spell) .. " is " .. tostring(body and #body))
+        end
+    end
 end)
 
 test("GroupChannel: raid, party, nothing alone, or Say", function()
@@ -2884,7 +2906,7 @@ test("the control macros: WTF's text, written only while known, owned, and out o
     emit(state, "PLAYER_REGEN_ENABLED")
     byName = {}
     for _, macro in ipairs(state.macros) do byName[macro.name] = macro.body end
-    contains(byName["! Seduction"], "/use [@focus,exists,harm,nodead,pet:Succubus/Incubus] Seduction")
+    contains(byName["! Seduction"], "/use [@focus,harm,nodead,pet:Succubus/Incubus] Seduction")
     store.macros = false
     tracker:Refresh()
     equal(#state.macros, 0, "off deletes them")
@@ -2943,8 +2965,8 @@ test("MTF's Polymorph bar: one row, its exact names, and a new sheep replaces th
     equal(tracker.rows[1].holder.mouse, true, "a sheep to click")
     local byName = {}
     for _, macro in ipairs(state.macros) do byName[macro.name] = macro.body end
-    equal(byName["! Polymorph"], "#showtooltip Polymorph\n/focus [@mouseover,harm,nodead][nocombat,harm,nodead]\n"
-        .. "/tm [@focus,harm,nodead,exists] !5\n/use [@focus,exists,harm,nodead] Polymorph", "MTF 1.2.3's macro")
+    equal(byName["! Polymorph"], "#showtooltip Polymorph\n/clearfocus [mod:shift][btn:2]\n/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]\n"
+        .. "/tm [@focus,harm,nodead] !5\n/use [@focus,harm,nodead] Polymorph", "MTF 1.2.3's macro")
 end)
 
 test("MTF without focus: the chain locks the mob, and with no unit the name counts the time down", function()
@@ -3856,6 +3878,9 @@ test("WTF at 10 draws over Dyre's Debuff Tracker at 5; its rows show the active 
     equal(state.toolkit.HealthBars.IsActiveSource("DyresDebuffTracker"), true, "off steps aside")
     assert(ddt)
 end)
+
+-- The group warnings and tank tools (2.9.0): their own harness, the same run.
+assert(loadfile("tests/tank.lua"))(test, equal, contains)
 
 local failed = 0
 for index, entry in ipairs(tests) do

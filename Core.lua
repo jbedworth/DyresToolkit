@@ -4,7 +4,9 @@ local addonName, ns = ...
 -- are Dyre's Sounds, apart for licensing). One layout mode for every
 -- Dyre's AddOn's frames, the grid, snapping across AddOns, the minimap menu,
 -- and the "Dyre's AddOns" settings home. Each AddOn keeps its own frames,
--- positions, and settings; it registers them here.
+-- positions, and settings; it registers them here. Since 2.9.0 it also has
+-- features of its own for every player: group warnings (threat labels, the
+-- Pet Taunt warning) and tank tools (Tank.lua and the files after it).
 --
 -- The interface (contract 1), reached with DyresToolkit.RequireContract(1):
 --   RegisterAddOn(info)            info.addon (folder), info.title, and optional
@@ -163,9 +165,14 @@ function ns.SetGridSize(size)
 end
 
 -- /dyre, and /dyretoolkit in case another AddOn uses /dyre.
-local USAGE = "Use /dyre (settings), /dyre unlock, /dyre lock, /dyre grid, /dyre snap, /dyre minimap, or /dyre debug."
+local USAGE = "Use /dyre (settings), /dyre unlock, /dyre lock, /dyre grid, /dyre snap, /dyre minimap, "
+    .. "/dyre debug, /dyre pull [seconds], /dyre tank_reset, /dyre tank_debug, or /dyre threat_debug."
 
 function ns.HandleCommand(message)
+    -- The tank and threat words (Tank.lua), some with an argument.
+    if ns.HandleTankCommand and ns.HandleTankCommand(message) then
+        return
+    end
     local command = type(message) == "string" and message:match("^%s*(%S*)%s*$")
     command = command and command:lower()
     if command == "" then
@@ -217,4 +224,8 @@ events:SetScript("OnEvent", function(self, event, name)
     self:UnregisterEvent("PLAYER_LOGIN")
     ns.InitializeSettings()
     ns.InitializeMinimap()
+    -- Group warnings and tank tools (2.9.0), after the toolkit's own settings.
+    if ns.InitializeTank then
+        ns.InitializeTank()
+    end
 end)

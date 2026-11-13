@@ -39,7 +39,8 @@ class ReleaseTests(unittest.TestCase):
             # Git may check these templates out as CRLF on Windows. Fixture-only
             # conversion gives valid LF input without changing the real sources.
             (self.source / name).write_bytes((ROOT / name).read_bytes().replace(b"\r\n", b"\n"))
-        for name in builder.LIBRARY_FILES + builder.RUNTIME_FILES + builder.LIBRARY_NOTICES:
+        for name in (builder.LIBRARY_FILES + builder.RUNTIME_FILES + builder.BINDING_FILES
+                     + builder.LIBRARY_NOTICES):
             (self.source / name).parent.mkdir(parents=True, exist_ok=True)
             (self.source / name).write_bytes(b"local addonName, DQT = ...\n")
         for name in builder.MEDIA_FILES:
@@ -84,14 +85,14 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(manifest["tag"], "v" + self.version)
         self.assertEqual(manifest["interface"], 16001)
         self.assertEqual(manifest["game_version"], "1.60.1")
-        self.assertEqual(manifest["target_build"], 70450)
+        self.assertEqual(manifest["target_build"], 70888)
         self.assertEqual(manifest["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
         self.assertEqual((self.output / (path.name + ".sha256")).read_text(),
                          f"{manifest['sha256']}  {path.name}\n")
         checked = builder.validate_archive(path, self.version)
         self.assertEqual(checked, dict(manifest, tag=""))
         notes = " ".join((self.output / "release-notes.md").read_text().split())
-        for text in ("Forever beta 1.60.1", "70450", "the APIs it needs", "`/dyre unlock`",
+        for text in ("Forever beta 1.60.1", "70888", "the APIs it needs", "`/dyre unlock`",
                      "Dyre's AddOns", "minimap button"):
             self.assertIn(text, notes)
         with zipfile.ZipFile(path) as archive:
@@ -284,12 +285,32 @@ class ReleaseTests(unittest.TestCase):
                      icon[:16] + bytes((24,)) + icon[17:]):
             with self.subTest(header=data[:18]), self.assertRaises(ValueError):
                 builder._validate_tga("icon.tga", data)
-        self.assertEqual(builder.MEDIA_FILES, ("Textures/Stripes.tga",))
-        self.assertEqual(sorted(path.name for path in (ROOT / "Textures").iterdir()), ["Stripes.tga"])
+        self.assertEqual(builder.MEDIA_FILES, ("Textures/Stripes.tga", "Textures/ShieldFill.tga",
+                                               "Textures/ShieldEdge.tga", "Textures/SwordsFill.tga",
+                                               "Textures/SwordsEdge.tga"))
+        self.assertEqual(sorted(path.name for path in (ROOT / "Textures").iterdir()),
+                         ["ShieldEdge.tga", "ShieldFill.tga", "Stripes.tga", "SwordsEdge.tga", "SwordsFill.tga"])
+        for name in builder.MEDIA_FILES:
+            builder._validate_tga(name, (ROOT / name).read_bytes())
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
-            self.assertIn("DyresToolkit/Textures/Stripes.tga", archive.namelist())
+            for name in builder.MEDIA_FILES:
+                self.assertIn("DyresToolkit/" + name, archive.namelist())
             self.assertEqual(len(archive.namelist()), len(builder.PACKAGE_FILES))
+
+    def test_package_ships_the_key_bindings_and_the_tank_files(self):
+        # 2.9.0: the client loads Bindings.xml from the folder (the TOC does not
+        # list it); the group warnings and tank tools load after DotPredict.lua.
+        self.assertEqual(builder.BINDING_FILES, ("Bindings.xml",))
+        self.assertNotIn("Bindings.xml", builder.TOC_LOADS)
+        self.assertEqual(builder.RUNTIME_FILES[-7:], ("Tank.lua", "Threat.lua", "PetTaunt.lua", "TankButtons.lua",
+                                                      "Pull.lua", "TankProbe.lua", "GroupSettings.lua"))
+        path, _ = self.build()
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+        self.assertIn("DyresToolkit/Bindings.xml", names)
+        self.assertIn("DyresToolkit/Tank.lua", names)
+        self.assertNotIn("DyresToolkit/tests/tank.lua", names)
 
     def test_changelog_never_enters_the_package(self):
         path, _ = self.build()

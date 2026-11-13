@@ -32,7 +32,8 @@ class ProvenanceTests(unittest.TestCase):
             + "\n".join(build_release.TOC_LOADS) + "\n",
             encoding="utf-8", newline="\n",
         )
-        for name in build_release.LIBRARY_FILES + build_release.RUNTIME_FILES + build_release.LIBRARY_NOTICES:
+        for name in (build_release.LIBRARY_FILES + build_release.RUNTIME_FILES + build_release.BINDING_FILES
+                     + build_release.LIBRARY_NOTICES):
             (source / name).parent.mkdir(parents=True, exist_ok=True)
             (source / name).write_text("local value = true\n", encoding="utf-8", newline="\n")
         for name in build_release.MEDIA_FILES:

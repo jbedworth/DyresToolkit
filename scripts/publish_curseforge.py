@@ -115,9 +115,9 @@ def load_artifact(artifact_dir, tag):
         if type(supplied) is not type(value) or supplied != value:
             raise PublishError(f"Release manifest {key} mismatch")
     if (verified["interface"] != 16001 or verified["game_version"] != "1.60.1"
-            or verified["target_build"] != 70450 or verified["classic_interface"] != 11509
+            or verified["target_build"] != 70888 or verified["classic_interface"] != 11509
             or verified["classic_game_version"] != "1.15.9" or verified["classic_target_build"] != 70003):
-        raise PublishError("Only Forever beta 1.60.1 / Interface 16001 / build 70450 with "
+        raise PublishError("Only Forever beta 1.60.1 / Interface 16001 / build 70888 with "
                            "Classic Era 1.15.9 / Interface 11509 / build 70003 is supported")
     # Upload the held bytes, not a later read of a possibly replaced artifact.
     digest = hashlib.sha256(archive_bytes).hexdigest()

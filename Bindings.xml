@@ -1,0 +1,11 @@
+<Bindings>
+    <Binding name="CLICK DyresToolkitSkull:LeftButton" runOnUp="true" header="DYRESTOOLKIT" category="ADDONS"/>
+    <Binding name="CLICK DyresToolkitSkullMouseover:LeftButton" runOnUp="true" category="ADDONS"/>
+    <Binding name="CLICK DyresToolkitNextMarker:LeftButton" runOnUp="true" category="ADDONS"/>
+    <Binding name="CLICK DyresToolkitMarkPing:LeftButton" runOnUp="true" category="ADDONS"/>
+    <Binding name="CLICK DyresToolkitPingAttack:LeftButton" runOnUp="true" category="ADDONS"/>
+    <Binding name="CLICK DyresToolkitPingWarning:LeftButton" runOnUp="true" category="ADDONS"/>
+    <Binding name="CLICK DyresToolkitPingAssist:LeftButton" runOnUp="true" category="ADDONS"/>
+    <Binding name="CLICK DyresToolkitPingOnmyway:LeftButton" runOnUp="true" category="ADDONS"/>
+    <Binding name="CLICK DyresToolkitPull:LeftButton" category="ADDONS"/>
+</Bindings>
