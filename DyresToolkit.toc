@@ -2,7 +2,7 @@
 ## Title: Dyre's Toolkit
 ## Notes: Threat warnings and tank tools for every player, and one layout mode, grid, and minimap menu for Dyre's AddOns
 ## Author: Dyre
-## Version: 2.9.0
+## Version: 2.9.1
 ## IconTexture: Interface\Icons\INV_Misc_Wrench_01
 ## Category: Dyre's AddOns
 ## SavedVariables: DyresToolkitDB

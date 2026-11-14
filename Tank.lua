@@ -74,10 +74,14 @@ DTT.SCALE_MIN, DTT.SCALE_MAX, DTT.DEFAULT_SCALE = 50, 200, 100
 -- Threat view (author, 2026-11-10): "auto" finds whether you tank by the
 -- tank bar's rule (Threat.lua TankReasons); "tank" and "dps" force a view. "dps" is also the healer view.
 DTT.THREAT_MODES = {"auto", "tank", "dps"}
--- Where the threat label sits beside a nameplate's health bar. Right by
--- default: John's screenshot (2026-11-10) had the label above the bar under
--- the mob's name, and the space right of the bar free.
-DTT.PLATE_PLACES = {"right", "left", "above", "below"}
+-- Where the threat label sits beside a nameplate's health bar. Left by
+-- default (John, 2026-11-14: "default position for threat indicator should
+-- be on the left of nameplates, and DIES should be on the right"), so DIES
+-- keeps the right side. Until 2.9.1 the default was right; SanitizeDB always
+-- saved the default, so a save from before PLACE_SAVES 1 that says "right"
+-- becomes "left" once.
+DTT.PLATE_PLACES = {"left", "right", "above", "below"}
+DTT.PLACE_SAVES = 1
 -- The tank bar: "auto" shows it while you tank (Threat.lua TankBarWanted:
 -- group role Tank or raid main tank, Defensive Stance, Bear Form, Righteous
 -- Fury; the same rule as the threat view); "always"
@@ -343,7 +347,9 @@ function DTT.SanitizeDB(db, classFile)
         plateThreat = Flag(db.plateThreat, true),
         targetThreat = Flag(db.targetThreat, true),
         threatMode = OneOf(db.threatMode, DTT.THREAT_MODES),
-        platePlace = OneOf(db.platePlace, DTT.PLATE_PLACES),
+        platePlace = (db.placeSaves ~= DTT.PLACE_SAVES and db.platePlace == "right") and "left"
+            or OneOf(db.platePlace, DTT.PLATE_PLACES),
+        placeSaves = DTT.PLACE_SAVES,
         plateX = DTT.SanitizeOffset(db.plateX),
         plateY = DTT.SanitizeOffset(db.plateY),
         targetX = DTT.SanitizeOffset(db.targetX),

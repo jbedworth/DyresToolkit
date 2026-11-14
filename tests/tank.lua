@@ -651,12 +651,20 @@ test("saved settings are repaired", function()
     equal(table.concat(db.markerOrder, ","), "8,7", "duplicates and bad markers dropped")
     equal(db.position, nil, "a broken position is dropped")
     equal(db.threatMode, "auto")
-    equal(db.platePlace, "right")
+    equal(db.platePlace, "left", "left by default")
     local other = fixture({db = {threatMode = "tank", platePlace = "nowhere", barMode = "never"}}).env.DyresToolkitCharDB
     equal(other.barMode, "never")
     equal(fixture({db = {barMode = "sometimes"}}).env.DyresToolkitCharDB.barMode, "auto", "a bad mode is the default")
     equal(other.threatMode, "tank")
-    equal(other.platePlace, "right", "a bad place is the default")
+    equal(other.platePlace, "left", "a bad place is the default")
+    -- Before PLACE_SAVES, every save held the old default "right": it becomes left once.
+    local old = fixture({db = {platePlace = "right"}}).env.DyresToolkitCharDB
+    equal(old.platePlace, "left", "an old save's right is the old default: left once")
+    equal(old.placeSaves, 1)
+    equal(fixture({db = {platePlace = "right", placeSaves = 1}}).env.DyresToolkitCharDB.platePlace, "right",
+        "right chosen since 2.9.1 stays")
+    equal(fixture({db = {platePlace = "above"}}).env.DyresToolkitCharDB.platePlace, "above",
+        "an old save's other choice stays")
     equal(state.ns.SanitizePull(120), 60)
     equal(table.concat(state.ns.SanitizeMarkerOrder({}), ","), "8,7,6,4,3,2,1", "empty is the default")
 end)
@@ -2320,7 +2328,7 @@ test("no threat hides the label", function()
     equal(TargetLabel(state).shown, false)
 end)
 
-test("nameplate labels sit right of the bar by default, move with the setting, and go when removed", function()
+test("nameplate labels sit left of the bar by default, move with the setting, and go when removed", function()
     local state = fixture({toolkit = true, units = {nameplate3 = true}, group = {role = "DAMAGER"}})
     state.plates.nameplate3 = {bar = state.env.UIParent:CreateTexture()}
     state.threat.nameplate3 = {false, 1, 90}
@@ -2328,10 +2336,10 @@ test("nameplate labels sit right of the bar by default, move with the setting, a
     local label = state.ns.ThreatLabels().nameplate3
     assert(label, "a label on the plate")
     equal(label.text.text, "90%")
-    equal(label.points[1][1], "LEFT")
+    equal(label.points[1][1], "RIGHT")
     equal(label.points[1][2], state.plates.nameplate3.bar, "beside the bar the Toolkit found")
-    equal(label.points[1][3], "RIGHT")
-    for _, case in ipairs({{"left", "RIGHT"}, {"above", "BOTTOM"}, {"below", "TOP"}, {"right", "LEFT"}}) do
+    equal(label.points[1][3], "LEFT")
+    for _, case in ipairs({{"right", "LEFT"}, {"above", "BOTTOM"}, {"below", "TOP"}, {"left", "RIGHT"}}) do
         state.settings.DYRE_PLATE_PLACE:SetValue(case[1])
         equal(label.points[1][1], case[2], case[1])
     end
@@ -2367,7 +2375,7 @@ end)
 
 test("label offsets add to every place, 0 keeps it, and shown labels move at once, also in combat", function()
     local state = fixture({toolkit = true, units = {target = true, nameplate3 = true}, group = {role = "DAMAGER"},
-        threat = {target = {false, 1, 90}}})
+        threat = {target = {false, 1, 90}}, db = {platePlace = "right", placeSaves = 1}})
     state.plates.nameplate3 = {bar = state.env.UIParent:CreateTexture()}
     state.threat.nameplate3 = {false, 1, 90}
     state.fire("NAME_PLATE_UNIT_ADDED", "nameplate3")
@@ -2420,7 +2428,7 @@ end)
 
 test("label size scales the label at once, also in combat, and keeps the gap and offsets in pixels", function()
     local state = fixture({toolkit = true, units = {target = true, nameplate3 = true}, group = {role = "DAMAGER"},
-        threat = {target = {false, 1, 90}}})
+        threat = {target = {false, 1, 90}}, db = {platePlace = "right", placeSaves = 1}})
     state.plates.nameplate3 = {bar = state.env.UIParent:CreateTexture()}
     state.threat.nameplate3 = {false, 1, 90}
     state.fire("NAME_PLATE_UNIT_ADDED", "nameplate3")

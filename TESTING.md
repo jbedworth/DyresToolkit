@@ -201,8 +201,10 @@ nothing. `/reload` first, so the counts start at 0.
       target label at its default size): "The adjustable size font scales
       well enough, I think it looks fine." The size range and combat are not
       noted as checked.
-- [ ] Label right of each enemy nameplate's bar, not on the mob's name;
-      Left, Above, and Below in the settings move it. The target's label sits
+- [ ] Label left of each enemy nameplate's bar by default (2.9.1; John,
+      2026-11-14), not on the mob's name, and DIES right of the bar; Right,
+      Above, and Below in the settings move it. A character saved before
+      2.9.1 with Right moves to Left once. The target's label sits
       above the target frame's bar. With Dyre's Debuff Tracker or WTF: the
       label and the DIES badge do not cover each other.
 - [ ] Tank view (group role Tank, raid main tank, Bear Form, Righteous

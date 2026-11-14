@@ -4,6 +4,14 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.9.1
+
+### Features
+- The DoT and crowd-control engine knows every class, for Dyre's Debuff Tracker: Druid, Hunter, Priest, Rogue, Shaman, Warrior, and Paladin DoTs and crowd control, and the DoT parts of Mage's Fireball, Pyroblast, and Frostfire Bolt. Rip and Rupture count your combo points, and Serpent Sting and the Mage projectiles start their DoT when they land. Damage to come for these DoTs shows after their first ticks (or from the tooltip on WoW: Forever).
+
+### Other changes
+- The threat label now sits left of enemy nameplates by default, so DIES from Dyre's Debuff Tracker or Warlock Tools Forever has the right side. If you had the old default (Right), it moves to Left once; choose Right again in the settings to keep it there.
+
 ## 2.9.0
 
 ### Features

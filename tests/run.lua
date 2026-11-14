@@ -2358,7 +2358,8 @@ test("FocusCastMacro: every control macro fits the 255-letter macro limit", func
         for _, options in ipairs({
             {spell = 710, marker = 8}, {spell = 6358, condition = ",pet:Succubus/Incubus"},
             {spell = 5782, shift = true, marker = 8}, {spell = 118, marker = 8},
-            {spell = "Polymorph: Turtle", marker = 8},
+            {spell = "Polymorph: Turtle", marker = 8}, {spell = "Shackle Undead", marker = 8},
+            {spell = "Hibernate", marker = 8}, {spell = "Sap", marker = 8}, {spell = "Repentance", marker = 8},
         }) do
             local body = toolkit.FocusCastMacro(options)
             assert(body and #body <= 255, tostring(options.spell) .. " is " .. tostring(body and #body))
@@ -2425,11 +2426,14 @@ test("an announcer sends each kind at most once every few seconds, only in a gro
     equal(table.concat(sent, "|"), "PARTY:Fear on Grunt|PARTY:Banish on Imp|SAY:Fear on Grunt")
 end)
 
-test("class data: Warlock and Mage tables are whole, and Agony's weights match WTF's ramp", function()
+local CLASSES = {"WARLOCK", "MAGE", "DRUID", "HUNTER", "PRIEST", "ROGUE", "SHAMAN", "WARRIOR", "PALADIN"}
+
+test("class data: every class table is whole, and Agony's weights match WTF's ramp", function()
     local toolkit = fixture().toolkit
-    equal(toolkit.ClassSpells("PRIEST"), nil, "no table until its IDs are checked")
-    for _, class in ipairs({"WARLOCK", "MAGE"}) do
+    equal(toolkit.ClassSpells("DEATHKNIGHT"), nil, "no table for a class with no data")
+    for _, class in ipairs(CLASSES) do
         local data = toolkit.ClassSpells(class)
+        assert(data, class)
         local controls, ids = {}, {}
         for _, spell in ipairs(data.control) do
             assert(type(spell.key) == "string" and type(spell.label) == "string" and #spell.ids > 0, class)
@@ -2447,11 +2451,40 @@ test("class data: Warlock and Mage tables are whole, and Agony's weights match W
             assert(macro.pet or controls[macro.known], macro.name .. " knows a control spell")
             assert(not macro.marker or controls[macro.marker].marker, macro.name .. " marker")
         end
+        local slotIDs = {}
         for _, slot in ipairs(data.dots) do
             assert(slot.color:match("^%x%x%x%x%x%x%x%x$"), slot.key)
+            assert(type(slot.label) == "string" and #slot.ids > 0, class .. " " .. slot.key)
+            for _, id in ipairs(slot.ids) do
+                assert(not slotIDs[id], class .. ": DoT ID " .. id .. " twice")
+                slotIDs[id] = true
+            end
+            assert(not slot.cast or slotIDs[slot.cast], slot.key .. " recasts one of its own IDs")
         end
         for id, rank in pairs(data.ranks) do
-            assert(data.families[rank[1]], id .. " has a family")
+            local family = data.families[rank[1]]
+            assert(family, id .. " has a family")
+            assert(type(rank[2]) == "number" or rank[2] == false, id .. ": base damage or false")
+            assert(rank[3] == nil or rank[3] >= family.interval, id .. ": a duration of a tick or more")
+            assert(rank[4] == nil or (rank[4] >= 1 and rank[4] <= 60), id .. ": a level")
+            assert(slotIDs[id], id .. " is in its slot too")
+        end
+        for name, family in pairs(data.families) do
+            assert(family.interval > 0 and family.school >= 1 and family.school <= 7, class .. " " .. name)
+        end
+        local order = {}
+        for _, name in ipairs(data.familyOrder) do
+            assert(data.families[name] and not order[name], class .. " order " .. name)
+            order[name] = true
+        end
+        for name in pairs(data.families) do
+            assert(order[name], class .. ": " .. name .. " is in the order")
+        end
+        for _, check in ipairs(data.checks or {}) do
+            assert(#check.ids > 0 and type(check.what) == "string", class .. " check")
+        end
+        if class ~= "WARLOCK" then
+            assert(data.checks and #data.checks > 0, class .. " lists what John checks in client")
         end
     end
     local warlock = toolkit.ClassSpells("WARLOCK")
@@ -2463,6 +2496,132 @@ test("class data: Warlock and Mage tables are whole, and Agony's weights match W
     end
     equal(toolkit.ClassSpells("MAGE").control[1].longest, 50)
     equal(warlock.control[1].plateTimer, true, "Fear's plate timer is data")
+end)
+
+-- One row per new spell: the class, where it is ("dot" slot or "control"),
+-- its key, every ID in order, and the cited numbers (the DDT class gate; DDT's
+-- class audit: LCD, G2G-F, TFB, WT, DIDA).
+local SPELL_ROWS = {
+    {"MAGE", "dot", "fireball", "133 143 145 3140 8400 8401 8402 10148 10149 10150 10151 25306"},
+    {"MAGE", "dot", "pyroblast", "11366 12505 12522 12523 12524 12525 12526 18809"},
+    {"MAGE", "dot", "frostfire", "401502 1237312 1237313"},
+    {"DRUID", "dot", "moonfire", "8921 8924 8925 8926 8927 8928 8929 9833 9834 9835"},
+    {"DRUID", "dot", "insect", "5570 24974 24975 24976 24977"},
+    {"DRUID", "dot", "roots", "339 1062 5195 5196 9852 9853"},
+    {"DRUID", "dot", "rake", "1822 1823 1824 9904"},
+    {"DRUID", "dot", "rip", "1079 9492 9493 9752 9894 9896"},
+    {"DRUID", "dot", "pounce", "9005 9823 9827 9007 9824 9826"},
+    {"DRUID", "dot", "lacerate", "414644 1235826 1235827 1328616 1328617 414647"},
+    {"HUNTER", "dot", "serpent", "1978 13549 13550 13551 13552 13553 13554 13555 25295"},
+    {"HUNTER", "dot", "trap", "13795 14302 14303 14304 14305 13797 14298 14299 14300 14301"},
+    {"PRIEST", "dot", "pain", "589 594 970 992 2767 10892 10893 10894"},
+    {"PRIEST", "dot", "plague", "2944 19276 19277 19278 19279 19280"},
+    {"PRIEST", "dot", "holyfire", "14914 15262 15263 15264 15265 15266 15267 15261"},
+    {"ROGUE", "dot", "rupture", "1943 8639 8640 11273 11274 11275"},
+    {"ROGUE", "dot", "garrote", "703 8631 8632 8633 11289 11290"},
+    {"SHAMAN", "dot", "flameshock", "8050 8052 8053 10447 10448 29228"},
+    {"WARRIOR", "dot", "rend", "772 6546 6547 6548 11572 11573 11574"},
+    {"DRUID", "control", "hibernate", "2637 18657 18658", 40, {bar = true, marker = 5, click = true}},
+    {"DRUID", "control", "roots", "339 1062 5195 5196 9852 9853", 27, {bar = true}},
+    {"HUNTER", "control", "scarebeast", "1513 14326 14327", 20, {bar = true}},
+    {"HUNTER", "control", "wyvern", "19386 24132 24133 24335", 12, {bar = true}},
+    {"HUNTER", "control", "freezingtrap", "1499 14310 14311", nil, {untargeted = true}},
+    {"PRIEST", "control", "shackle", "9484 9485 10955", 50, {bar = true, marker = 5, click = true}},
+    {"PRIEST", "control", "scream", "8122 8124 10888 10890", nil, {untargeted = true}},
+    {"ROGUE", "control", "sap", "6770 2070 11297", 45, {bar = true, marker = 5, click = true}},
+    {"ROGUE", "control", "blind", "2094", 10, {bar = true}},
+    {"WARRIOR", "control", "shout", "5246", nil, {untargeted = true}},
+    {"PALADIN", "control", "turnundead", "2878 5627 10326", 20, {bar = true}},
+    {"PALADIN", "control", "repentance", "20066", 6, {bar = true, marker = 5}},
+}
+
+-- [rank ID] = {duration (LCD; nil: tooltip only), interval (DIDA)}, a sample per family.
+local RANK_ROWS = {
+    [133] = {4, 2}, [143] = {6, 2}, [3140] = {8, 2}, [11366] = {12, 3}, [401502] = {nil, 3},
+    [8921] = {9, 3}, [8924] = {12, 3}, [5570] = {12, 2}, [339] = {12, 3}, [9853] = {27, 3}, [1822] = {9, 3},
+    [1079] = {12, 2}, [9005] = {18, 3}, [9007] = {18, 3}, [414644] = {nil, 3}, [1235826] = {nil, 3},
+    [1235827] = {nil, 3}, [1328616] = {nil, 3}, [1328617] = {nil, 3}, [414647] = {nil, 3}, [1237312] = {nil, 3},
+    [1237313] = {nil, 3},
+    [1978] = {15, 3}, [13795] = {15, 3}, [13797] = {15, 3},
+    [589] = {18, 3}, [2944] = {24, 3}, [14914] = {10, 2},
+    [1943] = {16, 2}, [703] = {18, 3}, [8050] = {12, 3},
+    [772] = {9, 3}, [6546] = {12, 3}, [6547] = {15, 3}, [6548] = {18, 3}, [11572] = {21, 3}, [11574] = {21, 3},
+}
+
+test("class data: each new spell has its cited IDs, durations, intervals, and flags", function()
+    local toolkit = fixture().toolkit
+    for _, row in ipairs(SPELL_ROWS) do
+        local data = toolkit.ClassSpells(row[1])
+        local found
+        for _, def in ipairs(row[2] == "dot" and data.dots or data.control) do
+            if def.key == row[3] then
+                found = def
+            end
+        end
+        assert(found, row[1] .. " " .. row[3])
+        local ids = {}
+        for _, id in ipairs(found.ids) do
+            ids[#ids + 1] = tostring(id)
+        end
+        equal(table.concat(ids, " "), row[4], row[1] .. " " .. row[3])
+        if row[2] == "control" then
+            equal(found.longest, row[5], row[3] .. " longest")
+            for _, flag in ipairs({"bar", "marker", "click", "untargeted", "single", "plateTimer"}) do
+                equal(found[flag], row[6][flag], row[3] .. " " .. flag)
+            end
+        end
+    end
+    for id, expected in pairs(RANK_ROWS) do
+        local rank, family
+        for _, class in ipairs(CLASSES) do
+            local data = toolkit.ClassSpells(class)
+            if data.ranks[id] then
+                rank, family = data.ranks[id], data.families[data.ranks[id][1]]
+            end
+        end
+        assert(rank, id .. " ranked")
+        equal(rank[2], false, id .. ": no base damage (option a)")
+        equal(rank[3], expected[1], id .. " duration")
+        equal(family.interval, expected[2], id .. " interval")
+    end
+    local mage, druid = toolkit.ClassSpells("MAGE"), toolkit.ClassSpells("DRUID")
+    local hunter, rogue = toolkit.ClassSpells("HUNTER"), toolkit.ClassSpells("ROGUE")
+    for _, name in ipairs({"fireball", "pyroblast", "frostfire"}) do
+        equal(mage.families[name].late, true, name .. " starts as it lands")
+        equal(mage.families[name].direct, true, name .. " also hits")
+    end
+    equal(hunter.families.serpent.late, true)
+    equal(hunter.families.trap.ground, true, "the trap has no mob at the cast")
+    equal(mage.families.frostfire.mask, 20, "Fire + Frost")
+    equal(druid.families.rip.finisher, true)
+    equal(druid.families.rip.pointDuration, nil, "Rip lasts 12 s at any points")
+    equal(rogue.families.rupture.finisher, true)
+    equal(table.concat(rogue.families.rupture.pointDuration, ","), "6,2", "6 + 2 per point")
+    equal(druid.ranks[9853][4], 58, "WT's level")
+    equal(druid.ranks[5570][4], nil, "a talent: no level in WT")
+    -- Every Forever-only ID is on John's check list.
+    local checked = {}
+    for _, class in ipairs(CLASSES) do
+        for _, check in ipairs(toolkit.ClassSpells(class).checks or {}) do
+            for _, id in ipairs(check.ids) do checked[id] = true end
+        end
+    end
+    for _, id in ipairs({414644, 1235826, 1235827, 1328616, 1328617, 414647, 401502, 1237312, 1237313, 24335,
+        2094, 20066, 10326, 9007, 13797}) do
+        assert(checked[id], id .. " is on the check list")
+    end
+    -- Left out on purpose: Wrack (a channel), Gouge and Scatter Shot (short).
+    for _, class in ipairs(CLASSES) do
+        local data = toolkit.ClassSpells(class)
+        for _, def in ipairs(data.control) do
+            for _, id in ipairs(def.ids) do
+                assert(id ~= 1776 and id ~= 19503, class .. ": short crowd control stays out")
+            end
+        end
+        for id in pairs(data.ranks) do
+            assert(id ~= 1316697, "Wrack stays out")
+        end
+    end
 end)
 
 -- Engine stage B (2.5.0): one owner per kind, the control tracker ------------------
@@ -3864,6 +4023,284 @@ test("Forever: a meter total far from the guess, or a fight with an unseen DoT, 
     emit(state, "PLAYER_REGEN_ENABLED")
     advance(state, 0.5)
     equal(state.toolkit.LearnedTicks()[172], nil, "100 a tick is ten times the guess")
+end)
+
+-- Every class (the DDT class gate): ranks with no base, finishers, late starts, masks, traps.
+local PHYSICAL, NATURE = 1, 8
+for id, name in pairs({[772] = "Rend", [6546] = "Rend", [1943] = "Rupture", [8639] = "Rupture", [1079] = "Rip",
+    [133] = "Fireball", [143] = "Fireball", [401502] = "Frostfire Bolt", [1978] = "Serpent Sting",
+    [13795] = "Immolation Trap", [13797] = "Immolation Trap Effect", [703] = "Garrote", [589] = "Shadow Word: Pain"}) do
+    DOT_NAMES[id] = name
+end
+
+local function classPredictor(state, class)
+    return predictor(state, {addon = "DyresDebuffTracker", priority = 5, class = class})
+end
+
+test("a rank with no base damage waits for its first tick, then counts and saves it as seen", function()
+    local state = fixture()
+    predictWorld(state)
+    state.env.GetSpellBonusDamage = function() return 100 end
+    local made = classPredictor(state, "WARRIOR")
+    state.log("SPELL_AURA_APPLIED", "Player-1", "Creature-1", 6546, "DEBUFF")
+    equal(made:PredictedDamage("Creature-1"), 0, "Rend rank 2: no first guess")
+    equal(made.mobs["Creature-1"].dots.rend.ticks, 4, "12 s every 3 s")
+    contains(table.concat(made:DebugLines(), "|"), "waiting -")
+    state.now = state.now + 3
+    state.log("SPELL_PERIODIC_DAMAGE", "Player-1", "Creature-1", 6546, 11)
+    equal(made:PredictedDamage("Creature-1"), 33, "3 ticks to come of the 11 seen")
+    equal(state.toolkit.LearnedTicks()[6546].tick, 11)
+    state.env.GetSpellBonusDamage = function() return 500 end
+    state.log("SPELL_AURA_APPLIED", "Player-1", "Creature-2", 6546, "DEBUFF")
+    equal(made:PredictedDamage("Creature-2"), 44, "the saved tick as it is: with no base, power is not scaled")
+end)
+
+test("finishers: the combo points at the send set Rupture's length and the tick saved for them", function()
+    local state = fixture()
+    predictWorld(state)
+    state.env.GetComboPoints = function() return state.points end
+    local made = classPredictor(state, "ROGUE")
+    state.points = 3
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", "Cast-1", 1943)
+    state.points = 0
+    emit(state, "UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 1943)
+    state.log("SPELL_AURA_APPLIED", "Player-1", "Creature-1", 1943, "DEBUFF")
+    local dot = made.mobs["Creature-1"].dots.rupture
+    equal(dot.duration, 12, "6 + 2 x 3")
+    equal(dot.ticks, 6)
+    equal(dot.points, 3)
+    state.now = state.now + 2
+    state.log("SPELL_PERIODIC_DAMAGE", "Player-1", "Creature-1", 1943, 9)
+    equal(made:PredictedDamage("Creature-1"), 45)
+    local saved = state.toolkit.LearnedTicks()[1943]
+    equal(saved.points[3].tick, 9, "saved for 3 points")
+    -- 5 points: nothing saved for them yet.
+    state.points = 5
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", "Cast-2", 1943)
+    state.log("SPELL_AURA_APPLIED", "Player-1", "Creature-2", 1943, "DEBUFF")
+    equal(made.mobs["Creature-2"].dots.rupture.duration, 16)
+    equal(made:PredictedDamage("Creature-2"), 0, "waits: the 3-point tick is not a 5-point one")
+    -- 3 points again: the saved tick.
+    state.points = 3
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", "Cast-3", 1943)
+    state.log("SPELL_AURA_APPLIED", "Player-1", "Creature-3", 1943, "DEBUFF")
+    equal(made:PredictedDamage("Creature-3"), 54, "6 ticks of the saved 9")
+    -- Secret points (Forever in combat): 1 point's length, nothing saved.
+    state.points = SECRET
+    emit(state, "UNIT_SPELLCAST_SENT", "player", "Grunt", "Cast-4", 1943)
+    state.log("SPELL_AURA_APPLIED", "Player-1", "Creature-4", 1943, "DEBUFF")
+    dot = made.mobs["Creature-4"].dots.rupture
+    equal(dot.duration, 8, "unknown points: 1, so it errs low")
+    equal(dot.points, nil)
+    state.now = state.now + 2
+    state.log("SPELL_PERIODIC_DAMAGE", "Player-1", "Creature-4", 1943, 30)
+    equal(state.toolkit.LearnedTicks()[1943].points[1], nil, "never saved for unknown points")
+    equal(state.toolkit.LearnedTicks()[1943].points[3].tick, 9)
+    contains(table.concat(made:DebugLines(), "|"), "points unknown")
+end)
+
+test("finishers on Forever: the tooltip line for the points sent gives the damage", function()
+    local state = fixture()
+    hiddenWorld(state)
+    TOOLTIPS[1079] = "Finishing move that causes damage over time.  Damage increases per combo point:\n"
+        .. "   1 point  : 42 damage over 12 sec.\n   2 points: 66 damage over 12 sec.\n"
+        .. "   3 points: 90 damage over 12 sec.\n   4 points: 114 damage over 12 sec.\n"
+        .. "   5 points: 138 damage over 12 sec."
+    state.env.GetComboPoints = function() return state.points end
+    local made = classPredictor(state, "DRUID")
+    state.points = 4
+    cast(state, "Grunt", 1079, "Cast-1")
+    equal(made:PredictedDamage("Creature-1"), 114, "4 points, no spell power on physical")
+    state.points = SECRET
+    cast(state, "Grunt", 1079, "Cast-2")
+    equal(made:PredictedDamage("Creature-1"), 42, "unreadable points: the lowest line")
+    -- A misread length (under a tick): ClassData's 12 s rank, which has no base.
+    local before = made.mobs["Creature-1"].dots.rip
+    TOOLTIPS[9492] = "Finishing move. 1 point  : 8 over 1 sec"
+    state.now = state.now + 1
+    cast(state, "Grunt", 9492, "Cast-3")
+    local after = made.mobs["Creature-1"].dots.rip
+    assert(after ~= before, "a new Rip")
+    equal(after.duration, 12)
+    equal(after.source, "waiting", "ClassData's rank has no base")
+    TOOLTIPS[1079], TOOLTIPS[9492] = nil, nil
+end)
+
+test("Forever: a bleed's tooltip with no school word reads; with no tooltip it waits", function()
+    local state = fixture()
+    hiddenWorld(state)
+    TOOLTIPS[772] = "Wounds the target causing them to bleed for 15 damage over 9 sec."
+    local made = classPredictor(state, "WARRIOR")
+    cast(state, "Grunt", 772, "Cast-1")
+    equal(made:PredictedDamage("Creature-1"), 15)
+    state.now = state.now + 3
+    state.hit("target", "WOUND", SECRET, PHYSICAL)
+    equal(made:PredictedDamage("Creature-1"), 10)
+    TOOLTIPS[772] = nil
+    cast(state, "Grunt", 6546, "Cast-2")
+    equal(made:PredictedDamage("Creature-1"), 0, "no tooltip, no base: waiting")
+end)
+
+test("late starts on Forever: Fireball's DoT starts at its hit, not at the cast", function()
+    local state = fixture()
+    hiddenWorld(state)
+    TOOLTIPS[143] = "Hurls a fiery ball that causes 31 to 45 Fire damage and an additional 2 Fire damage over 6 sec."
+    local made = classPredictor(state, "MAGE")
+    cast(state, "Grunt", 143, "Cast-1")
+    local dot = made.mobs["Creature-1"].dots.fireball
+    equal(made:PredictedDamage("Creature-1"), 2)
+    equal(dot.ticks, 3, "6 s every 2 s")
+    state.now = state.now + 1.2
+    state.hit("target", "WOUND", SECRET, FIRE)
+    equal(dot.landed, true)
+    equal(dot.applied, 101.2, "the flight: the rhythm starts at the hit")
+    equal(dot.seen, 0, "the hit is not a tick")
+    -- Its first tick, 2 s after the hit (3.2 s after the cast): counted.
+    advance(state, 2)
+    state.hit("target", "WOUND", SECRET, FIRE)
+    equal(dot.seen, 1)
+    equal(dot.missed, 0, "the slot timer waited for the moved rhythm")
+    TOOLTIPS[143] = nil
+end)
+
+test("late starts on Forever: a slow landing moves the slot timer too, so its first tick is not missed", function()
+    local state = fixture()
+    hiddenWorld(state)
+    TOOLTIPS[143] = "Hurls a fiery ball that causes 31 to 45 Fire damage and an additional 2 Fire damage over 6 sec."
+    local made = classPredictor(state, "MAGE")
+    cast(state, "Grunt", 143, "Cast-1")
+    local dot = made.mobs["Creature-1"].dots.fireball
+    state.now = state.now + 1.8
+    state.hit("target", "WOUND", SECRET, FIRE)
+    equal(dot.applied, 101.8)
+    -- The cast's slot timer (2 + 0.45 + 1.5 s) fires before the moved slot's window ends.
+    advance(state, 2.15)
+    equal(dot.missed, 0, "not yet: the slot is now 103.8 +/- 0.45")
+    equal(dot.seen, 0)
+    state.now = state.now + 0.15
+    state.hit("target", "WOUND", SECRET, FIRE)
+    equal(dot.seen, 1)
+    TOOLTIPS[143] = nil
+end)
+
+test("late starts on Forever: Serpent Sting's first tick may come a flight late; Corruption's may not", function()
+    local state = fixture()
+    hiddenWorld(state)
+    TOOLTIPS[1978] = "Stings the target, causing 20 Nature damage over 15 sec."
+    local made = classPredictor(state, "HUNTER")
+    cast(state, "Grunt", 1978, "Cast-1")
+    local dot = made.mobs["Creature-1"].dots.serpent
+    -- 3 s plus a 1.2 s flight; the 0.45 s window alone would miss it.
+    advance(state, 4.2)
+    equal(dot.missed, 0, "the slot waits a flight longer")
+    state.hit("target", "WOUND", SECRET, NATURE)
+    equal(dot.seen, 1)
+    equal(dot.anchored, true)
+    equal(made:PredictedDamage("Creature-1"), 16)
+    -- A non-projectile tick that late is not a tick.
+    local warlock = predictor(state)
+    cast(state, "Grunt", 172, "Cast-2")
+    state.now = state.now + 4.2
+    state.hit("target", "WOUND", SECRET, SHADOW)
+    equal(warlock.mobs["Creature-1"].dots.corruption.seen, 0)
+    TOOLTIPS[1978] = nil
+end)
+
+test("late starts on Forever: a resist after the flight drops the DoT; a slow resist for Corruption does not", function()
+    local state = fixture()
+    hiddenWorld(state)
+    TOOLTIPS[143] = "Hurls a fiery ball that causes 31 to 45 Fire damage and an additional 2 Fire damage over 6 sec."
+    local made = classPredictor(state, "MAGE")
+    cast(state, "Grunt", 143, "Cast-1")
+    state.now = state.now + 1.2
+    state.hit("target", "RESIST", nil, FIRE)
+    equal(made:PredictedDamage("Creature-1"), 0, "resisted as it landed")
+    TOOLTIPS[143] = nil
+    local warlock = predictor(state)
+    cast(state, "Grunt", 172, "Cast-2")
+    state.now = state.now + 1.2
+    state.hit("target", "RESIST", nil, SHADOW)
+    equal(warlock:PredictedDamage("Creature-1"), 40, "outside Corruption's window: not its outcome")
+end)
+
+test("Frostfire Bolt: Fire + Frost hits count; with no tooltip there is no length, so no DoT", function()
+    local state = fixture()
+    hiddenWorld(state)
+    TOOLTIPS[401502] = "Launches a bolt of frostfire, dealing 100 Frostfire damage and an additional 30 Frostfire "
+        .. "damage over 9 sec."
+    local made = classPredictor(state, "MAGE")
+    cast(state, "Grunt", 401502, "Cast-1")
+    local dot = made.mobs["Creature-1"].dots.frostfire
+    equal(dot.duration, 9, "the tooltip's length")
+    state.now = state.now + 0.8
+    state.hit("target", "WOUND", SECRET, FIRE)
+    equal(dot.landed, nil, "Fire alone is not Frostfire")
+    state.hit("target", "WOUND", SECRET, 20)
+    equal(dot.landed, true, "school 20 is its hit")
+    TOOLTIPS[401502] = nil
+    cast(state, "Grunt", 1237312, "Cast-2")
+    equal(made.mobs["Creature-1"].dots.frostfire, dot, "no tooltip and no checked length: no new DoT")
+end)
+
+test("Immolation Trap: never from the cast on Forever; on Era from its debuff on the mob", function()
+    local state = fixture()
+    hiddenWorld(state)
+    TOOLTIPS[13795] = "Place a fire trap that will burn the first enemy to approach for 105 Fire damage over 15 sec."
+    local made = classPredictor(state, "HUNTER")
+    cast(state, "Grunt", 13795, "Cast-1")
+    equal(made.mobs["Creature-1"], nil, "a trap has no mob at the cast")
+    TOOLTIPS[13795] = nil
+    local era = fixture()
+    predictWorld(era)
+    local onEra = classPredictor(era, "HUNTER")
+    era.log("SPELL_AURA_APPLIED", "Player-1", "Creature-1", 13797, "DEBUFF")
+    equal(onEra.mobs["Creature-1"].dots.trap.ticks, 5, "15 s every 3 s")
+end)
+
+test("Forever: the damage meter teaches a family with no base; never a finisher", function()
+    local state = fixture()
+    hiddenWorld(state)
+    state.env.GetComboPoints = function() return 3 end
+    local made = classPredictor(state, "ROGUE")
+    state.env.C_DamageMeter = {GetCombatSessionSourceFromType = function()
+        return {combatSpells = {{spellID = 703, totalAmount = 40}, {spellID = 1943, totalAmount = 60}}}
+    end}
+    state.combat = true
+    cast(state, "Grunt", 703, "Cast-1")
+    cast(state, "Grunt", 1943, "Cast-2")
+    equal(made:PredictedDamage("Creature-1"), 0, "Garrote and Rupture wait: no base, no tooltip")
+    state.now = state.now + 2
+    state.hit("target", "WOUND", SECRET, PHYSICAL)
+    state.now = state.now + 1
+    state.hit("target", "WOUND", SECRET, PHYSICAL)
+    state.now = state.now + 1
+    state.hit("target", "WOUND", SECRET, PHYSICAL)
+    -- At 6 s both tick: two hits, one each.
+    state.now = state.now + 2
+    state.hit("target", "WOUND", SECRET, PHYSICAL)
+    state.hit("target", "WOUND", SECRET, PHYSICAL)
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    advance(state, 0.5)
+    assert(state.toolkit.LearnedTicks()[703], "Garrote learned")
+    equal(state.toolkit.LearnedTicks()[703].tick, 20, "40 over Garrote's 2 ticks seen")
+    equal(state.toolkit.LearnedTicks()[1943], nil, "a finisher's casts may differ by points")
+end)
+
+test("saved finisher ticks are repaired once a session: only whole points 1-5 with good ticks", function()
+    local state = fixture()
+    predictWorld(state)
+    state.env.DyresToolkitDB.ticks = {[1943] = {tick = 9, power = 0, points = {[3] = {tick = 9, power = 0},
+        [7] = {tick = 1, power = 0}, [2.5] = {tick = 1, power = 0}, [4] = {tick = -1, power = 0}, x = true}},
+        [703] = {tick = 5, power = 0, points = "bad"}}
+    classPredictor(state, "ROGUE")
+    local ticks = state.toolkit.LearnedTicks()
+    equal(ticks[1943].points[3].tick, 9)
+    local left = 0
+    for _ in pairs(ticks[1943].points) do left = left + 1 end
+    equal(left, 1, "7, 2.5, a bad tick, and a bad key are dropped")
+    equal(ticks[703].points, nil)
+    equal(ticks[703].tick, 5)
 end)
 
 test("WTF at 10 draws over Dyre's Debuff Tracker at 5; its rows show the active source's damage", function()

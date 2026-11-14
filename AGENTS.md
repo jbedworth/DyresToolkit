@@ -347,8 +347,23 @@ rules are data; CONTRACT stays 2; WTF 1.4.1 and MTF 1.2.3 keep working.
   ranks, families, familyOrder, control, macros) and MAGE (control, macros),
   every ID from WTF 1.4.1 and MTF 1.2.3. Agony's ramp is `weights`
   (`TickWeight(family, tick)`), Fear's plate timer `plateTimer`, Seduction's
-  pet check `pet`. Another class or ID only once checked on both clients.
-  Polymorph has `single` (one up at a time: a new cast replaces the row).
+  pet check `pet`. Polymorph has `single` (one up at a time: a new cast
+  replaces the row).
+- Every class (the DDT class gate; lead, 2026-11-14, John: "go with your
+  recommendations"; the audit is the shared notes'
+  ddt-class-spells-audit.md): DRUID, HUNTER, PRIEST, ROGUE, SHAMAN,
+  WARRIOR, PALADIN, and Mage's Fireball, Pyroblast, and Frostfire Bolt. Each
+  ID is copied from a local file (LibClassicDurations, Good-to-Go Camelot,
+  TalentsForeverBook, WhatsTraining, Does It Die Advanced; the file's head
+  names each), none guessed, and NONE IS CHECKED IN CLIENT yet (lead
+  decision 7): each class's `checks` lists what John checks, and DDT's
+  TESTING.md lists them all. Durations are Era's; Forever's are assumed the
+  same. The over-time ranks have no base damage (false; option a); a nil
+  duration (Lacerate, Frostfire Bolt) counts only from the tooltip; a nil
+  level is not in the sources. New family fields: `finisher`,
+  `pointDuration`, `late`, `mask`, `ground` (DotPredict below). Left out:
+  Wrack (a channel), Gouge and Scatter Shot (short), TBC-only spells.
+  Entangling Roots is both a DoT slot and a control bar spell.
 
 ### Tracking engine, stage B (2.5.0; lead plan, 2026-11-01)
 
@@ -473,6 +488,27 @@ WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
   returns nil for DIES then; a row then puts DIES just left of its health texts (its `secretPlace`; the numbers stay), else at the bar's end. Methods: `Available`, `PredictedDamage(guid)`, `DrawRow(bar,
   guid, health, place)`, `Refresh`, `SetTracker` (DotTracker calls it),
   `DebugLines`. The tick weights are ClassData's (`TickWeight`).
+- Every class in DotPredict (the DDT class gate; lead-approved engine items
+  3 and 5, plus what option a and the new data need; the file's head):
+  a rank with no base gives no first guess (source "waiting") and a saved
+  tick is used as saved (no spell power rescale); finishers read combo
+  points at UNIT_SPELLCAST_SENT (registered on Era too when a family is a
+  finisher; GetComboPoints, else UnitPower; secret: 1 point, nothing
+  saved), `pointDuration` sets the length, the tooltip's "N points: X
+  damage over Y sec" line the damage, saved ticks per point
+  (`ticks[rank].points[n]`, repaired once a session), and the damage meter
+  never teaches a finisher; `late` DoTs on the hidden path start at their
+  own hit when `direct`, else each slot may come PROJECTILE_TRAVEL (1.5 s,
+  Does It Die) late until the first tick, the outcome window grows by the
+  same, and a slot timer waits again when the rhythm moved; `mask`
+  overrides the school mask; `ground` never starts from a cast on the
+  hidden path. The tooltip reader also takes damage with no school word
+  ("bleed for 15 damage over 9 sec") and refuses a length under one tick.
+  The meter teaches a family with no guess when its tick is above 0. Not
+  built: attack power scaling (item 4; seen ticks correct it), Does It
+  Die's own combo point count. On Forever, melee swings are physical too,
+  so a bleed's slot can take a swing in its window (Does It Die's tight
+  windows limit it).
 - The learned ticks (lead decision 1, the one engine store):
   `DyresToolkitDB.ticks[rank] = {tick, power}`, repaired once a session
   (tick > 0, power >= 0, a rank some ClassData table lists), shared by every
