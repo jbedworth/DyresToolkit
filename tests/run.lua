@@ -3529,6 +3529,73 @@ test("the pinned rows' outline width: 3 px by default, 0 draws none, at most 20,
     equal(tracker.stack.height, defaultHeight, "a bad value is the default")
 end)
 
+-- 2.9.2 (John, 2026-11-14): "the first dot where I positioned it, the second
+-- to render above it".
+local function castLines(row)
+    local lines = {}
+    for _, button in pairs(row.casts) do
+        equal(button.point[1], "TOPLEFT")
+        lines[#lines + 1] = {name = button.spellName, y = button.point[5]}
+    end
+    table.sort(lines, function(a, b) return a.y > b.y end)
+    local names = {}
+    for index, line in ipairs(lines) do names[index] = line.name end
+    return table.concat(names, "|"), lines
+end
+
+test("grow direction: down by default; up puts the first DoT lowest, per panel", function()
+    local state = fixture()
+    dotWorld(state)
+    local tracker, store = dotTracker(state)
+    equal(table.concat(state.toolkit.TRACKER_GROW, "|"), "down|up")
+    local down, downLines = castLines(tracker.pinned.target)
+    equal(down, "Curse of Agony|Corruption|Immolate", "down: the saved order from the top")
+    store.grow = {target = "up"}
+    tracker:Rebuild()
+    local up, upLines = castLines(tracker.pinned.target)
+    equal(up, "Immolate|Corruption|Curse of Agony", "up: the first DoT at the bottom")
+    equal(upLines[1].y, downLines[1].y, "the same block of lines, only the order turns")
+    equal(upLines[3].y, downLines[3].y)
+    equal(castLines(tracker.pinned.focus), "Curse of Agony|Corruption|Immolate", "focus keeps its own direction")
+    store.grow = {target = "sideways"}
+    tracker:Rebuild()
+    equal(castLines(tracker.pinned.target), down, "a bad value is down")
+end)
+
+test("grow direction up: the list's rows stack upward, and a list not yet dragged sits above the stack", function()
+    local state = fixture()
+    dotWorld(state)
+    state.locked = false
+    local tracker, store = dotTracker(state)
+    local function listRows()
+        -- In the list's order: the samples take rows from the end.
+        local rows = {}
+        for _, row in ipairs(tracker.rows) do
+            if row.sample then table.insert(rows, 1, row) end
+        end
+        equal(rows[1].mobName, "Another mob (sample)")
+        return rows
+    end
+    local rows = listRows()
+    equal(#rows, 2, "two sample rows while unlocked")
+    equal(rows[2].point[1], "TOPLEFT")
+    assert(rows[2].point[5] < 0, "down: the second row below the first")
+    equal(tracker.list.point[1], "TOPLEFT", "down: the list hangs below the pinned rows")
+    store.grow = {list = "up"}
+    tracker:Rebuild()
+    rows = listRows()
+    equal(rows[1].point[1], "BOTTOMLEFT")
+    equal(rows[1].point[5], 0, "up: the first row at the list's place")
+    assert(rows[2].point[5] > 0, "up: the second row above the first")
+    equal(tracker.list.point[1], "BOTTOMLEFT")
+    equal(tracker.list.point[2], tracker.stack)
+    equal(tracker.list.point[3], "TOPLEFT", "above the stack, clear of the pinned rows")
+    store.sections.list = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 500, y = 300}
+    tracker:Rebuild()
+    equal(tracker.list.point[1], "CENTER", "a dragged list keeps its place")
+    equal(listRows()[2].point[1], "BOTTOMLEFT")
+end)
+
 test("Dyre's Debuff Tracker's DoT tracker steps aside for the class AddOn's", function()
     local state = fixture()
     dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})

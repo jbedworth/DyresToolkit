@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.9.2
+
+### Features
+- The DoT tracker can grow up: for each panel (target, focus, others), the owner AddOn can set Up, so the first DoT sits where you placed the panel and the next ones go above it. In the others panel, new mobs also stack upward. Down stays the default. The mob name keeps the place you chose for it.
+
 ## 2.9.1
 
 ### Features

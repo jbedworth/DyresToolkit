@@ -43,6 +43,17 @@ local BAR_BACKGROUND = {0.1, 0.1, 0.1, 0.6}
 -- John, 2026-11-11, from a player asking to hide it); 0 draws none.
 local OUTLINE_GAP = 2
 DyresToolkit.TRACKER_OUTLINE = {min = 0, max = 20, default = 3}
+-- Grow direction per panel (2.9.2; John, 2026-11-14: "for each frame
+-- (Target, Focus, Other) we need to be able to set whether the DoTs should
+-- grow up or down from the origin ... If I place the Target tracker above the
+-- target frame, I probably want the first dot where I positioned it, the
+-- second to render above it"): store.grow[key], "down" (the default, as
+-- before) or "up". Up puts the first DoT line at the bottom of the bar block
+-- and the next above it (Bars look), and stacks the list's rows upward from
+-- the list's place (both looks). The name keeps its own place setting (John:
+-- "Keep the name above/below setting we already have where it is. The user
+-- can chose."). A change needs Rebuild.
+DyresToolkit.TRACKER_GROW = {"down", "up"}
 local SLOT_GAP = 6
 local PADDING = 6
 -- Seconds a list row stays without a unit to bind, out of combat; in combat
@@ -157,7 +168,9 @@ end
 --               health, healthText ("none", "number", "percent", "both"),
 --               panelOpacity {target, focus, list}, outlineWidth (the
 --               pinned rows' outline, TRACKER_OUTLINE: 0-20 px, default 3,
---               0 none; a change needs Rebuild), position, sections
+--               0 none; a change needs Rebuild), grow {target, focus,
+--               list} ("down" or "up", TRACKER_GROW; a change needs
+--               Rebuild), position, sections
 --               {target, focus, list}, and each slot's lastUsed key;
 --               curseMode ("last", the default, or "smart": the slot with
 --               `smart` data casts the smart curse) and curseMarker (false:
@@ -349,6 +362,12 @@ function DyresToolkit.CreateDotTracker(spec)
         return math.max(spec.min, math.min(spec.max, math.floor(width + 0.5)))
     end
 
+    -- A panel's grow direction (TRACKER_GROW): only "up" counts; anything
+    -- else is "down".
+    local function GrowsUp(key)
+        return type(store.grow) == "table" and store.grow[key] == "up"
+    end
+
     -- The stacked pinned rows' step keeps the outlines clear of each other.
     local function PinnedSpacing()
         return OutlineWidth() + OUTLINE_GAP + 2
@@ -443,6 +462,11 @@ function DyresToolkit.CreateDotTracker(spec)
             end
             region:SetSize(size, size)
         else
+            -- Up: the same block of lines, in reverse order, so the first
+            -- DoT is the lowest line.
+            if GrowsUp(row.panelKey) then
+                position = #tracker.shown - position + 1
+            end
             local top = where == "below" and ROW_PADDING or BarHeader()
             region:SetPoint("TOPLEFT", row, "TOPLEFT", PADDING, -(top + (position - 1) * (size + BAR_LINE_GAP)))
             region:SetSize(RowWidth() - PADDING * 2, size)
@@ -1155,6 +1179,16 @@ function DyresToolkit.CreateDotTracker(spec)
         if sections.list then
             return
         end
+        -- A list growing up, not yet dragged, sits above the stack, so its
+        -- rows never cover the pinned rows.
+        if GrowsUp("list") then
+            if tracker.listTop ~= "up" then
+                tracker.listTop = "up"
+                tracker.list:ClearAllPoints()
+                tracker.list:SetPoint("BOTTOMLEFT", tracker.stack, "TOPLEFT", 0, PinnedSpacing())
+            end
+            return
+        end
         local listTop = 0
         if not Locked() then
             listTop = StackOffset("list")
@@ -1202,10 +1236,15 @@ function DyresToolkit.CreateDotTracker(spec)
         end
         local list = tracker.list
         local used = {}
+        local up = GrowsUp("list")
         for index, row in ipairs(listed) do
             used[row] = true
             row:ClearAllPoints()
-            row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(index - 1) * RowStep())
+            if up then
+                row:SetPoint("BOTTOMLEFT", list, "BOTTOMLEFT", 0, (index - 1) * RowStep())
+            else
+                row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -(index - 1) * RowStep())
+            end
             row.name:SetText(row.mobName)
             row:Show()
         end
@@ -1432,11 +1471,16 @@ function DyresToolkit.CreateDotTracker(spec)
             frame:ClearAllPoints()
             if saved then
                 frame:SetPoint(saved.point, UIParent, saved.relativePoint, saved.x, saved.y)
+            elseif key == "list" and GrowsUp("list") then
+                frame:SetPoint("BOTTOMLEFT", stack, "TOPLEFT", 0, PinnedSpacing())
             else
                 frame:SetPoint("TOPLEFT", stack, "TOPLEFT", 0, -StackOffset(key))
             end
         end
-        tracker.listTop = not sections.list and StackOffset("list") or nil
+        tracker.listTop = nil
+        if not sections.list then
+            tracker.listTop = GrowsUp("list") and "up" or StackOffset("list")
+        end
     end
 
     -- A panel's opacity: the whole section frame, at once, also in combat.

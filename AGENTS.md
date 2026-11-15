@@ -470,6 +470,19 @@ WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
   none. The stacked rows' step is the width + 4, so the default does not move
   anything and 0 closes them up. Read at each pinned row's build: a change
   needs `Rebuild` (out of combat). The rows' tooltip-style edge is not this.
+- Grow direction (2.9.2; John, 2026-11-14: "for each frame (Target,
+  Focus, Other) we need to be able to set whether the DoTs should grow up
+  or down from the origin"; "Keep the name above/below setting we already
+  have where it is. The user can chose."): `store.grow[key]` for target,
+  focus, and list, "down" (default; anything else) or "up"
+  (`TRACKER_GROW`). Up, Bars look: the same block of lines in reverse
+  order (PlaceSlot), so the first DoT is the lowest; the name stays where
+  `namePosition` puts it. Up, the list (both looks): rows stack upward from
+  the list frame's bottom; a list not yet dragged sits above the stack
+  (BOTTOMLEFT on the stack's TOPLEFT, PinnedSpacing up), so it never covers
+  the pinned rows, and does not follow them. A change needs `Rebuild`. The
+  sections keep the toolkit's CENTER saves, so a size change (a new DoT
+  learned) still grows a panel both ways from its center.
 - PlateDots.lua: `CreatePlateDots{tracker, store, slots, color}` (store:
   enabled, plateDots, plateDotsOffset, plateDotsOpacity, onPlates);
   `Refresh`, `ApplyColors`, `ApplyOpacity`; fields `byUnit`, `known`. Only
