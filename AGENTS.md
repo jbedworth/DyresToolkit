@@ -404,6 +404,23 @@ rules are data; CONTRACT stays 2; WTF 1.4.1 and MTF 1.2.3 keep working.
     those clients), a 1 s C_Timer only while one shows. `clickThrough`
     (MTF): the slot stays while the bar does, with the mouse only for a click
     or while unlocked.
+  - `fixedClick = key` (2.9.3; John, 2026-11-15, MTF player report:
+    a Polymorph first cast in combat had no click; "we always use the
+    focus target"): the slot's macro does not depend on the mob, so it is
+    set once, out of combat, from when you know the spell, not per cast.
+    It casts the def's first ID's name (the learned spell). The slot's visibility is a state driver,
+    `[@focus,exists,harm,nodead] show; hide` (show while unlocked; hide
+    with the bar off or no focus support), so it follows your focus in
+    combat. While it can show and no sheep is up, the row shows dimmed
+    with your focus's name (FixedSlotShown mirrors the driver; a secret
+    "can attack" counts as shown), so no click area is unseen. Cost: with
+    a live hostile focus and no sheep, a click on the bar sheeps your
+    focus. Overrides `clickThrough` for the slot.
+  - Every row click casts the learned spell, `ClickSpell(def)` = the def's
+    first ID's name, never the variant you cast (John, 2026-11-15: the
+    variants, Pig, Turtle, Cow, the watermelon, come from deciphered
+    scrolls in limited supply, and a variant's recast has a strong chance
+    of not working). The bar still tracks a variant's sheep.
   - Owners: the tracker claims control, macros, and (with `announce`)
     announce for its class at `priority`. Not the owner: no rows, no
     timers, no announcements, and no macro writes or deletes (the owner

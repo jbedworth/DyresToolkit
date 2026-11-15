@@ -3120,12 +3120,74 @@ test("MTF's Polymorph bar: one row, its exact names, and a new sheep replaces th
     state.units.focus = mob("Creature-2", "Wolf")
     cast(state, "Wolf", 28272, "c2")
     equal(tracker.rows[1].guid, "Creature-2", "the next sheep at your focus")
-    equal(tracker.rows[1].holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Polymorph: Pig")
+    equal(tracker.rows[1].holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Polymorph",
+        "a scroll's variant (Pig) recasts the learned Polymorph")
     equal(tracker.rows[1].holder.mouse, true, "a sheep to click")
     local byName = {}
     for _, macro in ipairs(state.macros) do byName[macro.name] = macro.body end
     equal(byName["! Polymorph"], "#showtooltip Polymorph\n/clearfocus [mod:shift][btn:2]\n/focus [@mouseover,harm,nodead][@focus,noharm][@focus,dead]\n"
         .. "/tm [@focus,harm,nodead] !5\n/use [@focus,harm,nodead] Polymorph", "MTF 1.2.3's macro")
+end)
+
+-- John, 2026-11-15 (an MTF player report): a Polymorph first cast in combat
+-- had no click; the click is now set once, from when you know Polymorph.
+test("fixedClick: the click is there before any cast, so a sheep first cast in combat clicks", function()
+    local state = fixture()
+    controlWorld(state, {focus = mob("Creature-1", "Boar")})
+    state.focusWorks(true)
+    local tracker = mageTracker(state, {fixedClick = "polymorph"})
+    local row = tracker.rows[1]
+    local holder = row.holder
+    equal(holder.attributes.type1, "macro", "set before any cast")
+    equal(holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Polymorph")
+    equal(holder.mouse, true)
+    equal(state.drivers[holder], "[@focus,exists,harm,nodead] show; hide", "shown by your focus, also in combat")
+    -- No sheep yet: the slot can be clicked, so its row shows, dimmed, with your focus's name.
+    equal(row.shown, true, "never an unseen click area")
+    equal(row.name.text, "Boar")
+    state.combat = true
+    cast(state, "Boar", 118, "c1")
+    equal(row.guid, "Creature-1", "the sheep shows in combat")
+    equal(holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Polymorph", "the click was already there")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    state.units.focus = mob("Creature-2", "Wolf")
+    emit(state, "PLAYER_FOCUS_CHANGED")
+    cast(state, "Wolf", 28272, "c2")
+    equal(holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Polymorph", "never the scroll's Pig")
+    -- The focus dies: the slot's driver hides it, and the row goes with it.
+    state.units.focus = mob("Creature-2", "Wolf", {dead = true})
+    emit(state, "UNIT_HEALTH", "focus")
+    equal(row.guid, nil)
+    equal(row.shown, false, "no live hostile focus: no slot, no row")
+    equal(holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Polymorph", "the click stays")
+    -- A secret "can attack": the row shows, as the slot may.
+    state.units.focus = mob("Creature-3", "Bear", {canAttack = SECRET})
+    emit(state, "PLAYER_FOCUS_CHANGED")
+    equal(row.shown, true, "a secret answer counts as shown")
+    state.units.focus = nil
+    emit(state, "PLAYER_FOCUS_CHANGED")
+    equal(row.shown, false)
+end)
+
+test("fixedClick: unlocked shows the slot to drag by; no focus support or off, no click", function()
+    local state = fixture()
+    controlWorld(state, {focus = mob("Creature-1", "Boar")})
+    state.focusWorks(false)
+    local tracker, store = mageTracker(state, {fixedClick = "polymorph"})
+    local holder = tracker.rows[1].holder
+    equal(holder.attributes.macrotext1, nil, "no click without focus support")
+    equal(state.drivers[holder], "hide")
+    equal(tracker.rows[1].shown, false)
+    state.locked = false
+    tracker:Refresh()
+    equal(state.drivers[holder], "show", "unlocked: a slot to drag by")
+    state.locked = true
+    state.focusWorks(true)
+    store.enabled = false
+    tracker:Refresh()
+    equal(holder.attributes.macrotext1, nil, "the bar off: no click")
+    equal(state.drivers[holder], "hide")
 end)
 
 test("MTF without focus: the chain locks the mob, and with no unit the name counts the time down", function()

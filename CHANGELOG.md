@@ -4,6 +4,12 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.9.3
+
+### Fixes
+- Crowd-control bars with a fixed click (Mage Tools Forever's Polymorph bar): the click now works for a Polymorph first cast in combat. The click is ready as soon as you know the spell, and the bar shows, dimmed with your focus's name, while a click would cast on your focus.
+- A crowd-control bar's click always casts the spell you learned. After a Polymorph variant from a scroll (Pig, Turtle, and the others), the click casts Polymorph, so it does not use up your scrolls.
+
 ## 2.9.2
 
 ### Features
