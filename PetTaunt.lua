@@ -82,7 +82,7 @@ end
 
 -- The warning's title and line while it applies, else nil.
 function DTT.PetTauntText()
-    if not spec or not DTT.db.petTaunt or not DTT.Owns("petTaunt") or not ns.toolkit.KnowsAny(spec.knownBy) then
+    if not spec or DTT.db.groupWarnings == false or not DTT.db.petTaunt or not DTT.Owns("petTaunt") or not ns.toolkit.KnowsAny(spec.knownBy) then
         return nil
     end
     if not IsInGroup() or DesignatedTank() then

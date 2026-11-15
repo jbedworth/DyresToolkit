@@ -231,7 +231,8 @@ function DTT.BossModShowingPull()
 end
 
 function DTT.PullDisplayWanted()
-    return DTT.Owns("pullDisplay") and DTT.db.pullDisplay == true and not DTT.BossModShowingPull()
+    return DTT.Owns("pullDisplay") and DTT.db.groupWarnings ~= false and DTT.db.pullDisplay == true
+        and not DTT.BossModShowingPull()
 end
 
 -- The game's countdown event, where the client has one.

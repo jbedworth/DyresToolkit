@@ -945,7 +945,9 @@ end)
 
 test("the settings: John's name for the target label, and the pull slider shows its number and default", function()
     local state = fixture({globals = {MinimalSliderWithSteppersMixin = {Label = {Right = "RIGHT"}}}})
-    equal(state.settings.DYRE_TARGET_THREAT.name, "Threat on Target Frame")
+    -- John, 2026-11-15: each feature section starts with "Enable"; the
+    -- section heading names the Target Frame.
+    equal(state.settings.DYRE_TARGET_THREAT.name, "Enable")
     local slider = state.sliders.DYRE_PULL
     equal(slider.options.where, "RIGHT", "the number at the right")
     equal(slider.options.formatter(5), "5 s")
@@ -1589,7 +1591,7 @@ test("a new view is a first reading; the sound counts show in /dtt debug_threat"
     state.fire("UNIT_THREAT_LIST_UPDATE", "target")
     equal(state.ns.soundCounts.red.none, 1)
     state.env.SlashCmdList.DYRESTOOLKITTANK("debug_threat")
-    contains(state.find("red sound:"), "seen=2 played=0 skipped gap=0 none=1 calm=1 solo=0 view=1 same=0")
+    contains(state.find("red sound:"), "seen=2 played=0 skipped gap=0 none=1 off=0 calm=1 solo=0 view=1 same=0")
     assert(state.find("losing sound:"), "the losing line")
 end)
 
@@ -1939,14 +1941,80 @@ test("settings page: the threat sections, then Group Warnings, then Tank Tools",
     end
     equal(table.concat(order, ","), table.concat({
         "DYRE_UNLOCKED", "DYRE_GRID", "DYRE_SNAP_GRID", "DYRE_GRID_SIZE", "DYRE_MINIMAP",
-        "## Threat Indicators: Nameplates", "DYRE_THREAT_MODE", "DYRE_PLATE_THREAT", "DYRE_PLATE_PLACE",
+        "## Threat Indicators: Nameplates", "DYRE_PLATE_THREAT", "DYRE_THREAT_MODE", "DYRE_PLATE_PLACE",
         "DYRE_PLATE_X", "DYRE_PLATE_Y", "DYRE_PLATE_SCALE",
         "## Threat Indicators: Target Frame", "DYRE_TARGET_THREAT", "DYRE_TARGET_X", "DYRE_TARGET_Y",
         "DYRE_TARGET_SCALE",
-        "## Threat Indicators: Sounds", "DYRE_RED_SOUND", "DYRE_LOSING_SOUND", "DYRE_SOLO_SOUNDS",
-        "## Group Warnings", "DYRE_PULL_BARS", "DYRE_PULL_DISPLAY", "DYRE_PULL_TICK", "DYRE_PULL_GO",
+        "## Threat Indicators: Sounds", "DYRE_THREAT_SOUNDS", "DYRE_RED_SOUND", "DYRE_LOSING_SOUND",
+        "DYRE_SOLO_SOUNDS",
+        "## Group Warnings", "DYRE_GROUP_WARNINGS", "DYRE_PULL_BARS", "DYRE_PULL_DISPLAY", "DYRE_PULL_TICK", "DYRE_PULL_GO",
         "DYRE_DYRESTOOLKIT_PULLTIMER_SCALE", "DYRE_DYRESTOOLKIT_PULLTIMER_OPACITY", "DYRE_PET_TAUNT",
-        "## Tank Tools", "DYRE_TANK_BAR_MODE", "DYRE_PULL"}, ","))
+        "## Tank Tools", "DYRE_TANK_TOOLS", "DYRE_TANK_BAR_MODE", "DYRE_PULL"}, ","))
+end)
+
+-- John, 2026-11-15: "Each of the non-core ... features of DT need an
+-- individual off/on toggle. E.g. first option under 'Threat Indicators:
+-- Nameplates' should be an enable check-box, on by default." (A Shields Up
+-- user asked how to turn the threat sounds off.)
+test("each feature section starts with Enable, on by default and saved", function()
+    local state = fixture()
+    for _, variable in ipairs({"DYRE_PLATE_THREAT", "DYRE_TARGET_THREAT", "DYRE_THREAT_SOUNDS", "DYRE_GROUP_WARNINGS",
+            "DYRE_TANK_TOOLS"}) do
+        local setting = state.settings[variable]
+        equal(setting.name, "Enable", variable)
+        equal(setting.default, true, variable)
+        equal(setting:GetValue(), true, variable)
+    end
+    state.settings.DYRE_THREAT_SOUNDS:SetValue(false)
+    state.settings.DYRE_GROUP_WARNINGS:SetValue(false)
+    state.settings.DYRE_TANK_TOOLS:SetValue(false)
+    local db = state.env.DyresToolkitCharDB
+    equal(db.threatSounds, false)
+    equal(db.groupWarnings, false)
+    equal(db.tankTools, false)
+    local repaired = fixture({db = {threatSounds = "yes", groupWarnings = 0}}).env.DyresToolkitCharDB
+    equal(repaired.threatSounds, true, "a bad value is on")
+    equal(repaired.groupWarnings, true)
+    equal(repaired.tankTools, true, "missing is on")
+end)
+
+test("Threat Indicators: Sounds off: no red sound in a group, the label still red", function()
+    local state = fixture({group = {role = "DAMAGER"}, threat = {target = {false, 0, 20}}})
+    state.settings.DYRE_THREAT_SOUNDS:SetValue(false)
+    state.fire("UNIT_THREAT_LIST_UPDATE", "target")
+    state.combat = true
+    state.threat.target = {true, 3, 100}
+    state.fire("UNIT_THREAT_LIST_UPDATE", "target")
+    equal(RedSounds(state), 0, "off: no sound")
+    equal(state.ns.soundCounts.red.off, 1)
+    equal(TargetLabel(state).text.color[2], 0.2, "the label still turns red")
+end)
+
+test("Group Warnings off: no pull bars, no countdown on screen, no pet taunt warning; each switch keeps its value", function()
+    local state = Party({others = {party1 = {nameplate1 = {false, 0, 60}}}})
+    Plate(state, "nameplate1", {true, 3, 100})
+    state.fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(Bars(state, "nameplate1").shown, true)
+    state.settings.DYRE_GROUP_WARNINGS:SetValue(false)
+    equal(Bars(state, "nameplate1").shown, false, "no pull bars")
+    equal(state.env.DyresToolkitCharDB.pullBars, true, "its own switch stays")
+    state.settings.DYRE_GROUP_WARNINGS:SetValue(true)
+    equal(Bars(state, "nameplate1").shown, true, "back on")
+end)
+
+test("Tank Tools off: no bar, also unlocked or on Always; the buttons' commands still work", function()
+    local state = fixture({form = 18})
+    state.settings.DYRE_TANK_BAR_MODE:SetValue("always")
+    equal(BarShown(state), true)
+    state.settings.DYRE_TANK_TOOLS:SetValue(false)
+    equal(BarShown(state), false, "off beats Always")
+    state.toolkit.Unlock()
+    equal(BarShown(state), false, "off: not shown to move either")
+    state.toolkit.Lock()
+    state.env.SlashCmdList.DYRESTOOLKITTANK("pull")
+    equal(state.countdowns[1], 10, "a pull still sends")
+    state.settings.DYRE_TANK_TOOLS:SetValue(true)
+    equal(BarShown(state), true, "back on")
 end)
 
 local SOUND_ORDER = "none,raidWarning,questFailed,readyCheck,alarmClock,bossEmote,bossWhisper,queueReady,mapPing,"
@@ -3065,4 +3133,14 @@ test("pet taunt: a Warlock's Voidwalker with Torment on autocast warns too", fun
     local state = fixture({class = "WARLOCK", pet = "Voidwalker", petSpells = {"Torment"}, autocast = {[1] = true},
         known = {[697] = true}, group = {role = "HEALER"}})
     contains(state.find("Pet taunt on"), "Torment is on autocast")
+end)
+
+test("Group Warnings off: no countdown on screen and no pet taunt warning", function()
+    local pull = PullFixture()
+    pull.settings.DYRE_GROUP_WARNINGS:SetValue(false)
+    pull.fire("START_PLAYER_COUNTDOWN", 1, 10, 10)
+    equal(Shown(pull), nil, "no countdown on screen")
+    equal(pull.env.DyresToolkitCharDB.pullDisplay, true, "its own switch stays")
+    equal(hunter({db = {groupWarnings = false}}).count("Pet taunt on"), 0, "no pet taunt warning")
+    equal(hunter().count("Pet taunt on"), 1, "on: it warns")
 end)

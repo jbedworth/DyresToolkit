@@ -233,7 +233,14 @@ function DTT.InitializeGroupSettings()
     -- Four sections, then Tank Tools (John, 2026-11-12: "Group warnings has
     -- everything all mixed up; a kitchen sink of settings."). The threat
     -- view sets the labels of both kinds and the sounds: first.
+    -- Each feature section starts with its own Enable, on by default (John,
+    -- 2026-11-15: "first option under 'Threat Indicators: Nameplates' should
+    -- be an enable check-box, on by default"). The two label switches keep
+    -- their saved keys.
     Section("Threat Indicators: Nameplates")
+    Checkbox("DYRE_PLATE_THREAT", "Enable", "plateThreat", true,
+        "The view's icon and your threat percent beside enemy nameplates. Off: no nameplate labels.",
+        DTT.RefreshThreat)
     Dropdown("DYRE_THREAT_MODE", "Threat view", "threatMode", DTT.THREAT_MODES, MODE_LABELS,
         "Auto: the shield (tank view) by the tank bar's rule: group role Tank or raid main tank, a Druid "
         .. "in Bear Form, a Paladin with Righteous Fury, or a Warrior in Defensive Stance; else the "
@@ -241,9 +248,8 @@ function DTT.InitializeGroupSettings()
         .. "Tank view: green while the mob is on you, yellow while another unit has more threat or is "
         .. "near the pull point, blue while another tank has it, red when it is not on you. DPS/Healer view: "
         .. "green below the tank, yellow at 80% of the pull point (your target only), orange when you have "
-        .. "more threat than the tank, red when it is on you.", DTT.RefreshThreat)
-    Checkbox("DYRE_PLATE_THREAT", "Threat on nameplates", "plateThreat", true,
-        "The view's icon and your threat percent beside enemy nameplates.", DTT.RefreshThreat)
+        .. "more threat than the tank, red when it is on you.\n\nThe view also sets the Target Frame's label "
+        .. "and the threat sounds.", DTT.RefreshThreat)
     Dropdown("DYRE_PLATE_PLACE", "Place on nameplates", "platePlace", DTT.PLATE_PLACES, PLACE_LABELS,
         "Where the threat label sits beside a nameplate's health bar.", DTT.RefreshThreat)
     OffsetSlider("DYRE_PLATE_X", "Nameplate label: left/right", "plateX",
@@ -255,8 +261,8 @@ function DTT.InitializeGroupSettings()
         "The size of the nameplate threat label's icon and text: 100% is the default, 200% twice as big, "
         .. "50% half.")
     Section("Threat Indicators: Target Frame")
-    Checkbox("DYRE_TARGET_THREAT", "Threat on Target Frame", "targetThreat", true,
-        "The same label above your target frame's health bar.", DTT.RefreshThreat)
+    Checkbox("DYRE_TARGET_THREAT", "Enable", "targetThreat", true,
+        "The same label above your target frame's health bar. Off: no Target Frame label.", DTT.RefreshThreat)
     OffsetSlider("DYRE_TARGET_X", "Target label: left/right", "targetX",
         "Moves the target frame's threat label right (more) or left (less) from its place, in pixels.")
     OffsetSlider("DYRE_TARGET_Y", "Target label: up/down", "targetY",
@@ -266,6 +272,8 @@ function DTT.InitializeGroupSettings()
         "The size of the target frame's threat label icon and text: 100% is the default, 200% twice as "
         .. "big, 50% half.")
     Section("Threat Indicators: Sounds")
+    Checkbox("DYRE_THREAT_SOUNDS", "Enable", "threatSounds", true,
+        "The red and orange threat sounds. Off: no threat sounds; the labels still change color.", function() end)
     SoundDropdown("DYRE_RED_SOUND", "Alert sound (red)", "redSound", DTT.DEFAULT_RED_SOUND, "Aggro",
         "A sound when a mob's threat label turns red: in the tank view, a mob left you; in the DPS/Healer "
         .. "view, a mob came to you. At most once every 2 seconds. Default: Dyre's Alerts: Bell buzz, from "
@@ -286,6 +294,13 @@ function DTT.InitializeGroupSettings()
         "On: the red and orange sounds also play when you are not in a group. Off (the default): they play "
         .. "only in a party or raid; the threat labels still change color when solo.", function() end)
     Section("Group Warnings")
+    Checkbox("DYRE_GROUP_WARNINGS", "Enable", "groupWarnings", true,
+        "The pull bars, Dyre's countdown on screen, and the pet taunt warning. Off: none of them, whatever "
+        .. "their own switches say. Sending a pull (/dtt pull, the PULL button) still works.", function()
+            DTT.RefreshThreat()
+            DTT.ApplyPullDisplay()
+            DTT.CheckPetTaunt()
+        end)
     Checkbox("DYRE_PULL_BARS", "Pull bars under nameplates", "pullBars", true,
         "Tank view, in a party (not a raid): under each enemy nameplate, a thin bar per party member in its "
         .. "class color, full when that member pulls the mob. No bar for a member not on the mob's threat "
@@ -317,6 +332,9 @@ function DTT.InitializeGroupSettings()
         .. "Suffering) is on autocast in a group where you are not the tank.", DTT.CheckPetTaunt)
 
     Section("Tank Tools")
+    Checkbox("DYRE_TANK_TOOLS", "Enable", "tankTools", true,
+        "The tank button bar. Off: no bar, also while frames are unlocked. The key bindings and /dtt still "
+        .. "work, because you press them on purpose.", DTT.RefreshBar)
     Dropdown("DYRE_TANK_BAR_MODE", "Tank button bar", "barMode", DTT.BAR_MODES, BAR_LABELS,
         "Skull, Next marker, pings, and PULL in a bar.\n\nAuto (tank only): shown while your group role is "
         .. "Tank (or you are a raid's main tank), or as a Warrior in Defensive Stance, a Druid in Bear or Dire "

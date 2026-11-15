@@ -62,8 +62,12 @@ Ported from Dyre's Tank Tools' checklist; none is checked in client yet.
 - [ ] Options > AddOns > Dyre's AddOns shows, in order, "Threat Indicators:
       Nameplates", "Threat Indicators: Target Frame", "Threat Indicators:
       Sounds", "Group Warnings", and "Tank Tools" (John, 2026-11-12), each
-      with only its own settings. "Threat on Target Frame" is the target
-      label's name.
+      with only its own settings. Each section's first setting is
+      "Enable", ticked (John, 2026-11-15). Untick each one in turn: Sounds,
+      no threat sounds in a group while the labels still change color;
+      Group Warnings, no pull bars, no countdown on screen, no pet taunt
+      warning; Tank Tools, no bar, also with `/dyre unlock`, while
+      `/dtt pull` still works.
 - [ ] The "Pull countdown (seconds)" slider shows its number (for example
       "10 s") at the right, and a gold mark at 10.
 

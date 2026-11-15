@@ -363,6 +363,12 @@ function DTT.SanitizeDB(db, classFile)
         -- Off by default (John, 2026-11-12: "Most people, when solo, will
         -- not want the sound.").
         soloSounds = Flag(db.soloSounds, false),
+        -- Each feature section's own Enable, on by default (John, 2026-11-15:
+        -- "Each of the non-core ... features of DT need an individual off/on
+        -- toggle"; a Shields Up user asked how to turn the threat sounds off).
+        threatSounds = Flag(db.threatSounds, true),
+        groupWarnings = Flag(db.groupWarnings, true),
+        tankTools = Flag(db.tankTools, true),
         pullBars = Flag(db.pullBars, true),
         petTaunt = Flag(db.petTaunt, true),
         barMode = OneOf(db.barMode, DTT.BAR_MODES),

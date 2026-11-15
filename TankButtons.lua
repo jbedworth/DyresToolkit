@@ -248,6 +248,12 @@ function DTT.BarShown()
     if not (buttons.skull and buttons.pull) or not (buttons.skull.available or buttons.pull.available) then
         return false, "no button is on"
     end
+    -- Tank Tools' Enable off: no bar, also while unlocked (the key bindings
+    -- and /dtt still work: you press them on purpose).
+    if DTT.db.tankTools == false then
+        DTT.CancelBarHide()
+        return false, "Tank Tools off"
+    end
     if not ns.toolkit.IsLocked() then
         return true, "frames unlocked"
     end

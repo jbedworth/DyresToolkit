@@ -44,7 +44,9 @@ with them. It also gives every player threat warnings and tank tools.
 Each has its own switch, on at first except "Threat sounds when solo". The
 settings page has the sections Threat Indicators: Nameplates, Threat
 Indicators: Target Frame, Threat Indicators: Sounds, Group Warnings, and Tank
-Tools.
+Tools. Each section starts with its own **Enable** switch, on at first, so
+you can turn off any feature you do not use (for example the threat sounds)
+and keep the rest.
 
 ## Tank tools
 

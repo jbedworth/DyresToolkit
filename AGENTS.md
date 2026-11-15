@@ -567,7 +567,22 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
   sound), "Threat Indicators: Target Frame", "Threat Indicators: Sounds"
   (red, losing, solo), "Group Warnings" (pull bars, the countdown and its
   sounds and sliders, the Pet Taunt warning), and "Tank Tools"; tests check
-  the order (`ns.HomeCategory`). The pull slider has the number at its right and the
+  the order (`ns.HomeCategory`). Each section starts with an "Enable"
+  checkbox, on by default (unreleased; John, 2026-11-15: "Each of the
+  non-core (core is the first group of options, positioning, grid, etc.)
+  features of DT need an individual off/on toggle. E.g. first option under
+  'Threat Indicators: Nameplates' should be an enable check-box, on by
+  default."; a Shields Up user asked how to turn the threat sounds off):
+  Nameplates and Target Frame are the old `plateThreat` and `targetThreat`
+  switches, renamed "Enable" and moved first (the threat view moved under
+  Nameplates' Enable; it still sets every label and sound; "Threat on
+  Target Frame", John's 2026-11-12 name, is now the section heading's).
+  New: `threatSounds` (Threat.lua `Sound`, counted `off`), `groupWarnings`
+  (pull bars, `PullDisplayWanted`, `PetTauntText`; each feature's own switch
+  keeps its value), `tankTools` (`BarShown` false, also unlocked; the key
+  bindings and `/dtt` still work: pressed on purpose). Sending a pull has
+  no switch. The core settings above (unlocked, grid, snap, minimap) have
+  none. The pull slider has the number at its right and the
   gold default mark (`ns.AddDefaultTick`), as every toolkit slider must.
 - Tank bar (`barMode`: "auto" default, "always", "never"; John, 2026-11-11:
   "the Tank Bar should show [if] a) Group Role is Tank, b) Warrior Defensive

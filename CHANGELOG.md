@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.9.4
+
+### Features
+- Each feature section on the Dyre's AddOns settings page now starts with its own **Enable** switch, on by default: Threat Indicators: Nameplates, Threat Indicators: Target Frame, Threat Indicators: Sounds, Group Warnings, and Tank Tools. Turn off what you do not use, for example the threat sounds, and the rest keeps working. The layout settings at the top stay as they are.
+
 ## 2.9.3
 
 ### Fixes

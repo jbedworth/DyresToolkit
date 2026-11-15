@@ -665,12 +665,12 @@ local pullBars = {}
 -- orange with no known green, before it), and same (DPS: the same mob
 -- already orange on another label).
 DTT.soundCounts = {
-    red = {seen = 0, played = 0, gap = 0, none = 0, calm = 0, solo = 0, view = 0, same = 0},
-    losing = {seen = 0, played = 0, gap = 0, none = 0, calm = 0, solo = 0, first = 0, same = 0},
+    red = {seen = 0, played = 0, gap = 0, none = 0, off = 0, calm = 0, solo = 0, view = 0, same = 0},
+    losing = {seen = 0, played = 0, gap = 0, none = 0, off = 0, calm = 0, solo = 0, first = 0, same = 0},
 }
 DTT.SOUND_COUNT_ORDER = {
-    red = {"seen", "played", "gap", "none", "calm", "solo", "view", "same"},
-    losing = {"seen", "played", "gap", "none", "calm", "solo", "first", "same"},
+    red = {"seen", "played", "gap", "none", "off", "calm", "solo", "view", "same"},
+    losing = {"seen", "played", "gap", "none", "off", "calm", "solo", "first", "same"},
 }
 -- Labels whose state a view change cleared: their next red is not news.
 local viewReset = {}
@@ -711,6 +711,8 @@ local function Sound(kind, audible, setting, alarm)
         Count(kind, "calm")
     elseif setting == "none" then
         Count(kind, "none")
+    elseif DTT.db.threatSounds == false then
+        Count(kind, "off")
     elseif DTT.db.soloSounds ~= true and not Grouped() then
         Count(kind, "solo")
     else
@@ -818,7 +820,7 @@ end
 -- Pull bars ----------------------------------------------------------------------------
 
 local function PullBarsWanted()
-    return DTT.db.pullBars and role == "tank" and Grouped()
+    return DTT.db.groupWarnings ~= false and DTT.db.pullBars and role == "tank" and Grouped()
         and not (type(IsInRaid) == "function" and Plain(IsInRaid()) == true)
 end
 
