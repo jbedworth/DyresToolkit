@@ -28,7 +28,7 @@ LIBRARY_FILES = ("Libs/LibStub/LibStub.lua",
                  "Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua",
                  "Libs/LibDBIcon-1.0/LibDBIcon-1.0.lua")
 LIBRARY_NOTICES = ("Libs/Ace3-LICENSE.txt",)
-RUNTIME_FILES = ("Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua",
+RUNTIME_FILES = ("Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua",
                  "Auras.lua", "Units.lua", "HealthBars.lua", "Spells.lua", "Macros.lua",
                  "Announce.lua", "ClassData.lua", "Owners.lua", "Control.lua", "DotTracker.lua",
                  "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",

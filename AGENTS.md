@@ -278,6 +278,74 @@ Switch-over (not in 2.4.0; each owner session, in its own release):
   AuraContainer made by toolkit code shows auras in combat with no taint
   blamed on DyresToolkit (as in 2.2.1).
 
+### Profiles (unreleased, 2.10.0; John, 2026-11-15)
+
+A player: "some kind of profile options so I don't have to set it up
+separately for each character." John's model (docs/PROFILES.md quotes it
+whole): each character has one profile, its own, with today's settings kept;
+no switching and no shared profile; copy another character's settings or
+the Defaults; export and import as text. An AddOn cannot write files, so
+text only. Then John: "what I want is profiles to be entirely owned by the
+Toolkit. Settings for every Dyre addon, positions of every widget and visual,
+sound selections, everything." So one "Dyre's Toolkit Profile" per
+character, with a part per AddOn; each AddOn keeps its live settings in its
+own SavedVariables (John chose this); account-wide settings are not in it
+(John: "user-centric, not per character"); applied live (John: "Live apply
+would be cooler"). The family rule "the engine never owns SavedVariables"
+has this exception: the profile copies live in DyresToolkitDB.profiles.
+
+- Profiles.lua: `RegisterProfilePart{addon, title, current, sanitize,
+  characterKeys, refresh}` (CONTRACT stays 2; a dependent checks that it
+  exists, and without it keeps its own table as today; no account
+  SavedVariables line is needed). Register after the SavedVariables load and
+  before the frames are built: a part waiting for this AddOn is written then,
+  with no refresh. `ProfileParts()`. The profile (`ns.profile`): `Key`,
+  `Others`, `Label`, `CopyFrom(key or PROFILE_DEFAULTS)`, `Export`,
+  `Import(text)`, `Snapshot`, `Apply`.
+- Storage: `DyresToolkitDB.profiles["Name - Realm"] = {class, seen, parts =
+  {[addon] = settings}, pending = {[addon] = settings}}`, written at each
+  registration, after a copy or import, and at PLAYER_LOGOUT. A part of an
+  AddOn not loaded now stays; a copied or imported part for it waits in
+  `pending`. An entry from a 2.10.0 test build (`settings`) becomes the
+  toolkit's part.
+- Apply (copy or import): never in combat; all or nothing (every loaded
+  part's `sanitize` runs first, in pcall; one failure changes nothing). Each
+  part is written into its live table IN PLACE (`WriteInPlace`: cleared and
+  filled, nested tables kept), so `spec.store` of widgets, trackers' stores,
+  and settings closures see the new values; `characterKeys` are not touched.
+  Then each part's `refresh` runs in pcall; a part with none, or whose
+  refresh fails, is named in a "Reload to finish" popup (`DYRE_PROFILE_RELOAD`).
+  Then every Dyre's settings page (`ns.settingsLayouts`, Settings.lua) has
+  each setting's `NotifyUpdate` called (Blizzard_Setting.lua: for "a source
+  other than the setting object"). Defaults: every loaded part from `{}`
+  through its sanitize; not-loaded parts wait as `{}`.
+- `ReapplyWidgets(addon)` (Widgets.lua): repairs a widget's numbers and runs
+  Setup again (place, scale, size, opacity), waiting out combat for a
+  protected widget. The toolkit's own refresh (`DTT.ApplyProfile`) calls it,
+  then RefreshThreat, RefreshBar, ApplyMarkerOrder, ApplyPullDisplay, and
+  CheckPetTaunt.
+- `ns.AddProfileSettings(category, layout)`, the toolkit's page only: a
+  header "Profile: Name - Realm (Class)" (John: not seeing this character
+  "is disconcerting"), "Copy settings from" (this character first, marked
+  "(this character)" and chosen at first, then Defaults, then the others,
+  with class; Copy grey while this character is chosen, John, 2026-11-15)
+  with a Copy button at the dropdown's right (John, 2026-11-15; the
+  client has no such row, so `AttachRowButton` wraps the row initializer's
+  InitFrame and Resetter: the list pools row frames, so the button shows
+  only while the frame draws that row; without those methods, a Copy row),
+  then "Export profile" and "Import profile". StaticPopups
+  `DYRE_PROFILE_COPY`, `_EXPORT`, `_IMPORT`, `_RELOAD` (hasEditBox,
+  maxLetters, editBoxWidth: GameDialog.lua on both clients). No popup in
+  combat. No per-AddOn Profile section.
+- Text: `DYRE2:profile:<data>:<Adler-32>`, the data a table of AddOn folder
+  to part; printable, no `|`, no `:` in the data, whitespace ignored on
+  import. Parsed by the engine (depth 20, 20000 items, 60000 characters);
+  never `loadstring`. A `DYRE1` line (test builds) is refused.
+- The toolkit's own part: DyresToolkitCharDB, no `characterKeys`, live
+  apply. Each other AddOn adds its part in its own release, at least 24 h
+  after the Toolkit, with a `refresh` for live apply (or none, and the
+  player is asked to reload).
+
 ### Tracking engine, stage A (2.5.0; lead plan, 2026-11-01)
 
 The DoT and crowd-control tracking moves here from WTF and MTF in stages
@@ -1097,7 +1165,7 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
 
 - Runtime: DyresToolkit.toc, Libs/ (LibStub, CallbackHandler-1.0,
   LibDataBroker-1.1, LibDBIcon-1.0, and Ace3-LICENSE.txt), Core.lua,
-  Layout.lua, Widgets.lua, Settings.lua, Minimap.lua, Auras.lua, Units.lua,
+  Layout.lua, Widgets.lua, Settings.lua, Profiles.lua, Minimap.lua, Auras.lua, Units.lua,
   HealthBars.lua, Spells.lua, Macros.lua, Announce.lua, ClassData.lua,
   Owners.lua, Control.lua, DotTracker.lua, PlateDots.lua, DotPredict.lua,
   Tank.lua, Threat.lua, PetTaunt.lua, TankButtons.lua, Pull.lua,
@@ -1109,7 +1177,7 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
   warnings and tank tools, with their own richer client mock, ported from
   Dyre's Tank Tools) into the same run. tests/test_*.py: the release helpers.
 - Package only the TOC, Libs/ files listed in scripts/build_release.py, the
-  twenty-four runtime files, Bindings.xml, the five textures in
+  twenty-five runtime files, Bindings.xml, the five textures in
   `MEDIA_FILES` (Stripes and the four icon layers), and LICENSE, under `DyresToolkit/`, named
   `DyresToolkit-<version>-forever.zip`, with `release.json` for WowUp.
 

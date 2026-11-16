@@ -539,6 +539,32 @@ local function LoadDB()
     DTT.classFile = classFile
     DyresToolkitCharDB = DTT.SanitizeDB(DyresToolkitCharDB, classFile)
     DTT.db = DyresToolkitCharDB
+    -- The toolkit's part of the profile (2.10.0, Profiles.lua): the settings
+    -- stay per character; a copy or import writes into this same table, then
+    -- DTT.ApplyProfile shows it, with no reload.
+    ns.toolkit.RegisterProfilePart({
+        addon = DTT.ADDON,
+        title = "Dyre's Toolkit",
+        current = function() return DyresToolkitCharDB end,
+        sanitize = function(settings) return DTT.SanitizeDB(settings, classFile) end,
+        refresh = function() DTT.ApplyProfile() end,
+    })
+end
+
+-- A profile copied or imported (Profiles.lua wrote it into DyresToolkitCharDB,
+-- in place, out of combat): the widgets, threat labels, tank bar, marker
+-- order, pull display, and Pet Taunt warning read it again.
+function DTT.ApplyProfile()
+    DTT.db = DyresToolkitCharDB
+    if not DTT.available then
+        return
+    end
+    ns.toolkit.ReapplyWidgets(DTT.ADDON)
+    for _, name in ipairs({"RefreshThreat", "RefreshBar", "ApplyMarkerOrder", "ApplyPullDisplay", "CheckPetTaunt"}) do
+        if type(DTT[name]) == "function" then
+            DTT[name]()
+        end
+    end
 end
 
 -- Each kind: claimed for the toolkit, and its feature refreshed on a change

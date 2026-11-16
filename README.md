@@ -81,7 +81,12 @@ The buttons are on one bar, and each has a key binding: Key Bindings >
 AddOns > Dyre's Toolkit. The bar shows while you tank: group role Tank,
 Defensive Stance, Bear Form, or Righteous Fury, and hides 30 seconds out of
 combat after the last of them ends. Set it to Always or Never in the settings.
-The settings are per character.
+The settings are per character. The Profile section at the end of the page
+holds this character's profile: the settings, frame places, sizes, and sounds
+of every Dyre's AddOn that has joined it. Copy another character's profile,
+or the defaults, or export and import it as one line of text. A copy or
+import applies at once. The layout settings at the top (lock, grid, snap,
+minimap) are yours on every character and are not in a profile.
 
 ## What it gives you
 

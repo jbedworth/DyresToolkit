@@ -4,6 +4,13 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.10.0
+
+### Features
+- Each character now has a Dyre's Toolkit profile: its settings, frame places, sizes, and sounds. At the end of the Dyre's Toolkit settings page, the Profile section names this character and lets you copy another character's profile, or the Defaults for a clean slate. Each character keeps its own settings until you copy, so nothing changes when you update. A character shows in the list after it logs in once with this version.
+- Export and import a profile as one line of text: keep a backup, move it to another account, or share it with a friend.
+- A copy or import applies at once, with no reload. Dyre's AddOns join the profile in their own updates; until then they keep their own settings.
+
 ## 2.9.4
 
 ### Features

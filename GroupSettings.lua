@@ -344,4 +344,9 @@ function DTT.InitializeGroupSettings()
     Slider("DYRE_PULL", "Pull countdown (seconds)", "pull", DTT.PULL_MIN, DTT.PULL_MAX, DTT.DEFAULT_PULL, "%d s",
         DTT.SanitizePull,
         "The length of the PULL button's countdown. /dtt pull 5 or /dyre pull 5 sets it for one pull.")
+
+    -- Profile (2.10.0; John, 2026-11-15): this character's settings for
+    -- every Dyre's AddOn. The layout settings at the top are not in it
+    -- (John: "they are user-centric, not per character").
+    ns.AddProfileSettings(category, layout)
 end

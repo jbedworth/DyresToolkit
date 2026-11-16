@@ -41,6 +41,38 @@
 - [ ] After /reload, frames start locked and stay where they were dropped.
 - [ ] In combat, /dyre opens nothing and says so; a drag ends after combat.
 
+### Profiles (2.10.0)
+
+Not checked in client yet.
+
+- [ ] The header says "Profile: <Name> - <Realm> (<Class>)" for this
+      character.
+- [ ] "Copy settings from" shows this character first, "(this character)",
+      chosen, and Copy is grey. Pick Defaults or another character: Copy
+      turns on. Pick this character again: Copy is grey.
+- [ ] Log in on two characters. On the second, Profile > "Copy settings
+      from" lists the first with its class, and "Defaults (a clean slate)".
+- [ ] The Copy button is at the right of the dropdown, on the same row, and
+      does not cover anything. Scroll the page up and down, and open another
+      Dyre's AddOns page: no Copy button shows on any other row.
+- [ ] Copy with the settings page open: the popup names both characters;
+      "Copy" does NOT reload. At once, the threat, group warning, and tank
+      tool settings are the first character's, and the page's controls show
+      the new values. The tank bar, warning box, and pull countdown move to
+      the first character's places and sizes (`/dyre unlock` to see them).
+      The layout settings at the top did not change. Chat: "Profile copied."
+- [ ] Copy Defaults: everything back to the defaults, at once.
+- [ ] After a copy, the threat labels, tank bar mode, marker order, and
+      sounds behave as the copied settings say, with no reload.
+- [ ] A change on a character, then logout and login on another: the copy
+      has the change (the snapshot at logout).
+- [ ] Export: the popup shows one line, selected; Ctrl+C copies it; typing
+      does not change it. Import it on another character: it applies at
+      once, with no reload. A long line fits (no cut-off).
+- [ ] Import of bad text: the popup stays open and chat says why.
+- [ ] In combat the settings do not open (no popup in combat).
+- [ ] Era: the same, with no Lua error.
+
 ### Group warnings and tank tools (2.9.0)
 
 Ported from Dyre's Tank Tools' checklist; none is checked in client yet.

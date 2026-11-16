@@ -7,7 +7,7 @@
 -- features use (the rest are stubbed: FindPlateBar, FindUnitBar, InFamily).
 local test, equal, contains = ...
 local ADDON = "DyresToolkit"
-local FILES = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Spells.lua", "Macros.lua", "Owners.lua",
+local FILES = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Spells.lua", "Macros.lua", "Owners.lua",
     "Tank.lua", "Threat.lua", "PetTaunt.lua", "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua"}
 
 -- A secret stands in for the client's opaque combat values; tests mark them with
@@ -56,6 +56,7 @@ local function newRegion(state, kind, parent)
     function methods:Show() self.shown = true end
     function methods:Hide() self.shown = false end
     function methods:SetShown(shown) self.shown = shown and true or false end
+    function methods:SetEnabled(on) self.isEnabled = on and true or false end
     function methods:IsShown() return self.shown end
     function methods:SetPoint(...) self.points[#self.points + 1] = {...} end
     function methods:ClearAllPoints() self.points = {} end
@@ -323,6 +324,14 @@ local function fixture(options)
     state.settings = {}
     state.page = {}
     local pageLayout = {AddInitializer = function(_, initializer) state.page[#state.page + 1] = initializer end}
+    -- Every setting's control, for a profile applied live (NotifyUpdate).
+    function pageLayout:GetInitializers()
+        local list = {}
+        for _, setting in pairs(state.settings) do
+            if setting.initializer then list[#list + 1] = setting.initializer end
+        end
+        return list
+    end
     env.Settings = {
         VarType = {Boolean = "boolean", Number = "number", String = "string"},
         RegisterVerticalLayoutCategory = function(name)
@@ -338,6 +347,7 @@ local function fixture(options)
             state.page[#state.page + 1] = variable
             function setting:GetValue() return getValue() end
             function setting:SetValue(value) setValue(value) end
+            function setting:NotifyUpdate() self.notified = (self.notified or 0) + 1 end
             state.settings[variable] = setting
             return setting
         end,
@@ -357,6 +367,7 @@ local function fixture(options)
             setting.options = options
             local initializer = {data = {}, setting = setting}
             function initializer:InitFrame(frame) self.framed = frame end
+            function initializer:Resetter(frame) self.reset = frame end
             function initializer:GetSetting() return self.setting end
             setting.initializer = initializer
             if true then return initializer end
@@ -3143,4 +3154,414 @@ test("Group Warnings off: no countdown on screen and no pet taunt warning", func
     equal(pull.env.DyresToolkitCharDB.pullDisplay, true, "its own switch stays")
     equal(hunter({db = {groupWarnings = false}}).count("Pet taunt on"), 0, "no pet taunt warning")
     equal(hunter().count("Pet taunt on"), 1, "on: it warns")
+end)
+
+-- Profiles (2.10.0; John, 2026-11-15): one Dyre's Toolkit profile per
+-- character, with a part for each Dyre's AddOn; copy another character's or
+-- the Defaults; export and import one text line; applied live where the
+-- AddOn can. docs/PROFILES.md.
+
+-- A fixture with a character name, an account table, and the settings rows'
+-- client parts (buttons, popups, reload) recorded.
+local function ProfileFixture(extra)
+    extra = extra or {}
+    local popups = {}
+    local globals = {
+        UnitName = function() return extra.name or "Dyre" end,
+        GetRealmName = function() return "Forever" end,
+        time = function() return 1000 end,
+        DyresToolkitDB = extra.account or {},
+        CreateSettingsListSectionHeaderInitializer = function(text, tooltip)
+            return {name = "## " .. text, tooltip = tooltip}
+        end,
+        CreateSettingsButtonInitializer = function(name, button, click, tooltip)
+            return {name = name, button = button, click = click, tooltip = tooltip}
+        end,
+        StaticPopupDialogs = {},
+        StaticPopup_Show = function(which, text, _, data)
+            popups[#popups + 1] = {which = which, text = text, data = data}
+        end,
+    }
+    local state = fixture({db = extra.db, class = extra.class, globals = globals})
+    state.popups = popups
+    state.reloads = 0
+    state.env.ReloadUI = function() state.reloads = state.reloads + 1 end
+    state.profile = state.core.profile
+    function state.button(name)
+        for _, entry in ipairs(state.page) do
+            if type(entry) == "table" and entry.name == name then return entry end
+        end
+    end
+    -- A shown popup's dialog, with its edit box.
+    function state.dialog(popup, text)
+        local box = {text = ""}
+        function box:SetText(value) self.text = value end
+        function box:GetText() return self.text end
+        function box:HighlightText() self.highlighted = true end
+        function box:SetFocus() end
+        local dialog = {GetEditBox = function() return box end}
+        local info = state.env.StaticPopupDialogs[popup.which]
+        if info.OnShow then info.OnShow(dialog, popup.data) end
+        if text then box.text = text end
+        return dialog, info, box
+    end
+    -- Another Dyre's AddOn's part: its live table, and its refresh counted.
+    function state.part(addon, live, opts)
+        opts = opts or {}
+        local part = {live = live, refreshes = 0}
+        local refresh
+        if not opts.noRefresh then
+            refresh = function()
+                part.refreshes = part.refreshes + 1
+                if opts.fail then error("refresh failed") end
+            end
+        end
+        part.ok = state.toolkit.RegisterProfilePart({
+            addon = addon, title = opts.title, characterKeys = opts.characterKeys,
+            current = function() return part.live end,
+            sanitize = opts.sanitize or function(settings) return settings end,
+            refresh = refresh,
+        })
+        return part
+    end
+    return state
+end
+
+test("profiles: each character's profile holds a part per AddOn; the live settings stay", function()
+    local state = ProfileFixture({db = {threatMode = "tank", soloSounds = true}})
+    equal(state.env.DyresToolkitCharDB.threatMode, "tank", "the live settings stay per character")
+    local entry = state.env.DyresToolkitDB.profiles["Dyre - Forever"]
+    equal(entry.parts.DyresToolkit.threatMode, "tank")
+    equal(entry.parts.DyresToolkit.soloSounds, true)
+    equal(entry.class, "WARRIOR")
+    equal(entry.seen, 1000)
+    assert(entry.parts.DyresToolkit ~= state.env.DyresToolkitCharDB, "a copy, not the live table")
+    local mage = state.part("MageToolsForever", {chain = true})
+    equal(mage.ok, true)
+    equal(entry.parts.MageToolsForever.chain, true, "a new part goes in at once")
+    equal(table.concat(state.toolkit.ProfileParts(), ","), "DyresToolkit,MageToolsForever")
+    -- The account-wide settings are not in a profile (John: "user-centric").
+    equal(state.env.DyresToolkitDB.grid, true)
+    equal(entry.parts.DyresToolkit.grid, nil)
+    equal(state.toolkit.RegisterProfilePart({addon = "Bad:Name", current = print, sanitize = print}), nil,
+        "a bad spec gives nil")
+    equal(state.toolkit.RegisterProfilePart({addon = "Fine", current = print, sanitize = print, refresh = 5}),
+        nil, "refresh must be a function")
+end)
+
+test("profiles: an entry from a test build becomes the toolkit's part", function()
+    local account = {profiles = {["Alt - Forever"] = {settings = {threatMode = "dps"}, class = "Mage"}}}
+    local state = ProfileFixture({db = {threatMode = "tank"}, account = account})
+    equal(table.concat(state.profile:Others(), ","), "Alt - Forever")
+    equal(state.profile:CopyFrom("Alt - Forever"), true)
+    equal(state.env.DyresToolkitCharDB.threatMode, "dps")
+    equal(account.profiles["Alt - Forever"].parts.DyresToolkit.threatMode, "dps")
+    equal(account.profiles["Alt - Forever"].settings, nil)
+end)
+
+test("profiles: copy writes every part in place and applies it live", function()
+    local account = {profiles = {["Alt - Forever"] = {class = "Mage", parts = {
+        DyresToolkit = {threatMode = "dps", barMode = "sometimes", petTaunt = false,
+            bar = {scale = 150, position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 300, y = 200}}},
+        MageToolsForever = {chain = false, size = 2},
+        DyresShieldsUp = {sound = "bell"},
+    }}, ["Broken"] = "junk"}}
+    local state = ProfileFixture({db = {threatMode = "tank"}, account = account})
+    local db = state.env.DyresToolkitCharDB
+    local bar = db.bar
+    local mage = state.part("MageToolsForever", {chain = true, size = 1, extra = {kept = 1}})
+    local mageTable = mage.live
+    equal(table.concat(state.profile:Others(), ","), "Alt - Forever", "others, not this character, not junk")
+    equal(state.profile:Label("Alt - Forever"), "Alt - Forever (Mage)")
+    local ok, reload = state.profile:CopyFrom("Alt - Forever")
+    equal(ok, true)
+    equal(#reload, 0, "every loaded part applied live")
+    -- The same tables, with the new values: widgets and trackers keep them.
+    equal(state.env.DyresToolkitCharDB, db)
+    equal(state.ns.db, db)
+    equal(db.bar, bar)
+    equal(db.threatMode, "dps")
+    equal(db.petTaunt, false)
+    equal(db.barMode, "auto", "a bad value is repaired by the owner")
+    equal(bar.scale, 150)
+    equal(bar.position.x, 300)
+    equal(mage.live, mageTable)
+    equal(mageTable.chain, false)
+    equal(mageTable.size, 2)
+    equal(mageTable.extra, nil, "a key the source lacks goes")
+    equal(mage.refreshes, 1)
+    -- The tank bar widget was set again from its store.
+    local frame = state.env.DyresToolkitTankBar
+    local point, _, _, x, y = frame:GetPoint()
+    equal(point, "CENTER")
+    equal(x, 300)
+    equal(y, 200)
+    -- An AddOn not loaded here: its part waits for its next load.
+    local entry = account.profiles["Dyre - Forever"]
+    equal(entry.parts.DyresToolkit.threatMode, "dps", "the copy follows")
+    equal(entry.pending.DyresShieldsUp.sound, "bell")
+    equal(entry.parts.DyresShieldsUp.sound, "bell")
+    local shields = state.part("DyresShieldsUp", {sound = "chime", other = true})
+    equal(shields.live.sound, "bell", "written at its load")
+    equal(shields.live.other, nil)
+    equal(shields.refreshes, 0, "no refresh at load: its frames are not built yet")
+    equal(entry.pending.DyresShieldsUp, nil)
+end)
+
+test("profiles: Defaults, refusals, and a reload only where live apply is missing", function()
+    local account = {profiles = {["Alt - Forever"] = {parts = {DyresToolkit = {threatMode = "dps"},
+        DyresDebuffTracker = {x = 1}, DyresQuestTargeting = {a = 2}}}}}
+    local state = ProfileFixture({db = {threatMode = "tank", petTaunt = false}, account = account})
+    local plain = state.part("DyresSounds", {volume = 5}, {noRefresh = true, title = "Dyre's Sounds"})
+    local ok, reload = state.profile:CopyFrom(state.profile.DEFAULTS)
+    equal(ok, true)
+    equal(state.env.DyresToolkitCharDB.threatMode, "auto", "Defaults: a clean slate")
+    equal(state.env.DyresToolkitCharDB.petTaunt, true)
+    equal(next(plain.live), nil)
+    equal(table.concat(reload, ","), "Dyre's Sounds", "no refresh: a reload is asked")
+    local failing = state.part("DyresQuestTargeting", {a = 1}, {fail = true})
+    ok, reload = state.profile:CopyFrom("Alt - Forever")
+    equal(ok, true)
+    equal(failing.refreshes, 1)
+    equal(failing.live.a, 2)
+    equal(next(plain.live), nil, "a part the source lacks stays as it was")
+    equal(table.concat(reload, ","), "DyresQuestTargeting", "a failed refresh: a reload is asked")
+    -- One part that cannot take the settings: nothing changes anywhere.
+    state.part("DyresCritMayhem", {mode = "a"}, {sanitize = function() error("bad") end})
+    account.profiles["Alt - Forever"].parts.DyresCritMayhem = {mode = "b"}
+    local before = state.env.DyresToolkitCharDB.threatMode
+    local why
+    ok, why = state.profile:CopyFrom("Alt - Forever")
+    equal(ok, nil)
+    contains(why, "DyresCritMayhem cannot take those settings. Nothing changed.")
+    equal(state.env.DyresToolkitCharDB.threatMode, before, "all or nothing")
+    ok, why = state.profile:CopyFrom("Nobody")
+    equal(ok, nil)
+    contains(why, "not saved")
+    ok, why = state.profile:CopyFrom("Dyre - Forever")
+    equal(ok, nil, "not from itself")
+    state.combat = true
+    ok, why = state.profile:CopyFrom(state.profile.DEFAULTS)
+    equal(ok, nil, "never in combat")
+    contains(why, "out of combat")
+end)
+
+test("profiles: export on one character, import on another, every part", function()
+    local from = ProfileFixture({db = {threatMode = "tank", redSound = "alarmClock", plateX = -12,
+        soloSounds = true}})
+    from.part("MageToolsForever", {chain = false})
+    local text = from.profile:Export()
+    assert(text:find("^DYRE2:profile:"), text)
+    assert(not text:find("|", 1, true), "no escape codes")
+    assert(not text:find("%s"), "one line, no spaces")
+    local to = ProfileFixture({name = "Alt"})
+    local mage = to.part("MageToolsForever", {chain = true})
+    -- A line wrapped by chat or mail still imports.
+    local wrapped = text:sub(1, 30) .. "\n  " .. text:sub(31)
+    equal(to.profile:Import(wrapped), true)
+    local db = to.env.DyresToolkitCharDB
+    equal(db.threatMode, "tank")
+    equal(db.redSound, "alarmClock")
+    equal(db.plateX, -12)
+    equal(db.soloSounds, true)
+    equal(mage.live.chain, false)
+    equal(mage.refreshes, 1)
+    equal(to.profile:Export(), text, "the same settings give the same line")
+    -- A part for an AddOn not loaded here travels on in this character's export.
+    local third = ProfileFixture({name = "Third"})
+    equal(third.profile:Import(text), true)
+    equal(third.env.DyresToolkitDB.profiles["Third - Forever"].pending.MageToolsForever.chain, false)
+    equal(third.profile:Export(), text)
+end)
+
+test("profiles: import refuses a damaged, a newer, an older, or a foreign line", function()
+    local state = ProfileFixture({db = {threatMode = "tank"}})
+    local text = state.profile:Export()
+    local function refused(line, fragment)
+        local ok, why = state.profile:Import(line)
+        equal(ok, nil, line:sub(1, 40))
+        contains(why, fragment)
+    end
+    refused("", "Paste")
+    refused("hello", "not a Dyre's AddOns export line")
+    refused((text:gsub("^DYRE2:profile:", "DYRE2:other:")), "other settings")
+    refused((text:gsub("^DYRE2:", "DYRE3:")), "newer version")
+    refused((text:gsub("^DYRE2:", "DYRE1:")), "test version")
+    refused(text:sub(1, -3), "damaged")
+    refused((text:gsub("Stank;", "Sdps;")), "damaged")
+    refused(("x"):rep(70000), "too long")
+    -- A well-formed line whose parts are not AddOn tables.
+    refused(state.core.SerializeSettings("profile", {["Bad:Name"] = {}}), "damaged")
+    refused(state.core.SerializeSettings("profile", {DyresToolkit = "text"}), "damaged")
+    equal(state.env.DyresToolkitCharDB.threatMode, "tank", "nothing changed")
+end)
+
+test("profiles: the text format keeps every kind of value and runs nothing", function()
+    local ns = ProfileFixture().core
+    local value = {name = "a b|c:d~e;f", [1] = "x", [2] = -1.5, flag = false, on = true, big = 1e20,
+        nested = {deeper = {["key with space"] = "\195\188"}}, skipped = function() end}
+    local text = ns.SerializeSettings("Test", value)
+    assert(text:match("^DYRE2:Test:([^:]*):%x+$"), "four parts: no ':' in the data")
+    local back = ns.ParseSettings("Test", text)
+    equal(back.name, "a b|c:d~e;f")
+    equal(back[1], "x")
+    equal(back[2], -1.5)
+    equal(back.flag, false)
+    equal(back.on, true)
+    equal(back.big, 1e20)
+    equal(back.nested.deeper["key with space"], "\195\188")
+    equal(back.skipped, nil, "functions are not saved")
+    equal(ns.SerializeSettings("Test", value), text, "the same settings give the same line")
+    -- Code in the text is data: a string that looks like Lua stays a string.
+    equal(ns.ParseSettings("Test", ns.SerializeSettings("Test", {run = "os.exit()"})).run, "os.exit()")
+    -- Too deep is refused, even with a right checksum (Adler-32, taken here:
+    -- the engine does not write tables past its depth limit).
+    local data = ("{Snext;"):rep(30) .. "{}" .. ("}"):rep(30)
+    local line = "DYRE2:Test:" .. data .. ":"
+    local a, b = 1, 0
+    for index = 1, #data do
+        a = (a + data:byte(index)) % 65521
+        b = (b + a) % 65521
+    end
+    local ok, why = ns.ParseSettings("Test", line .. ("%08x"):format(b * 65536 + a))
+    equal(ok, nil, "too deep")
+    contains(why, "damaged")
+end)
+
+test("profiles: per-character keys are never copied, exported, or imported", function()
+    local state = ProfileFixture()
+    local part = state.part("DyresTest", {color = "red", ownedMacros = {["! Sap"] = true}},
+        {characterKeys = {"ownedMacros"}})
+    local macros = part.live.ownedMacros
+    local entry = state.env.DyresToolkitDB.profiles["Dyre - Forever"]
+    equal(entry.parts.DyresTest.ownedMacros, nil, "not in the profile")
+    assert(not state.profile:Export():find("ownedMacros", 1, true), "not exported")
+    state.env.DyresToolkitDB.profiles["Alt - Forever"] = {parts = {DyresTest = {color = "blue",
+        ownedMacros = {["! Fear"] = true}}}}
+    equal(state.profile:CopyFrom("Alt - Forever"), true)
+    equal(part.live.color, "blue")
+    equal(part.live.ownedMacros, macros, "this character's own table stays, untouched")
+    equal(macros["! Sap"], true)
+    equal(macros["! Fear"], nil)
+end)
+
+test("profiles: a change since login is in the profile at logout", function()
+    local state = ProfileFixture({db = {threatMode = "tank"}})
+    state.settings.DYRE_SOLO_SOUNDS:SetValue(true)
+    local entry = state.env.DyresToolkitDB.profiles["Dyre - Forever"]
+    equal(entry.parts.DyresToolkit.soloSounds, false, "not yet")
+    state.fire("PLAYER_LOGOUT")
+    equal(entry.parts.DyresToolkit.soloSounds, true)
+end)
+
+test("profiles: the Profile section names this character and works through popups", function()
+    local account = {profiles = {["Alt - Forever"] = {parts = {DyresToolkit = {threatMode = "dps"}},
+        class = "Mage"}}}
+    local state = ProfileFixture({db = {threatMode = "tank"}, account = account})
+    -- The Profile section comes last, after the pull slider; its header names
+    -- this character.
+    local tail = {}
+    for index = #state.page - 4, #state.page do
+        local entry = state.page[index]
+        tail[#tail + 1] = type(entry) == "table" and tostring(entry.name) or tostring(entry)
+    end
+    equal(table.concat(tail, ","), "DYRE_PULL,## Profile: Dyre - Forever (WARRIOR),DYRE_PROFILE_SOURCE,"
+        .. "Export profile,Import profile")
+    local source = state.settings.DYRE_PROFILE_SOURCE
+    -- Copy sits at the right of the dropdown, on its row (no row of its own).
+    equal(state.button("Copy the choice above"), nil)
+    local row = state.env.CreateFrame("Frame")
+    row.Control = {Dropdown = {}, IncrementButton = {}}
+    source.initializer:InitFrame(row)
+    equal(source.initializer.framed, row, "the client's own InitFrame still runs")
+    local copy = row.dyreRowButton
+    equal(copy.text, "Copy")
+    equal(copy.template, "UIPanelButtonTemplate")
+    equal(copy.points[1][1], "LEFT")
+    equal(copy.points[1][2], row.Control.IncrementButton)
+    equal(copy.points[1][3], "RIGHT")
+    equal(copy.shown, true)
+    -- The list reuses row frames: the button hides when the frame is released,
+    -- and the same button comes back when this row draws again.
+    source.initializer:Resetter(row)
+    equal(copy.shown, false)
+    equal(source.initializer.reset, row, "the client's own Resetter still runs")
+    source.initializer:InitFrame(row)
+    equal(row.dyreRowButton, copy)
+    equal(copy.shown, true)
+    equal(#copy.points, 1)
+    -- This character first and chosen, Copy grey (John, 2026-11-15).
+    local defaults = state.toolkit.PROFILE_DEFAULTS
+    equal(source:GetValue(), "Dyre - Forever")
+    equal(source.choices[1], "Dyre - Forever")
+    equal(source.choices[2], defaults)
+    equal(source.choices[3], "Alt - Forever")
+    equal(source.labels["Dyre - Forever"], "Dyre - Forever (WARRIOR) (this character)")
+    equal(source.labels[defaults], "Defaults (a clean slate)")
+    equal(source.labels["Alt - Forever"], "Alt - Forever (Mage)")
+    equal(copy.isEnabled, false, "grey while this character is chosen")
+    local popupCount = #state.popups
+    copy:GetScript("OnClick")(copy)
+    equal(#state.popups, popupCount, "no copy onto itself")
+    contains(state.messages[#state.messages], "Pick another character's profile")
+    source:SetValue("Nobody")
+    equal(source:GetValue(), "Dyre - Forever", "an unknown choice is ignored")
+    equal(copy.isEnabled, false)
+    source:SetValue(defaults)
+    equal(copy.isEnabled, true, "Defaults can be copied")
+    source:SetValue("Dyre - Forever")
+    equal(copy.isEnabled, false)
+    source:SetValue("Alt - Forever")
+    equal(copy.isEnabled, true, "another character can be copied")
+    -- Copy: a confirm popup, then the copy, live: no reload, and the
+    -- settings pages read their values again.
+    copy:GetScript("OnClick")(copy)
+    local popup = state.popups[#state.popups]
+    equal(popup.which, "DYRE_PROFILE_COPY")
+    contains(popup.text, "Copy Alt - Forever (Mage) to Dyre - Forever (WARRIOR)?")
+    contains(popup.text, "every Dyre's AddOn")
+    equal(state.env.DyresToolkitCharDB.threatMode, "tank", "nothing until accepted")
+    local notified = source.notified or 0
+    state.env.StaticPopupDialogs.DYRE_PROFILE_COPY.OnAccept(nil, popup.data)
+    equal(state.env.DyresToolkitCharDB.threatMode, "dps")
+    equal(state.reloads, 0)
+    equal(source.notified, notified + 1, "the settings read their values again")
+    contains(state.messages[#state.messages], "Profile copied.")
+    -- An AddOn with no live apply: a reload popup names it.
+    state.part("DyresSounds", {volume = 5}, {noRefresh = true, title = "Dyre's Sounds"})
+    source:SetValue(defaults)
+    copy:GetScript("OnClick")(copy)
+    state.env.StaticPopupDialogs.DYRE_PROFILE_COPY.OnAccept(nil, state.popups[#state.popups].data)
+    popup = state.popups[#state.popups]
+    equal(popup.which, "DYRE_PROFILE_RELOAD")
+    contains(popup.text, "Reload to finish Dyre's Sounds.")
+    state.env.StaticPopupDialogs.DYRE_PROFILE_RELOAD.OnAccept()
+    equal(state.reloads, 1)
+    -- Export: the line, selected, and typing puts it back.
+    state.button("Export profile").click()
+    popup = state.popups[#state.popups]
+    local _, info, box = state.dialog(popup)
+    equal(box.text, state.profile:Export())
+    equal(box.highlighted, true)
+    box.text = "typed"
+    info.EditBoxOnTextChanged(box, popup.data)
+    equal(box.text, state.profile:Export())
+    -- Import: a bad line keeps the popup open and says why; a good one applies.
+    state.button("Import profile").click()
+    popup = state.popups[#state.popups]
+    local dialog
+    dialog, info = state.dialog(popup, "nonsense")
+    equal(info.OnAccept(dialog, popup.data), true, "stays open")
+    contains(state.messages[#state.messages], "not a Dyre's AddOns export line")
+    local line = ProfileFixture({name = "Other", db = {threatMode = "dps"}}).profile:Export()
+    dialog, info = state.dialog(popup, line)
+    equal(info.OnAccept(dialog, popup.data), nil)
+    equal(state.env.DyresToolkitCharDB.threatMode, "dps")
+    contains(state.messages[#state.messages], "Profile imported.")
+    -- No popups in combat.
+    local shown = #state.popups
+    state.combat = true
+    state.button("Export profile").click()
+    equal(#state.popups, shown)
+    contains(state.messages[#state.messages], "out of combat")
 end)

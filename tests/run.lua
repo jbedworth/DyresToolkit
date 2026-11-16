@@ -9,7 +9,7 @@ if _VERSION ~= "Lua 5.1" then
 end
 
 local ADDON = "DyresToolkit"
-local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Minimap.lua", "Auras.lua", "Units.lua",
+local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua", "Auras.lua", "Units.lua",
     "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua", "ClassData.lua", "Owners.lua",
     "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",
     "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua"}
@@ -1050,7 +1050,7 @@ test("the TOC loads the libraries, then the runtime, in order", function()
     end
     equal(table.concat(files, ","), "Libs\\LibStub\\LibStub.lua,Libs\\CallbackHandler-1.0\\CallbackHandler-1.0.lua,"
         .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
-        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Minimap.lua,Auras.lua,Units.lua,HealthBars.lua,"
+        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Profiles.lua,Minimap.lua,Auras.lua,Units.lua,HealthBars.lua,"
         .. "Spells.lua,Macros.lua,Announce.lua,ClassData.lua,Owners.lua,Control.lua,DotTracker.lua,"
         .. "PlateDots.lua,DotPredict.lua,Tank.lua,Threat.lua,PetTaunt.lua,TankButtons.lua,Pull.lua,"
         .. "TankProbe.lua,GroupSettings.lua")
