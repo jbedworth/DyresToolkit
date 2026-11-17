@@ -166,7 +166,7 @@ end
 
 -- /dyre, and /dyretoolkit in case another AddOn uses /dyre.
 local USAGE = "Use /dyre (settings), /dyre unlock, /dyre lock, /dyre grid, /dyre snap, /dyre minimap, "
-    .. "/dyre debug, /dyre pull [seconds], /dyre tank_reset, /dyre tank_debug, or /dyre threat_debug."
+    .. "/dyre debug, /dyre pull [seconds], /dyre tank_reset, /dyre tank_debug, or /dyre debug_threat."
 
 function ns.HandleCommand(message)
     -- The tank and threat words (Tank.lua), some with an argument.

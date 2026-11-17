@@ -4,6 +4,15 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.10.1
+
+### Fixes
+- DoT tracking: a DoT cast by mouseover at a mob with the same name as your target now shows on the mob it hit. When two mobs share the cast's name, the toolkit waits up to 1.5 seconds for one of them to get a new aura. If no aura shows, both mobs are listed, so no DoT is lost.
+
+### Other changes
+- New command /dtt debug_dots (/dyre debug_dots): after each of your DoT casts, it counts what the game lets the toolkit see about which mob the DoT landed on. It sends nothing and saves nothing.
+- The /dyre debug words now have the same names as /dtt: /dyre debug_threat and /dyre debug_taunts. The old /dyre threat_debug and /dyre taunt_debug still work.
+
 ## 2.10.0
 
 ### Features

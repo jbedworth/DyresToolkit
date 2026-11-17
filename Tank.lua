@@ -396,9 +396,9 @@ end
 
 -- Commands ---------------------------------------------------------------------------
 
-local USAGE = "Use /dtt (settings), /dtt pull [seconds], /dtt reset, /dtt debug, /dtt debug_threat, or "
-    .. "/dtt debug_taunts. /dyre pull, /dyre tank_reset, /dyre tank_debug, /dyre threat_debug, and "
-    .. "/dyre taunt_debug do the same."
+local USAGE = "Use /dtt (settings), /dtt pull [seconds], /dtt reset, /dtt debug, /dtt debug_threat, "
+    .. "/dtt debug_taunts, or /dtt debug_dots. /dyre pull, /dyre tank_reset, /dyre tank_debug, "
+    .. "/dyre debug_threat, /dyre debug_taunts, and /dyre debug_dots do the same."
 local UNAVAILABLE = "The threat labels and tank tools are off on this client: "
 
 -- /dtt words, and the /dyre words for the same commands. "" opens the settings.
@@ -410,8 +410,14 @@ local COMMANDS = {
     debug = {handler = "ReportDebug", always = true},
     debug_threat = {handler = "ReportThreatProbe", always = true},
     debug_taunts = {handler = "ReportTauntProbe", always = true},
+    debug_dots = {handler = "ReportDotProbe", always = true},
 }
-local DYRE_WORDS = {pull = "pull", tank_reset = "reset", tank_debug = "debug", threat_debug = "debug_threat",
+-- The same name as /dtt where /dyre has no word of its own (John, 2026-11-16:
+-- "if we're going to expose the same command through /dyre, it would be
+-- better to have the same name"). /dyre debug is the toolkit's, so tank_debug
+-- and tank_reset stay. threat_debug and taunt_debug (2.9.0) still work.
+local DYRE_WORDS = {pull = "pull", tank_reset = "reset", tank_debug = "debug", debug_threat = "debug_threat",
+    debug_taunts = "debug_taunts", debug_dots = "debug_dots", threat_debug = "debug_threat",
     taunt_debug = "debug_taunts"}
 
 -- The command and its argument (a number for "seconds"), or nil and the
@@ -504,7 +510,7 @@ end
 -- files otherwise fails silently, because the client hides Lua errors.
 local REQUIRED_NAMESPACE = {"InitializeThreat", "InitializeButtons", "InitializePetTaunt", "StartPull",
     "ResetBar", "ReportThreatProbe", "ReportDebug", "ThreatRole", "InitializeGroupSettings", "ReportTauntProbe",
-    "InitializeTauntProbe"}
+    "InitializeTauntProbe", "InitializeDotProbe", "ReportDotProbe"}
 local REQUIRED_APIS = {
     {nil, "UnitExists"},
     {nil, "UnitThreatSituation"},
@@ -604,4 +610,5 @@ function ns.InitializeTank()
     DTT.InitializePullDisplay()
     DTT.InitializeGroupSettings()
     DTT.InitializeTauntProbe()
+    DTT.InitializeDotProbe()
 end

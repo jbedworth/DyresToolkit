@@ -3346,6 +3346,224 @@ test("a DoT lists the mob it was aimed at as it started, not the one you tabbed 
     equal(row.shown, false)
 end)
 
+-- John, DDT 1.0.1 on Forever, 2026-11-14: a mouseover Serpent Sting at a mob
+-- he was not targeting did not show (the name matched his target first).
+-- The aura confirm (2026-11-16, from his DoT probe): the mob is the one that
+-- gets an aura added after the cast; else the Twin rule.
+local function listedRows(tracker)
+    local listed, count = {}, 0
+    for _, row in ipairs(tracker.rows) do
+        if row.guid then
+            listed[row.guid], count = row, count + 1
+        end
+    end
+    return listed, count
+end
+
+-- Whether the confirm's own UNIT_AURA is registered: the aura frames the
+-- tracker's rows register for good are left out (noted at dotTracker time).
+local function auraOpen(state)
+    for _, frame in ipairs(state.uiFrames) do
+        if frame.events.UNIT_AURA and not state.alwaysAura[frame] then return true end
+    end
+    return false
+end
+
+local function trackerNoting(state)
+    local tracker = dotTracker(state)
+    state.alwaysAura = {}
+    for _, frame in ipairs(state.uiFrames) do
+        if frame.events.UNIT_AURA then state.alwaysAura[frame] = true end
+    end
+    return tracker
+end
+
+local function twins(state, extra)    local a, b = mob("Creature-1", "Wolf"), mob("Creature-2", "Wolf")
+    local units = {target = a, nameplate1 = a, mouseover = b, nameplate2 = b}
+    for key, value in pairs(extra or {}) do units[key] = value end
+    dotWorld(state, units)
+    return trackerNoting(state), a, b
+end
+
+test("aura confirm: a mouseover DoT at a mob named as your target lists the mob that got the aura", function()
+    local state = fixture()
+    local tracker = twins(state)
+    equal(auraOpen(state), false)
+    cast(state, "Wolf", 172, "c1")
+    local _, count = listedRows(tracker)
+    equal(count, 0, "waits for the aura")
+    equal(auraOpen(state), true, "UNIT_AURA only while a confirm is open")
+    -- Not a candidate, not a mob, or no aura added: still waiting.
+    state.units.nameplate3 = mob("Creature-9", "Bear")
+    emit(state, "UNIT_AURA", "nameplate3", {addedAuras = SECRET})
+    emit(state, "UNIT_AURA", "player", {addedAuras = SECRET})
+    emit(state, "UNIT_AURA", "nameplate2", {updatedAuraInstanceIDs = {4}})
+    emit(state, "UNIT_AURA", "nameplate2", SECRET)
+    equal(auraOpen(state), true)
+    -- The mouse moved on before the aura came: the key read at the cast counts.
+    state.units.mouseover = nil
+    emit(state, "UNIT_AURA", "nameplate2", {addedAuras = SECRET, isFullUpdate = SECRET})
+    local listed
+    listed, count = listedRows(tracker)
+    equal(count, 1)
+    assert(listed["Creature-2"], "the mob that got the aura")
+    equal(listed["Creature-2"].boundUnit, "nameplate2")
+    equal(auraOpen(state), false, "unregistered")
+    contains(table.concat(tracker:DebugLines(), "\n"), "mob=guid mouseover=guid candidates=2 bound=aura")
+    advance(state, 2)
+    _, count = listedRows(tracker)
+    equal(count, 1, "the timer does nothing after the aura")
+end)
+
+test("aura confirm: a plain cast at your target with a twin under the mouse lists only your target", function()
+    local state = fixture()
+    local tracker = twins(state)
+    cast(state, "Wolf", 172, "c1")
+    emit(state, "UNIT_AURA", "target", {addedAuras = SECRET})
+    local listed, count = listedRows(tracker)
+    equal(count, 1)
+    assert(listed["Creature-1"])
+    -- Your target's plate gives the same mob.
+    state = fixture()
+    tracker = twins(state)
+    cast(state, "Wolf", 172, "c2")
+    emit(state, "UNIT_AURA", "nameplate1", {addedAuras = {SECRET}})
+    listed, count = listedRows(tracker)
+    equal(count, 1)
+    assert(listed["Creature-1"])
+end)
+
+test("aura confirm: no aura lists both (the Twin rule); a refresh lists nothing new", function()
+    local state = fixture()
+    local tracker = twins(state)
+    cast(state, "Wolf", 172, "c1")
+    advance(state, 1.4)
+    equal(auraOpen(state), true)
+    advance(state, 0.1)
+    equal(auraOpen(state), false)
+    local listed, count = listedRows(tracker)
+    equal(count, 2)
+    assert(listed["Creature-1"] and listed["Creature-2"])
+    contains(table.concat(tracker:DebugLines(), "\n"), "bound=fallback")
+    -- A refresh: your target has a row; its aura changes, none is added.
+    state = fixture()
+    local a = mob("Creature-1", "Wolf")
+    dotWorld(state, {target = a, nameplate1 = a})
+    tracker = trackerNoting(state)
+    cast(state, "Wolf", 172, "c2")
+    contains(table.concat(tracker:DebugLines(), "\n"), "candidates=1 bound=single")
+    state.units.mouseover, state.units.nameplate2 = mob("Creature-2", "Wolf"), mob("Creature-2", "Wolf")
+    state.units.nameplate2 = state.units.mouseover
+    cast(state, "Wolf", 172, "c3")
+    emit(state, "UNIT_AURA", "target", {updatedAuraInstanceIDs = {7}})
+    advance(state, 1.5)
+    listed, count = listedRows(tracker)
+    equal(count, 1, "no twin row for a refresh")
+    contains(table.concat(tracker:DebugLines(), "\n"), "bound=refresh")
+end)
+
+test("aura confirm: a new cast closes the open one by its fallback; combat's end cancels it", function()
+    local state = fixture()
+    local tracker = twins(state)
+    cast(state, "Wolf", 172, "c1")
+    cast(state, "Wolf", 172, "c2")
+    local _, count = listedRows(tracker)
+    equal(count, 2, "the first cast's fallback")
+    equal(auraOpen(state), true, "the second cast waits")
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(auraOpen(state), false)
+    _, count = listedRows(tracker)
+    equal(count, 0)
+    contains(table.concat(tracker:DebugLines(), "\n"), "bound=cancelled")
+    advance(state, 2)
+    _, count = listedRows(tracker)
+    equal(count, 0, "the old timer does nothing")
+end)
+
+test("aura confirm: your target's corpse and a live twin, secret GUIDs, and one mob of the name", function()
+    -- The lock stops at your target's corpse; the live wolf gets the aura.
+    local state = fixture()
+    local corpse, wolf = mob("Creature-3", "Wolf", {dead = true}), mob("Creature-4", "Wolf")
+    dotWorld(state, {target = corpse, mouseover = wolf, nameplate1 = wolf})
+    local tracker = trackerNoting(state)
+    cast(state, "Wolf", 172, "c1")
+    emit(state, "UNIT_AURA", "nameplate1", {addedAuras = SECRET})
+    local listed, count = listedRows(tracker)
+    equal(count, 1)
+    assert(listed["Creature-4"], "the live wolf, not the corpse")
+    -- Secret GUIDs: plate keys, and the aura on the mouseover mob's plate.
+    state = fixture()
+    local c, d = mob(SECRET, "Wolf"), mob(SECRET, "Wolf")
+    dotWorld(state, {target = c, nameplate1 = c, mouseover = d, nameplate2 = d})
+    state.plateFrames.target = {namePlateUnitToken = "nameplate1"}
+    state.plateFrames.mouseover = {namePlateUnitToken = "nameplate2"}
+    tracker = trackerNoting(state)
+    cast(state, "Wolf", 172, "c2")
+    emit(state, "UNIT_AURA", "nameplate2", {addedAuras = SECRET})
+    listed, count = listedRows(tracker)
+    equal(count, 1)
+    assert(listed["plate:nameplate2"], "the mouseover mob by its plate")
+    equal(listed["plate:nameplate2"].boundUnit, "nameplate2")
+    -- The mouse on your target itself, a dead mouseover, or another name: one
+    -- mob of the name, listed at once.
+    local a = mob("Creature-1", "Wolf")
+    for _, units in ipairs({
+        {target = a, nameplate1 = a, mouseover = a},
+        {target = a, nameplate1 = a, mouseover = mob("Creature-5", "Wolf", {dead = true})},
+        {target = a, nameplate1 = a, mouseover = mob("Creature-6", "Bear")},
+        -- A twin on a plate only: a cast cannot go there (a pack must not wait).
+        {target = a, nameplate1 = a, nameplate2 = mob("Creature-7", "Wolf")},
+    }) do
+        state = fixture()
+        dotWorld(state, units)
+        tracker = trackerNoting(state)
+        cast(state, "Wolf", 172, "c3")
+        equal(auraOpen(state), false)
+        listed, count = listedRows(tracker)
+        equal(count, 1, "only your target")
+        assert(listed["Creature-1"])
+    end
+end)
+
+test("aura confirm: where the aura reads (Era), it must be your DoT from you; a plate that goes drops its mob", function()
+    local state = fixture()
+    local tracker = twins(state)
+    cast(state, "Wolf", 172, "c1")
+    emit(state, "UNIT_AURA", "nameplate2", {addedAuras = {{spellId = 172, sourceUnit = "party1"}}})
+    emit(state, "UNIT_AURA", "nameplate2", {addedAuras = {{spellId = 999, sourceUnit = "player"}}})
+    emit(state, "UNIT_AURA", "nameplate2", {addedAuras = {}})
+    equal(auraOpen(state), true, "not yours, or not a DoT")
+    emit(state, "UNIT_AURA", "nameplate2", {addedAuras = {{spellId = 172, sourceUnit = "player"}}})
+    local listed, count = listedRows(tracker)
+    equal(count, 1)
+    assert(listed["Creature-2"])
+    -- A secret spell or source on a readable list counts as added.
+    state = fixture()
+    tracker = twins(state)
+    cast(state, "Wolf", 172, "c2")
+    emit(state, "UNIT_AURA", "nameplate2", {addedAuras = {{spellId = SECRET, sourceUnit = SECRET}}})
+    listed = listedRows(tracker)
+    assert(listed["Creature-2"])
+    -- Secret GUIDs: the mouseover mob's plate goes; a new mob on that token
+    -- is not it.
+    state = fixture()
+    local c, d = mob(SECRET, "Wolf"), mob(SECRET, "Wolf")
+    dotWorld(state, {target = c, nameplate1 = c, mouseover = d, nameplate2 = d})
+    state.plateFrames.target = {namePlateUnitToken = "nameplate1"}
+    state.plateFrames.mouseover = {namePlateUnitToken = "nameplate2"}
+    tracker = trackerNoting(state)
+    cast(state, "Wolf", 172, "c3")
+    state.units.nameplate2, state.units.mouseover = nil, nil
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate2")
+    state.units.nameplate2 = mob(SECRET, "Wolf")
+    emit(state, "UNIT_AURA", "nameplate2", {addedAuras = SECRET})
+    equal(auraOpen(state), true, "the plate's old mob is gone")
+    advance(state, 1.5)
+    listed, count = listedRows(tracker)
+    equal(count, 1, "the fallback: your target only")
+    assert(listed["plate:nameplate1"])
+end)
+
 test("a DoT row goes with its mob's death, after combat, and out of combat when unseen 10 s", function()
     local state = fixture()
     dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt"), mouseover = mob("Creature-3", "Imp")})

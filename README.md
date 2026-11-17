@@ -129,7 +129,7 @@ Frames always start locked when you log in. Frames move only out of combat.
 | `/dyre debug` | Until you reload: says in chat when another AddOn's hook into the toolkit fails, and lists those so far |
 | `/dyre pull [seconds]` | Starts the pull countdown (1 to 60) |
 | `/dyre tank_reset` | Puts the tank button bar back in its first place |
-| `/dyre tank_debug`, `/dyre threat_debug`, `/dyre taunt_debug` | Diagnostics for the tank tools, the threat labels, and the party's taunts |
+| `/dyre tank_debug`, `/dyre debug_threat`, `/dyre debug_taunts`, `/dyre debug_dots` | Diagnostics for the tank tools, the threat labels, and the party's taunts |
 | `/dtt`, `/tanktools` | The same tank words, short: `/dtt pull 10`, `/dtt reset`, `/dtt debug`, `/dtt debug_threat`, `/dtt debug_taunts` |
 
 `/dyretoolkit` works the same, in case another AddOn uses `/dyre`.

@@ -175,6 +175,44 @@ nothing. `/reload` first, so the counts start at 0.
 - [ ] `/dtt debug` has the line "debug taunt probe: N casts seen, N
       watched".
 
+#### DoT aura confirm (Forever first, then Era; 2.10.1)
+
+On a class with a DoT (Hunter: Serpent Sting), with Dyre's Debuff Tracker.
+`/ddt debug` shows the last cast as `candidates=N bound=...`.
+
+- [ ] Two mobs with the same name, in combat: target A, mouseover-DoT B
+      (no DoT on it yet). Only B gets a row; `bound=aura`.
+- [ ] The same, but cast at A with the mouse resting on B: only A;
+      `bound=aura`.
+- [ ] Recast on A while it has the DoT, mouse on B: no row for B;
+      `bound=refresh`.
+- [ ] One mob of the name: its row at once; `bound=single`.
+- [ ] A dungeon (secret GUIDs), the first two checks again.
+- [ ] In a group: note any wrong mob (another player's aura in the 1.5 s).
+- [ ] Era: the first two checks (the aura data reads there).
+
+#### DoT probe (Forever first, then Era; John, 2026-11-16)
+
+The question: when your DoT lands, can AddOn code see which mob got it
+(UNIT_AURA for that mob's unit token), in combat? The probe only counts:
+it sends nothing and saves nothing. `/reload` first. Use a class with a DoT
+(Hunter: Serpent Sting).
+
+- [ ] Out of combat (the control): DoT a mob you target, then type
+      `/dtt debug_dots`. The "recent" line should show its plate or
+      `target` with "ours".
+- [ ] In combat, open world: DoT your target; then, with the mouse on
+      another mob, DoT it by mouseover (a mob with your target's name is
+      best: Bug 2). Then a dungeon, the same.
+- [ ] Type `/dtt debug_dots` and paste every "debug_dots" line. What
+      decides the design, on the "combat:" line and the "recent ... combat"
+      lines: a mob's plate (nameplateN) listed with "ours" means the mob is
+      known; "unitSecret", "infoSecret", "addedSecret", or "spellSecret"
+      mean the client hides that part. "tgt" and "mo" say whether that unit
+      is your target or mouseover.
+- [ ] `/dtt debug` has the line "debug DoT probe: N DoT casts, N with
+      UNIT_AURA".
+
 #### Threat (Forever, then Era)
 
 - [x] `/dtt debug_threat` in combat in the open world on Forever (John,

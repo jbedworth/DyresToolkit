@@ -7,7 +7,8 @@
 -- features use (the rest are stubbed: FindPlateBar, FindUnitBar, InFamily).
 local test, equal, contains = ...
 local ADDON = "DyresToolkit"
-local FILES = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Spells.lua", "Macros.lua", "Owners.lua",
+local FILES = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Spells.lua", "Macros.lua",
+    "ClassData.lua", "Owners.lua",
     "Tank.lua", "Threat.lua", "PetTaunt.lua", "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua"}
 
 -- A secret stands in for the client's opaque combat values; tests mark them with
@@ -517,6 +518,123 @@ test("taunt probe: registers two units per frame for party, party pets, you, and
     end
 end)
 
+local function DotCounts(state, place)
+    return state.ns.DotProbeState().counts[place]
+end
+
+local function AuraFrame(state)
+    return state.ns.DotProbeState().frame
+end
+
+test("DoT probe: after your DoT, UNIT_AURA is read for a window, then unregistered", function()
+    local state = fixture({class = "HUNTER"})
+    state.env.UnitName = function(unit) return ({target = "Wolf", mouseover = "Bear"})[unit] end
+    state.env.C_UnitAuras.GetAuraDataByAuraInstanceID = function(unit, id)
+        if unit == "nameplate2" and id == 7 then return {spellId = 1978} end
+    end
+    equal(AuraFrame(state).events.UNIT_AURA, nil, "not registered before a cast")
+    -- Not a DoT: no window.
+    state.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g0", 133)
+    equal(AuraFrame(state).events.UNIT_AURA, nil)
+    -- Another unit's cast is not yours.
+    state.fire("UNIT_SPELLCAST_SUCCEEDED", "party1", "g9", 1978)
+    equal(AuraFrame(state).events.UNIT_AURA, nil)
+    state.now = 50
+    state.fire("UNIT_SPELLCAST_SENT", "player", "Wolf", "g1", 1978)
+    state.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g1", 1978)
+    equal(AuraFrame(state).events.UNIT_AURA, true, "registered for the window")
+    state.now = 50.4
+    state.fire("UNIT_AURA", "nameplate2", {addedAuras = {{spellId = 1978, sourceUnit = "player",
+        isFromPlayerOrPlayerPet = true, auraInstanceID = 7}}})
+    state.fire("UNIT_AURA", "nameplate2", {updatedAuraInstanceIDs = {7}})
+    state.fire("UNIT_AURA", "player", {isFullUpdate = true})
+    state.fire("UNIT_AURA", "target", nil)
+    state.advance(2.5)
+    equal(AuraFrame(state).events.UNIT_AURA, nil, "unregistered when the window ends")
+    equal(state.liveTimers(), 0)
+    local calm = DotCounts(state, "calm")
+    equal(calm.casts, 1)
+    equal(calm.windows, 1)
+    equal(calm.events, 4)
+    equal(calm.added, 1)
+    equal(calm.spellRead, 1)
+    equal(calm.ours, 1)
+    equal(calm.sourcePlayer, 1)
+    equal(calm.lookupTable, 1)
+    equal(calm.full, 1)
+    equal(calm.infoNil, 1)
+    equal(calm.errors, nil)
+    local window = state.ns.DotProbeState().recent[1]
+    equal(window.spell, "Serpent Sting")
+    equal(window.nameTarget, "yes")
+    equal(window.nameMouseover, "no")
+    equal(window.units[1].unit, "nameplate2")
+    equal(window.units[1].events, 2)
+    equal(window.units[1].ours, true)
+    equal(window.units[1].target, "no")
+    state.env.SlashCmdList.DYRESTOOLKITTANK("debug_dots")
+    contains(state.find("debug_dots class=HUNTER"), "window=2.5s")
+    contains(state.find("debug_dots calm: "), "casts=1 windows=1 events=4")
+    contains(state.find("debug_dots combat: "), "none")
+    local line = state.find("debug_dots recent")
+    contains(line, "calm Serpent Sting name=plain(tgt=yes mo=no) -> nameplate2 +0.40s n=2 added=1 ours src=player")
+    contains(line, "tgt=no mo=no; player +0.40s n=1 full=yes")
+    -- /dyre's word, and the /dtt debug line.
+    state.env.SlashCmdList.DYRESTOOLKIT("debug_dots")
+    equal(state.count("debug_dots class=HUNTER"), 2)
+    state.env.SlashCmdList.DYRESTOOLKITTANK("debug")
+    equal(state.find("debug DoT probe:"),
+        "Dyre: debug DoT probe: 1 DoT casts, 1 with UNIT_AURA; /dtt debug_dots for details")
+end)
+
+test("DoT probe: secret parts are counted, never compared, printed, or indexed", function()
+    local state = fixture({class = "HUNTER"})
+    state.env.UnitName = function() return state.secret() end
+    state.env.C_UnitAuras.GetAuraDataByAuraInstanceID = function() return state.secret() end
+    state.combat = true
+    state.fire("UNIT_SPELLCAST_SENT", "player", state.secret(), "g1", 13549)
+    state.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g1", 13549)
+    state.fireAs("nameplate1", "UNIT_AURA", state.secret(), state.secret())
+    state.sameAsTarget.nameplate3 = state.secret()
+    state.fire("UNIT_AURA", "nameplate3", {addedAuras = state.secret(), isFullUpdate = state.secret()})
+    state.fire("UNIT_AURA", "nameplate4", {addedAuras = {{spellId = state.secret(), sourceUnit = state.secret(),
+        isFromPlayerOrPlayerPet = state.secret(), auraInstanceID = state.secret()}, state.secret()}})
+    state.fire("UNIT_AURA", "nameplate5", {addedAuras = {{spellId = 1978, auraInstanceID = 3}}})
+    local combat = DotCounts(state, "combat")
+    equal(combat.unitSecret, 1)
+    equal(combat.infoSecret, 1)
+    equal(combat.addedSecret, 1)
+    equal(combat.spellSecret, 1)
+    equal(combat.sourceSecret, 1)
+    equal(combat.fromPlayerSecret, 1)
+    equal(combat.idSecret, 1)
+    equal(combat.auraSecret, 1)
+    equal(combat.lookupSecret, 1)
+    equal(combat.ours, 1, "another rank of the same DoT")
+    equal(combat.errors, nil, "no secret was compared, printed, or indexed")
+    -- A second DoT closes the first window; the report shows both.
+    state.now = 1
+    state.fire("UNIT_SPELLCAST_SENT", "player", "Wolf", "g2", 1978)
+    state.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g2", 1978)
+    equal(#state.ns.DotProbeState().recent, 1)
+    equal(combat.casts, 2)
+    state.env.SlashCmdList.DYRESTOOLKITTANK("debug_dots")
+    contains(state.find("debug_dots recent 0s ago combat Serpent Sting name=plain(tgt=secret mo=secret)"),
+        "no UNIT_AURA")
+    local first = state.find("debug_dots recent 1s ago combat Serpent Sting name=secret")
+    contains(first, "secret +0.00s n=1 info=secret")
+    contains(first, "nameplate3 +0.00s n=1 added=secret full=secret tgt=secret mo=no")
+end)
+
+test("DoT probe: a class with no DoTs opens no window", function()
+    local state = fixture({class = "PALADIN"})
+    state.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "g1", 1978)
+    equal(AuraFrame(state).events.UNIT_AURA, nil)
+    state.env.SlashCmdList.DYRESTOOLKITTANK("debug_dots")
+    contains(state.find("debug_dots class=PALADIN"), "DoT IDs=0")
+    contains(state.find("debug_dots calm: "), "none")
+end)
+
 test("taunt probe: readable casts are counted by kind and place, and watched spells by name", function()
     local state = fixture()
     state.fire("UNIT_SPELLCAST_SUCCEEDED", "party1", "guid-1", 355)
@@ -598,8 +716,11 @@ test("taunt probe: only counts; sends nothing, saves nothing, keeps the last 10"
     state.env.SlashCmdList.DYRESTOOLKITTANK("debug")
     equal(state.find("debug taunt probe:"),
         "Dyre: debug taunt probe: 12 casts seen, 12 watched; /dtt debug_taunts for details")
+    state.env.SlashCmdList.DYRESTOOLKIT("debug_taunts")
+    assert(state.find("debug_taunts registered"), "/dyre debug_taunts")
+    local before = state.count("debug_taunts registered")
     state.env.SlashCmdList.DYRESTOOLKIT("taunt_debug")
-    assert(state.find("debug_taunts registered"), "/dyre taunt_debug")
+    equal(state.count("debug_taunts registered"), before * 2, "/dyre taunt_debug (2.9.0) still works")
 end)
 
 test("taunt probe: without RegisterUnitEvent, one frame keeps only these units", function()
@@ -619,8 +740,11 @@ test("/dyre runs the tank words and leaves its own words to the toolkit", functi
     local state = fixture({loaded = {}})
     state.env.SlashCmdList.DYRESTOOLKIT("pull 7")
     equal(state.countdowns[1], 7, "/dyre pull 7")
+    state.env.SlashCmdList.DYRESTOOLKIT("debug_threat")
+    assert(state.find("debug_threat client="), "/dyre debug_threat")
+    local before = state.count("debug_threat client=")
     state.env.SlashCmdList.DYRESTOOLKIT("threat_debug")
-    assert(state.find("debug_threat client="), "/dyre threat_debug")
+    equal(state.count("debug_threat client="), before * 2, "/dyre threat_debug (2.9.0) still works")
     state.env.SlashCmdList.DYRESTOOLKIT("tank_debug")
     assert(state.find("debug available=true"), "/dyre tank_debug")
     state.env.SlashCmdList.DYRESTOOLKIT("unlock")

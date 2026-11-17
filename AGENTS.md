@@ -568,6 +568,39 @@ WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
   the pinned rows, and does not follow them. A change needs `Rebuild`. The
   sections keep the toolkit's CENTER saves, so a size change (a new DoT
   learned) still grows a panel both ways from its center.
+- The aura confirm (2.10.1; John, 2026-11-16, after the DoT probe below:
+  "Yes, build it"; DotTracker.lua, above LockMob). Bug 2 (John, DDT 1.0.1
+  on Forever, 2026-11-14: a mouseover Serpent Sting at a mob he was not
+  targeting did not show): UNIT_SPELLCAST_SENT gives only a name, and the
+  lock stops at the first unit with it, your target first. At SENT the
+  tracker also lists the candidates: each live mob you can attack with the
+  cast's name on your target, focus, or mouseover (those of the lock's
+  units; never other plates: a cast cannot go to a plate you neither target
+  nor point at, and a same-named pack on plates must not make every cast
+  wait, found by WTF's tests) (by GUID, else plate key; once each, by
+  key or plate token), plus the lock's own mob (it may be a corpse). One
+  candidate: tracked at success, as before (`bound=single`). Two or more:
+  UNIT_AURA is registered on its own frame and one `C_Timer.After`
+  (`AURA_CONFIRM_SECONDS` 1.5, DotPredict's PROJECTILE_TRAVEL) starts. The
+  first UNIT_AURA on a candidate (MobKey of the event unit, or its plate
+  token, matched against those read at SENT, never against what the mouse
+  shows now) that adds an aura is the mob (`bound=aura`). Added means
+  `addedAuras` secret (Forever: presence only), or a readable entry that is
+  secret or is one of your DoT IDs with sourceUnit "player" (Era). No aura
+  added in time: a candidate with a row that had any aura event is a
+  refresh (`bound=refresh`, nothing new); else the fallback tracks the
+  locked mob and the mouseover Twin (`bound=fallback`; the held Twin fix of
+  2026-11-14, now only this). A new confirm closes the open one by its
+  fallback; PLAYER_REGEN_ENABLED cancels it (`bound=cancelled`); a plate
+  that goes drops its candidate. `/ddt debug`'s lastCast line shows
+  `candidates=N bound=...`. Evidence (John's `/dtt debug_dots`, Forever,
+  open world, solo, 32 casts, 4 with a same-name mouseover): UNIT_AURA came
+  0.3-0.9 s after success for the hit mob's plate and/or "target", for no
+  other mob, also after the mouse moved on; `addedAuras` secret even out of
+  combat. Limits: in a group another player's aura on a candidate in the
+  window wins; a mob with no plate that is not your target gives no event
+  (the fallback runs). Not checked in client yet: the build itself,
+  dungeons (secret GUIDs, plate keys), groups.
 - PlateDots.lua: `CreatePlateDots{tracker, store, slots, color}` (store:
   enabled, plateDots, plateDotsOffset, plateDotsOpacity, onPlates);
   `Refresh`, `ApplyColors`, `ApplyOpacity`; fields `byUnit`, `known`. Only
@@ -1110,7 +1143,11 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
   frames change only out of combat (`ns.tank.OutOfCombat`, the toolkit's
   queue). Buttons and bindings are named `DyresToolkit<Name>`.
 - Commands: `/dyre pull [seconds]`, `/dyre tank_reset`, `/dyre tank_debug`,
-  `/dyre threat_debug`, `/dyre taunt_debug` (Core asks
+  `/dyre debug_threat`, `/dyre debug_taunts`, `/dyre debug_dots` (the same
+  names as `/dtt`, John, 2026-11-16: "if we're going to expose the same
+  command through /dyre, it would be better to have the same name"; `/dyre
+  debug` is the toolkit's, so tank_debug and tank_reset stay; 2.9.0's
+  `threat_debug` and `taunt_debug` still work, not listed) (Core asks
   `ns.HandleTankCommand` first); `/dtt` and `/tanktools` keep Dyre's Tank
   Tools' words (`/dtt pull 10`, `/dtt reset`, `/dtt debug`,
   `/dtt debug_threat`, `/dtt debug_taunts`; `/dtt` alone opens the
@@ -1147,6 +1184,21 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
   only the tank sees it (on screen and a chat line); party chat is a
   setting, off by default; at most one announcement per player and spell
   in 10 seconds.
+- DoT probe (TankProbe.lua, end; John, 2026-11-16: "so there is no way to
+  actually know what mob was hit by a dot?" ... "yes, build the probe"):
+  `/dtt debug_dots` (`/dyre debug_dots`, and a line in `/dtt debug`). The DoT
+  tracker knows a cast's mob only by name (Bug 2; now the aura confirm). After
+  each of your own DoT casts that succeeds (a readable spell ID in your
+  class's ClassData `dots`), UNIT_AURA is registered for 2.5 s
+  (`DOT_PROBE_WINDOW`, one one-shot timer), then unregistered. It counts,
+  per combat and calm: the unit (secret or token), the update info, each
+  added aura's spellId, sourceUnit, isFromPlayerOrPlayerPet and
+  auraInstanceID (secret or read; "ours" for one of your DoT IDs), and
+  `C_UnitAuras.GetAuraDataByAuraInstanceID` (table, secret, nil, error);
+  per unit, the delay and UnitIsUnit with target and mouseover. The last 10
+  casts in session memory; nothing saved or sent; every event read in
+  pcall ("errors"). Unknown, its question: whether UNIT_AURA names the mob a
+  DoT landed on, in combat on Forever. Waits for John's output.
 - Never register `COMBAT_LOG_EVENT_UNFILTERED`. No popups in combat. No
   `OnUpdate`. Unknown events register only where `C_EventUtils.IsEventValid`
   says they exist (Era lacks some).
