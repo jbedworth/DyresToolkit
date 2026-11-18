@@ -390,13 +390,18 @@ DyresToolkit.ClassData = {
         ranks = NoBase({rend = REND}),
         families = {rend = {interval = 3, school = 1}},
         familyOrder = {"rend"},
-        -- Intimidating Shout has no single target: announced only.
+        -- Intimidating Shout has no single target: announced only. Hamstring
+        -- (John, 2026-11-17: "add Warrior Hamstring to CC abilities that can
+        -- be on more than one mob"): a slow, not single, so one bar per mob.
+        -- IDs and 15 s: LCD; the same three ranks in G2G-F (trainer, levels
+        -- 8, 32, 54) and WT (Era and Forever). No marker and no macro.
         control = {
             {key = "shout", label = "Intimidating Shout", ids = {5246}, untargeted = true},
+            {key = "hamstring", label = "Hamstring", ids = {1715, 7372, 7373}, longest = 15, bar = true},
         },
         macros = {},
         checks = {
-            {ids = {772}, what = FOREVER_DURATIONS},
+            {ids = {772, 1715}, what = FOREVER_DURATIONS},
         },
     },
     PALADIN = {

@@ -431,7 +431,10 @@ rules are data; CONTRACT stays 2; WTF 1.4.1 and MTF 1.2.3 keep working.
   level is not in the sources. New family fields: `finisher`,
   `pointDuration`, `late`, `mask`, `ground` (DotPredict below). Left out:
   Wrack (a channel), Gouge and Scatter Shot (short), TBC-only spells.
-  Entangling Roots is both a DoT slot and a control bar spell.
+  Entangling Roots is both a DoT slot and a control bar spell. Warrior's Hamstring (John, 2026-11-17: "add Warrior Hamstring to CC
+  abilities that can be on more than one mob, as well as Druid roots"):
+  a control bar spell, not `single`, so one row per mob, like Entangling
+  Roots; 1715, 7372, 7373, 15 s (LCD; G2G-F and WT have the same ranks).
 
 ### Tracking engine, stage B (2.5.0; lead plan, 2026-11-01)
 

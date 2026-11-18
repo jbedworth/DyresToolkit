@@ -2531,6 +2531,7 @@ local SPELL_ROWS = {
     {"ROGUE", "control", "sap", "6770 2070 11297", 45, {bar = true, marker = 5, click = true}},
     {"ROGUE", "control", "blind", "2094", 10, {bar = true}},
     {"WARRIOR", "control", "shout", "5246", nil, {untargeted = true}},
+    {"WARRIOR", "control", "hamstring", "1715 7372 7373", 15, {bar = true}},
     {"PALADIN", "control", "turnundead", "2878 5627 10326", 20, {bar = true}},
     {"PALADIN", "control", "repentance", "20066", 6, {bar = true, marker = 5}},
 }

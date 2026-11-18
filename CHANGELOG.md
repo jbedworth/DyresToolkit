@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.10.2
+
+### Features
+- Warrior: Hamstring is a crowd-control bar spell, one bar per mob (for Dyre's Debuff Tracker).
+
 ## 2.10.1
 
 ### Fixes
