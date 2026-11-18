@@ -4,6 +4,14 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.10.3
+
+### Features
+- DoT tracker: a new store setting, hideEmpty, hides the dim placeholder of each DoT that is not on the mob, so only the DoTs that are up show. The slots keep their places, and the target and focus rows then take no recast clicks. Dyre's Debuff Tracker and Warlock Tools Forever add the checkbox in their own updates.
+
+### Fixes
+- Profiles: copying from a character whose saved profile is damaged now says that an AddOn "cannot take those settings" and changes nothing. Before, it could stop with a Lua error.
+
 ## 2.10.2
 
 ### Features

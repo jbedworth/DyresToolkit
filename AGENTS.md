@@ -558,6 +558,20 @@ WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
   none. The stacked rows' step is the width + 4, so the default does not move
   anything and 0 closes them up. Read at each pinned row's build: a change
   needs `Rebuild` (out of combat). The rows' tooltip-style edge is not this.
+- Hide empty slots (unreleased; treadpool, a DDT player, 2026-11-17:
+  "Would be cleaner if it only showed the DoTs that are actively ticking";
+  John: "Yes, build it"): `store.hideEmpty` true (`TRACKER_HIDE_EMPTY`, a
+  flag owners check before they offer it) draws no placeholders (the dim
+  icon, the Bars line and label; `row.placeholders`), so a slot shows only
+  while the aura slot shows itself (engine or Auras.lua, also in combat).
+  The slots keep their places and do not close up: on Forever the tracker
+  cannot read which DoTs are up in combat (the engine draws them), and the
+  pinned rows' secure slots move only out of combat. Pinned rows then make
+  no secure slots, so no recast clicks and no smart-curse marker: an empty
+  slot would be an unseen click area (family rule: a secure button never
+  takes clicks unseen). The row (name, health, backdrop) still shows while
+  its unit is a live hostile; `panelOpacity` can make the backdrop clear.
+  A change needs `Rebuild`. Not checked in client.
 - Grow direction (2.9.2; John, 2026-11-14: "for each frame (Target,
   Focus, Other) we need to be able to set whether the DoTs should grow up
   or down from the origin"; "Keep the name above/below setting we already

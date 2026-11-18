@@ -3569,6 +3569,21 @@ test("profiles: per-character keys are never copied, exported, or imported", fun
     equal(macros["! Fear"], nil)
 end)
 
+-- Found by DSU, 2026-11-17: a saved part that is not a table reached Prepare
+-- with no type check and was indexed outside the pcall.
+test("profiles: a damaged saved part is refused, with no error and nothing changed", function()
+    local state = ProfileFixture()
+    local part = state.part("DyresTest", {color = "red", ownedMacros = {}}, {characterKeys = {"ownedMacros"}})
+    state.env.DyresToolkitDB.profiles["Alt - Forever"] = {parts = {DyresTest = "damaged",
+        DyresToolkit = {threatMode = "dps"}}}
+    local before = state.env.DyresToolkitCharDB.threatMode
+    local ok, why = state.profile:CopyFrom("Alt - Forever")
+    equal(ok, nil)
+    contains(why, "DyresTest cannot take those settings. Nothing changed.")
+    equal(part.live.color, "red")
+    equal(state.env.DyresToolkitCharDB.threatMode, before, "all or nothing")
+end)
+
 test("profiles: a change since login is in the profile at logout", function()
     local state = ProfileFixture({db = {threatMode = "tank"}})
     state.settings.DYRE_SOLO_SOUNDS:SetValue(true)

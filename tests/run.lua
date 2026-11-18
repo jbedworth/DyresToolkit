@@ -3810,6 +3810,40 @@ test("the pinned rows' outline width: 3 px by default, 0 draws none, at most 20,
     equal(tracker.stack.height, defaultHeight, "a bad value is the default")
 end)
 
+-- 2.10.3 (treadpool, a DDT player, 2026-11-17: "only showed the DoTs that are
+-- actively ticking"; John: "Yes, build it").
+test("hide empty slots: no placeholders and no pinned clicks; the aura slots stay", function()
+    local state = fixture()
+    dotWorld(state)
+    local tracker, store = dotTracker(state)
+    equal(state.toolkit.TRACKER_HIDE_EMPTY, true, "owners can check the flag")
+    local count = #tracker.pinned.target.placeholders
+    assert(count > 0, "placeholders by default")
+    assert(next(tracker.pinned.target.casts), "pinned clicks by default")
+    for _, theme in ipairs({"bars", "compact"}) do
+        store.theme = theme
+        store.hideEmpty = true
+        tracker:Rebuild()
+        for _, key in ipairs({"target", "focus"}) do
+            local row = tracker.pinned[key]
+            equal(#row.placeholders, 0, theme .. " " .. key .. ": no placeholders")
+            equal(next(row.casts), nil, theme .. " " .. key .. ": no unseen click area")
+            assert(row.container, "the aura slots stay, to show the DoTs that are up")
+        end
+    end
+    state.combat = true
+    store.hideEmpty = false
+    tracker:Rebuild()
+    equal(#tracker.pinned.target.placeholders, 0, "a change waits out combat")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(#tracker.pinned.target.placeholders, count, "off again after combat")
+    assert(next(tracker.pinned.target.casts), "clicks again")
+    store.hideEmpty = "yes"
+    tracker:Rebuild()
+    equal(#tracker.pinned.target.placeholders, count, "only true counts")
+end)
+
 -- 2.9.2 (John, 2026-11-14): "the first dot where I positioned it, the second
 -- to render above it".
 local function castLines(row)

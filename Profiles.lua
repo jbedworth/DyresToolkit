@@ -338,7 +338,9 @@ end
 -- own keys kept; nil when the owner cannot take them.
 local function Prepare(part, settings)
     local current = part.spec.current()
-    if type(current) ~= "table" then
+    -- A damaged saved part (not a table) is refused, never indexed (found by
+    -- DSU, 2026-11-17: CopyFrom passes saved parts with no type check).
+    if type(current) ~= "table" or type(settings) ~= "table" then
         return nil
     end
     local fresh = Copy(settings, part.skip) or {}

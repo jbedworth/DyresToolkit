@@ -54,6 +54,16 @@ DyresToolkit.TRACKER_OUTLINE = {min = 0, max = 20, default = 3}
 -- "Keep the name above/below setting we already have where it is. The user
 -- can chose."). A change needs Rebuild.
 DyresToolkit.TRACKER_GROW = {"down", "up"}
+-- Hide empty slots (2.10.3; a DDT player, treadpool, 2026-11-17: "only
+-- showed the DoTs that are actively ticking"; John: "Yes, build it"):
+-- store.hideEmpty true draws no dim placeholder, bar line, or label, so a
+-- slot shows only while its aura does (the aura slot shows and hides itself,
+-- also in combat). The slots keep their places: the tracker cannot read which
+-- DoTs are up in combat on Forever, and pinned rows' secure slots move only
+-- out of combat. Pinned slots then take no clicks: an empty slot would be an
+-- unseen click area (family rule). A change needs Rebuild. Owners check this
+-- flag before they offer the setting.
+DyresToolkit.TRACKER_HIDE_EMPTY = true
 local SLOT_GAP = 6
 local PADDING = 6
 -- Seconds a list row stays without a unit to bind, out of combat; in combat
@@ -174,7 +184,9 @@ end
 --               pinned rows' outline, TRACKER_OUTLINE: 0-20 px, default 3,
 --               0 none; a change needs Rebuild), grow {target, focus,
 --               list} ("down" or "up", TRACKER_GROW; a change needs
---               Rebuild), position, sections
+--               Rebuild), hideEmpty (true: no placeholders and no pinned
+--               clicks, TRACKER_HIDE_EMPTY; a change needs Rebuild),
+--               position, sections
 --               {target, focus, list}, and each slot's lastUsed key;
 --               curseMode ("last", the default, or "smart": the slot with
 --               `smart` data casts the smart curse) and curseMarker (false:
@@ -341,6 +353,11 @@ function DyresToolkit.CreateDotTracker(spec)
 
     local function IsCompact()
         return tracker.theme ~= "bars"
+    end
+
+    -- TRACKER_HIDE_EMPTY: only true counts. Read at each row's build.
+    local function HideEmpty()
+        return store.hideEmpty == true
     end
 
     -- The slots a row shows, as SLOTS indexes in the saved order: one for
@@ -771,13 +788,15 @@ function DyresToolkit.CreateDotTracker(spec)
         row.name:SetJustifyH("LEFT")
         CreateHealthText(row, regions)
         row.bars = {}
-        for position, slotIndex in ipairs(tracker.shown) do
+        row.placeholders = {}
+        for position, slotIndex in ipairs(HideEmpty() and {} or tracker.shown) do
             local slot = SLOTS[slotIndex]
             local placeholder = regions:CreateTexture(nil, "BACKGROUND", nil, 1)
             placeholder:SetTexture(SlotIcon(slot))
             placeholder:SetTexCoord(0.07, 0.93, 0.07, 0.93)
             placeholder:SetDesaturated(true)
             placeholder:SetAlpha(PLACEHOLDER_ALPHA)
+            row.placeholders[#row.placeholders + 1] = placeholder
             if IsCompact() then
                 PlaceSlot(placeholder, row, position)
             else
@@ -1006,7 +1025,8 @@ function DyresToolkit.CreateDotTracker(spec)
         row:SetPoint("TOPLEFT", section, "TOPLEFT")
         row.unit = pinned.unit
         row.casts = {}
-        for position, slotIndex in ipairs(tracker.shown) do
+        -- Hide empty slots: no secure slots, so no unseen click area.
+        for position, slotIndex in ipairs(HideEmpty() and {} or tracker.shown) do
             local button = CreateFrame("Button", nil, row, "SecureActionButtonTemplate")
             PlaceSlot(button, row, position)
             button:SetFrameLevel(row.container:GetFrameLevel() + 10)
