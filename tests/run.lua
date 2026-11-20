@@ -4971,6 +4971,7 @@ local function procWorld(state, options)
     local function initializer(category, setting, tooltip)
         local object = {setting = setting, tooltip = tooltip, shown = {}}
         function object:AddShownPredicate(predicate) self.shown[#self.shown + 1] = predicate end
+        function object:AddModifyPredicate(predicate) self.modify = predicate end
         function object:SetParentInitializer(parent, predicate) self.parent, self.parentShown = parent, predicate end
         function object:IsShown()
             for _, predicate in ipairs(self.shown) do
@@ -5014,6 +5015,7 @@ local function procAddon(state, options)
     local db = {procs = toolkit.SanitizeProcs(options.saved, procs),
         procIDs = toolkit.SanitizeProcIDs(options.learned, procs)}
     local handle = toolkit.RegisterProcs({addon = "DyresShieldsUp", procs = procs, art = options.art,
+        usableSounds = options.usableSounds,
         store = function() return db.procs end, learned = function() return db.procIDs end})
     local category = {name = "Shields Up", initializers = {}}
     local layout = {rows = {}}
@@ -5075,6 +5077,107 @@ local function warriorProcs()
         {key = "revenge", label = "Revenge", class = "WARRIOR", usable = REVENGE, color = {0.3, 0.6, 1}}}
 end
 
+test("proc cues 2.12.0: the AddOn that owns a kind draws and plays it; a later, higher claim takes it", function()
+    local state = fixture()
+    local env = procWorld(state, {talents = {[PROC_TALENT] = true}})
+    family(env, {DyresShieldsUp = "DyresToolkit", DyresBuffReminders = "DyresToolkit"})
+    local toolkit = state.toolkit
+    equal(toolkit.PROC_ENGINE_VERSION, 2)
+    local old, _, oldRows = procAddon(state)
+    equal(#procSounds(state, PROC_BUFF), 1, "DSU alone: its sound")
+    equal(old.Container("missilebarrage", "right").shown ~= false, true, "and its arcs")
+    -- DBR, the home, claims higher (as at its own PLAYER_LOGIN).
+    local db = {procs = toolkit.SanitizeProcs(nil, mageProcs()), procIDs = {}}
+    local home = toolkit.RegisterProcs({addon = "DyresBuffReminders", procs = mageProcs(),
+        priority = toolkit.PROC_OWNER_PRIORITY_HOME,
+        store = function() return db.procs end, learned = function() return db.procIDs end})
+    equal(toolkit.KindOwner(toolkit.PROC_KIND_PREFIX .. "missilebarrage"), "DyresBuffReminders")
+    equal(#procSounds(state, PROC_BUFF), 1, "one sound per proc, DBR's")
+    equal(old.Container("missilebarrage", "right"), nil, "DSU's arcs are gone")
+    equal(home.Container("missilebarrage", "right").slots[1].ids[PROC_BUFF], true, "DBR draws them")
+    equal(old.Owns("missilebarrage"), false)
+    equal(select(2, old.Owns("missilebarrage")), "DyresBuffReminders")
+    equal(oldRows.missilebarrage.arc.modify(), false, "DSU's rows are greyed")
+    local tip = oldRows.missilebarrage.arc.tooltip()
+    contains(tip, "Shown by DyresBuffReminders now", "and name the owner")
+    local lines = {}
+    old.Report(function(line) lines[#lines + 1] = line end)
+    equal(lines[1], "Missile Barrage: shown by DyresBuffReminders, not here")
+    -- In combat a change waits for the end of combat.
+    state.combat = true
+    toolkit.SetOwnerEnabled(toolkit.PROC_KIND_PREFIX .. "missilebarrage", "DyresBuffReminders", false)
+    equal(old.Container("missilebarrage", "right"), nil, "nothing changes in combat")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(old.Container("missilebarrage", "right") ~= nil, true, "DSU takes it back after combat")
+end)
+
+test("proc cues 2.12.0: arcOn = false starts the arc switch off; a saved choice wins", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local procs = mageProcs()
+    procs[1].arcOn = false
+    local clean = state.toolkit.SanitizeProcs(nil, procs)
+    equal(clean.arc.missilebarrage, false, "off by default")
+    equal(clean.sound.missilebarrage, true, "the sound stays on")
+    equal(state.toolkit.SanitizeProcs({arc = {missilebarrage = true}}, procs).arc.missilebarrage, true)
+    equal(state.toolkit.SanitizeProcs({arc = {missilebarrage = "x"}}, procs).arc.missilebarrage, false, "junk: default")
+    equal(state.toolkit.ProcArcDefault(mageProcs()[1]), true, "on without arcOn")
+end)
+
+test("proc cues 2.12.0: a usable proc sounds as it turns usable, once per 3 s, never on the first read", function()
+    local state = fixture()
+    local env = procWorld(state, {class = "WARRIOR", talents = {[OVERPOWER] = true, [REVENGE] = true}})
+    family(env, {DyresShieldsUp = "DyresToolkit"})
+    local names = {[OVERPOWER] = "Fulgurance", [REVENGE] = "Revanche"}
+    env.C_Spell.GetSpellName = function(id) return names[id] end
+    local answers = {Fulgurance = {true, false}}
+    env.C_Spell.IsSpellUsable = function(spell)
+        local answer = answers[spell] or {false, false}
+        return answer[1], answer[2]
+    end
+    local procs = warriorProcs()
+    procs[1].sound = "talent"
+    local handle, db, rows = procAddon(state, {procs = procs, usableSounds = true})
+    equal(state.toolkit.KindOwner(state.toolkit.PROC_KIND_PREFIX .. "overpower"), "DyresShieldsUp",
+        "with usableSounds a usable proc claims its kind")
+    local events = procEvents(state)
+    local function Fire() events.scripts.OnEvent(events, "SPELL_UPDATE_USABLE") end
+    equal(handle.Usable("overpower"), "full", "usable at the first read")
+    equal(#state.played, 0, "the first read never sounds")
+    answers.Fulgurance = {false, false}
+    Fire()
+    state.combat = true
+    answers.Fulgurance = {true, false}
+    Fire()
+    equal(state.played[1], "talent:Master", "as it turns usable, in combat too, its own sound")
+    answers.Fulgurance = {false, true}
+    Fire()
+    answers.Fulgurance = {true, false}
+    state.now = state.now + 1
+    Fire()
+    equal(#state.played, 1, "rage flicker within 3 s: no second sound")
+    answers.Fulgurance = {false, false}
+    Fire()
+    state.now = state.now + 3
+    answers.Fulgurance = {true, false}
+    Fire()
+    equal(#state.played, 2, "after 3 s it sounds again")
+    -- Switched off: silent.
+    db.procs.sound.overpower = false
+    answers.Fulgurance = {false, false}
+    Fire()
+    state.now = state.now + 5
+    answers.Fulgurance = {true, false}
+    Fire()
+    equal(#state.played, 2, "the sound switch off")
+    -- Rows: a sound switch and any sound (no aura filter).
+    equal(rows.overpower.sound.setting.name, "Overpower sound")
+    equal(rows.overpower.choice.soundMenu, nil, "any sound, not only aura sounds")
+    equal(state.toolkit.SanitizeUsableProcSound("talent"), "talent", "a played sound, not an aura sound")
+    equal(state.toolkit.SanitizeUsableProcSound("nosuch", "talent"), "talent")
+end)
+
 test("proc cues: a usable proc shows full, dims short of power, hides, also in combat; secrets change nothing", function()
     local state = fixture()
     local env = procWorld(state, {class = "WARRIOR", talents = {[OVERPOWER] = true, [REVENGE] = true}})
@@ -5090,7 +5193,8 @@ test("proc cues: a usable proc shows full, dims short of power, hides, also in c
     local handle, db, rows = procAddon(state, {procs = warriorProcs()})
     assert(handle, "a Warrior with usable procs gets a handle")
     local toolkit = state.toolkit
-    equal(toolkit.KindOwner(toolkit.PROC_KIND_PREFIX .. "overpower"), nil, "a usable proc claims no owner kind")
+    equal(toolkit.KindOwner(toolkit.PROC_KIND_PREFIX .. "overpower"), nil,
+        "without usableSounds a usable proc claims nothing (DSU 1.4 beside DBR 1.12's own chime)")
     equal(next(state.auraSounds), nil, "no aura sound for a usable proc")
     equal(state.containersMade, nil, "no aura container for a usable proc")
     local events = procEvents(state)
@@ -5135,7 +5239,7 @@ test("proc cues: a usable proc shows full, dims short of power, hides, also in c
     db.procs.arc.revenge = false
     handle.Apply()
     equal(revengeArcs.left.shown, false, "switch off: hidden")
-    -- Settings: the arc switch only.
+    -- Settings without usableSounds: the arc switch only.
     assert(rows.overpower.arc, "an arc switch")
     equal(rows.overpower.sound, nil, "no sound switch")
     equal(rows.overpower.choice, nil, "no sound dropdown")
@@ -5284,7 +5388,8 @@ test("proc cues: two containers, left and right, each with its own set of the na
     equal(sound.setting.name, "Missile Barrage sound")
     for _, row in ipairs({arc, sound, choice}) do
         equal(row:IsShown(), true, row.setting.variable)
-        contains(row.tooltip, "Macro: /stopcasting, then /cast Arcane Missiles.")
+        local text = type(row.tooltip) == "function" and row.tooltip() or row.tooltip
+        contains(text, "Macro: /stopcasting, then /cast Arcane Missiles.")
     end
     equal(choice.parent, sound, "nested under the sound switch")
     equal(choice.soundMenu, "aura", "Dyre's Sounds' aura sounds")

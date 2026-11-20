@@ -47,6 +47,17 @@ Not checked in client yet. Needs a class AddOn that registers procs (Mage
 Tools Forever with Missile Barrage, or Dyre's Shields Up's prototype moved
 to the toolkit), Dyre's Sounds installed, and a Mage with the talent.
 
+2.12.0 (with Dyre's Buff Reminders 1.13.0 and Dyre's Shields Up 1.4.x or 1.5.0):
+- [ ] With DSU 1.4.x and DBR 1.13.0 both loaded: each proc shows one pair of
+      arcs and one sound (DBR's); DSU's proc rows are greyed and name DBR.
+- [ ] With DSU 1.4.x and DBR 1.12.x (Toolkit 2.12.0 first): nothing changes;
+      Overpower and Revenge sound once (DBR's chime), arcs from DSU.
+- [ ] Warrior with DBR 1.13.0: Overpower's sound plays as it becomes usable,
+      in combat too, not again for rage flicker within 3 s; its arc and sound
+      rows sit together.
+- [ ] A proc with arcOn = false (DBR's Nature's Grace): sound, no arcs, until
+      its arc switch is turned on.
+
 - [ ] Forever, out of combat: when Missile Barrage procs, both arcs show,
       one each side of the character, in the proc's color, and drain with
       the time left; casting Arcane Missiles hides both at once. With Dyre's

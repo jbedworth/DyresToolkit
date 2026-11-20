@@ -4,6 +4,16 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.12.0
+
+### Features
+- Proc cues: an AddOn can now give the proc arcs and sounds a home that wins over another Dyre's AddOn's copy, so you see and hear each proc once. Dyre's Buff Reminders becomes the home for every proc in its own update; until then nothing changes. A proc another AddOn shows keeps its settings rows, greyed, naming that AddOn.
+- Proc cues: abilities the game makes usable for a few seconds, such as Warrior Overpower and Revenge, can have a sound next to their arcs, set in the same place. It plays when the ability becomes usable, also in combat, at most once every 3 seconds. Dyre's Buff Reminders brings it in its own update.
+- Proc cues: an AddOn can start a proc's arcs off, for a proc that is a sound by default.
+
+### Other changes
+- **What moved:** nothing moves in this update. It prepares the move of every proc arc and sound from Dyre's Shields Up to Dyre's Buff Reminders, which comes in Dyre's Buff Reminders 1.13 and Dyre's Shields Up 1.5.
+
 ## 2.11.1
 
 ### Fixes

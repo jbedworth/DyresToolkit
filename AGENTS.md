@@ -372,6 +372,34 @@ Shields Up holds every class's proc data and art and is the one caller of
 another AddOn can still use it. DSU steps aside when SAO is loaded (John:
 "We'll plan to coexist"); that is DSU's rule, not the engine's.
 
+The home moves to Dyre's Buff Reminders (2.12.0; John, 2026-11-20: "I do
+not want users to have to go to DBR to change the chime sounds for Overpower
+and Revenge, when the visual arc toggle lives in DSU"; DBR is "a better fit
+for all buffs/procs (procs are really short-term triggered buffs) chimes and
+visuals ... This lets DSU focus on managing just absorption shield
+rendering"). DBR 1.13.0 registers the catalog (DSU's and its own Proc
+Chimes); DSU 1.5.0 keeps the shields only. The engine's additions
+(`PROC_ENGINE_VERSION` 2, a feature test):
+- `spec.priority`: the claim's priority (`PROC_OWNER_PRIORITY_HOME` 20 for
+  DBR; DSU 1.4 claims at 10).
+- The owner gate: a handle draws arcs and plays sounds for a proc only while
+  its AddOn owns `proc:<key>` (no Owners, or no owner: yes). It follows
+  `OnOwnerChanged`, out of combat (in combat, at PLAYER_REGEN_ENABLED). A
+  player with DSU 1.4 and DBR 1.13 sees each proc once, DBR's. Rows of a
+  proc another AddOn owns stay, greyed (`AddModifyPredicate`), and their
+  tooltip (a function) names it. `handle.Owns(key)` gives owns, owner; the
+  debug line says "shown by <addon>, not here".
+- `arcOn = false` on a proc: its arc switch starts off (a sound-only proc by
+  default); `ProcArcDefault(proc)`.
+- `spec.usableSounds = true`: usable procs get a sound (any Dyre's Sounds
+  key, `SanitizeUsableProcSound`; soundOn default), played by the engine as
+  the spell turns usable on SPELL_UPDATE_USABLE (in combat too), never on
+  the first read, at most once per 3 s (rage flicker); a voice says the
+  client's spell name. They then claim their kind. Their rows: arc, sound,
+  and the sound (no aura filter). Opt-in, because DSU 1.4 has Overpower and
+  Revenge while DBR 1.12 plays its own reactive chime: a sound here by
+  default would be a second one.
+
 - A proc: `key` (letters, digits, `_`), `label`, `buff` (the client's buff
   name), `class` (class file), `talents` (spell IDs), `ids` (candidate buff
   IDs), `color` {r, g, b}, `sound` (a Dyre's Sounds key), optional

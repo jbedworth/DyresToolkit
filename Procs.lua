@@ -79,6 +79,18 @@ DyresToolkit.DEFAULT_PROC_SOUND = "magical"
 -- priority: a class Tools AddOn's, as the control engine's.
 DyresToolkit.PROC_KIND_PREFIX = "proc:"
 DyresToolkit.PROC_OWNER_PRIORITY = 10
+-- The home of every proc cue (2.12.0; John, 2026-11-20: Dyre's Buff Reminders
+-- holds "all buffs/procs ... chimes and visuals", Dyre's Shields Up shields
+-- only): it passes spec.priority = PROC_OWNER_PRIORITY_HOME, above the 10
+-- that Dyre's Shields Up 1.4 claims, and the engine draws and plays a proc
+-- only for the AddOn that owns its kind, so an older DSU steps aside.
+DyresToolkit.PROC_OWNER_PRIORITY_HOME = 20
+-- What this engine offers, for feature tests: 2 (2.12.0) adds spec.priority,
+-- the owner gate, arcOn, and sound for usable procs.
+DyresToolkit.PROC_ENGINE_VERSION = 2
+-- A usable proc's sound plays at most once per this many seconds (rage makes
+-- the answer flicker; Dyre's Buff Reminders' reactive chimes used 3).
+local USABLE_SOUND_GAP = 3
 -- At most one sound per this many seconds (the API allows 0 to 5).
 local SOUND_THROTTLE = 1
 local SOUNDS_CONTRACT = 1
@@ -123,9 +135,12 @@ local DEFAULT_PLACE = {point = "CENTER", relativePoint = "CENTER", x = 0, y = -2
 -- usable but short of power (the second return): dimmed, so rage does not
 -- make it flicker; neither: hidden. A secret answer is never compared: the
 -- arcs stay as they are. The arcs are two textures on the widget's own plain
--- frame (no aura slot), so they may change in combat. No sound and no Owners
--- claim from the engine for a usable proc (Dyre's Buff Reminders' reactive
--- sounds never step aside), and its settings are the arc switch only.
+-- frame (no aura slot), so they may change in combat. Since 2.12.0 (John,
+-- 2026-11-20: one place for Overpower's arc and sound) a usable proc also has
+-- a sound: Dyre's Sounds plays it (any sound, not only aura sounds) when the
+-- spell turns usable on SPELL_UPDATE_USABLE, at most once per
+-- USABLE_SOUND_GAP, never on the first read; and it claims its kind as an
+-- aura proc does, so Dyre's Buff Reminders' own reactive chime steps aside.
 -- DBR's probe (its TESTING.md): IsSpellUsable reads in combat for Revenge;
 -- the second return in combat is not yet seen in client.
 local USABLE_DIM_ALPHA = 0.4
@@ -267,6 +282,28 @@ function DyresToolkit.ProcSoundDefault(proc)
     return type(proc) ~= "table" or proc.soundOn ~= false
 end
 
+-- A proc's arc switch before the player sets it: on, unless the proc has
+-- arcOn = false (2.12.0: a proc that is a sound only by default, such as
+-- Dyre's Buff Reminders' Nature's Grace).
+function DyresToolkit.ProcArcDefault(proc)
+    return type(proc) ~= "table" or proc.arcOn ~= false
+end
+
+-- A usable proc's saved sound: any sound Dyre's Sounds knows (the engine
+-- plays it itself, not as an aura sound), else the default. Without the
+-- library a key is kept.
+function DyresToolkit.SanitizeUsableProcSound(key, default)
+    default = default or DyresToolkit.DEFAULT_PROC_SOUND
+    if type(key) ~= "string" then
+        return default
+    end
+    local library = SoundLibrary()
+    if not library then
+        return key
+    end
+    return library.Resolve(key) or default
+end
+
 -- The AddOn's proc settings, repaired (it calls this from its own
 -- SanitizeDB): per proc, the arc switch (on by default), the sound switch
 -- (ProcSoundDefault), and the sound; the arcs widget's place and size (the
@@ -281,13 +318,21 @@ function DyresToolkit.SanitizeProcs(saved, procs)
         scale = type(saved.scale) == "number" and saved.scale or nil}
     for _, proc in ipairs(type(procs) == "table" and procs or {}) do
         if ValidProc(proc) then
-            clean.arc[proc.key] = arc[proc.key] ~= false
+            if type(arc[proc.key]) == "boolean" then
+                clean.arc[proc.key] = arc[proc.key]
+            else
+                clean.arc[proc.key] = DyresToolkit.ProcArcDefault(proc)
+            end
             if type(sound[proc.key]) == "boolean" then
                 clean.sound[proc.key] = sound[proc.key]
             else
                 clean.sound[proc.key] = DyresToolkit.ProcSoundDefault(proc)
             end
-            clean.sounds[proc.key] = DyresToolkit.SanitizeProcSound(sounds[proc.key], proc.sound)
+            if IsUsableProc(proc) then
+                clean.sounds[proc.key] = DyresToolkit.SanitizeUsableProcSound(sounds[proc.key], proc.sound)
+            else
+                clean.sounds[proc.key] = DyresToolkit.SanitizeProcSound(sounds[proc.key], proc.sound)
+            end
         end
     end
     return clean
@@ -472,19 +517,26 @@ function DyresToolkit.RegisterProcs(spec)
     -- while Dyre's Buff Reminders has its own Nightfall chime): each proc
     -- here claims "proc:<key>" for this AddOn at PROC_OWNER_PRIORITY, so an
     -- AddOn with its own copy (DBR's Proc Chimes) checks KindOwner and steps
-    -- aside. A switch turned off keeps the claim (off means off).
+    -- aside. A switch turned off keeps the claim (off means off). Since
+    -- 2.12.0 usable procs claim too (they have a sound), at spec.priority
+    -- when given, and this AddOn draws and plays a proc only while it owns
+    -- the kind (Owns, below).
+    local priority = type(spec.priority) == "number" and spec.priority or DyresToolkit.PROC_OWNER_PRIORITY
+    -- Usable procs sound only for an AddOn that asks (spec.usableSounds):
+    -- Dyre's Shields Up 1.4 has Overpower and Revenge while Dyre's Buff
+    -- Reminders 1.12 plays its own chime for them, so a sound here would be a
+    -- second one. Without it, a usable proc claims nothing and stays silent.
+    local usableSounds = spec.usableSounds == true
     if type(DyresToolkit.ClaimOwner) == "function" then
         for _, proc in ipairs(list) do
-            -- A usable proc claims nothing: the engine plays no sound for it.
-            if not IsUsableProc(proc) then
-                DyresToolkit.ClaimOwner(DyresToolkit.PROC_KIND_PREFIX .. proc.key, spec.addon,
-                    DyresToolkit.PROC_OWNER_PRIORITY)
+            if usableSounds or not IsUsableProc(proc) then
+                DyresToolkit.ClaimOwner(DyresToolkit.PROC_KIND_PREFIX .. proc.key, spec.addon, priority)
             end
         end
     end
 
     local state = {known = {}, handles = {}, registered = {}, containers = {}, pending = false, deferred = false,
-        usable = {}, usableArcs = {}}
+        usable = {}, usableArcs = {}, playedAt = {}}
     local hasUsable = false
     for _, proc in ipairs(list) do
         hasUsable = hasUsable or IsUsableProc(proc)
@@ -499,6 +551,21 @@ function DyresToolkit.RegisterProcs(spec)
     local function Switch(part, key)
         local values = Store()[part]
         return type(values) == "table" and values[key] == true
+    end
+
+    -- Whether this AddOn owns the proc's kind (no Owners, or no owner at all:
+    -- yes). Another AddOn's higher claim takes the arcs and the sound.
+    local function Owns(proc)
+        if type(DyresToolkit.KindOwner) ~= "function" then
+            return true
+        end
+        local owner = DyresToolkit.KindOwner(DyresToolkit.PROC_KIND_PREFIX .. proc.key)
+        return owner == nil or owner == spec.addon
+    end
+
+    -- Known (the talent or spell) and owned: the proc may show and sound.
+    local function Active(proc)
+        return state.known[proc.key] == true and Owns(proc)
     end
 
     local function Learned()
@@ -552,7 +619,7 @@ function DyresToolkit.RegisterProcs(spec)
         end
         state.pending = false
         for _, proc in ipairs(list) do
-            local ids = state.known[proc.key] and ProcIDs(proc) or {}
+            local ids = Active(proc) and ProcIDs(proc) or {}
             local signature = table.concat(ids, ",")
             local old = state.containers[proc.key]
             if not old or old.signature ~= signature then
@@ -608,7 +675,7 @@ function DyresToolkit.RegisterProcs(spec)
             and Enum.UnitAuraSoundTrigger or {}
         local added = triggers.Added or 0
         for _, proc in ipairs(list) do
-            local sound = not IsUsableProc(proc) and state.known[proc.key] and Switch("sound", proc.key)
+            local sound = not IsUsableProc(proc) and Active(proc) and Switch("sound", proc.key)
                 and (type(sounds[proc.key]) == "string" and library.AuraSound(sounds[proc.key])
                     or type(proc.sound) == "string" and library.AuraSound(proc.sound)
                     or library.AuraSound(DyresToolkit.DEFAULT_PROC_SOUND))
@@ -648,17 +715,41 @@ function DyresToolkit.RegisterProcs(spec)
         if not arcs then
             return
         end
-        local look = state.known[proc.key] and Switch("arc", proc.key) and state.usable[proc.key] or "off"
+        local look = Active(proc) and Switch("arc", proc.key) and state.usable[proc.key] or "off"
         for _, texture in pairs(arcs) do
             texture:SetShown(look ~= "off")
             texture:SetAlpha(look == "dim" and USABLE_DIM_ALPHA or 1)
         end
     end
 
+    -- A usable proc's sound (2.12.0), through Dyre's Sounds: known, owned,
+    -- its sound switch on, and not within USABLE_SOUND_GAP of its last. A
+    -- voice sound says the spell's name in the client's language.
+    local function PlayUsable(proc)
+        if not usableSounds or not Active(proc) or not Switch("sound", proc.key) then
+            return
+        end
+        local now = type(GetTime) == "function" and GetTime() or 0
+        local last = state.playedAt[proc.key]
+        if last and now - last < USABLE_SOUND_GAP then
+            return
+        end
+        local library = SoundLibrary()
+        if not library then
+            return
+        end
+        local sounds = Store().sounds
+        local choice = type(sounds) == "table" and type(sounds[proc.key]) == "string" and sounds[proc.key]
+            or proc.sound or DyresToolkit.DEFAULT_PROC_SOUND
+        local speech = LocalName(proc.usable) or proc.label
+        state.playedAt[proc.key] = now
+        library.Play(choice, speech, "Master")
+    end
+
     -- Reads each known usable proc's spell by name (every rank counts): usable
     -- is "full"; short of power "dim"; else "off". A secret answer changes
-    -- nothing (never compared).
-    local function UpdateUsable()
+    -- nothing (never compared). fromEvent: SPELL_UPDATE_USABLE (may sound).
+    local function UpdateUsable(fromEvent)
         for _, proc in ipairs(list) do
             if IsUsableProc(proc) then
                 local spell = proc.usable
@@ -674,7 +765,13 @@ function DyresToolkit.RegisterProcs(spec)
                     usable, noPower = IsUsableSpell(spell)
                 end
                 if not IsSecret(usable) and not IsSecret(noPower) then
-                    state.usable[proc.key] = usable == true and "full" or (noPower == true and "dim" or "off")
+                    local before = state.usable[proc.key]
+                    local now = usable == true and "full" or (noPower == true and "dim" or "off")
+                    state.usable[proc.key] = now
+                    -- The sound as it turns usable; never on the first read.
+                    if fromEvent and now == "full" and before ~= nil and before ~= "full" then
+                        PlayUsable(proc)
+                    end
                 end
                 ShowUsable(proc)
             end
@@ -687,7 +784,7 @@ function DyresToolkit.RegisterProcs(spec)
         local any, sample = false, nil
         local combat = InCombatLockdown()
         for _, proc in ipairs(list) do
-            local on = state.known[proc.key] and Switch("arc", proc.key)
+            local on = Active(proc) and Switch("arc", proc.key)
             local entry = state.containers[proc.key]
             if combat then
                 if entry then
@@ -731,7 +828,7 @@ function DyresToolkit.RegisterProcs(spec)
             return
         end
         for _, proc in ipairs(list) do
-            if not IsUsableProc(proc) and state.known[proc.key]
+            if not IsUsableProc(proc) and Active(proc)
                     and (Switch("arc", proc.key) or Switch("sound", proc.key)) then
                 local aura = C_UnitAuras.GetAuraDataBySpellName("player", BuffName(proc), AURA_FILTER)
                 -- A secret answer is never tested or indexed.
@@ -778,6 +875,23 @@ function DyresToolkit.RegisterProcs(spec)
     -- Whether this character knows the proc's talent (gets its cue and rows).
     function handle.Known(key)
         return state.known[key] == true
+    end
+
+    -- Whether this AddOn's usable procs have sound (spec.usableSounds).
+    function handle.UsableSounds()
+        return usableSounds
+    end
+
+    -- Whether this AddOn owns the proc's kind (2.12.0), and else the owner.
+    function handle.Owns(key)
+        for _, proc in ipairs(list) do
+            if proc.key == key then
+                local owns = Owns(proc)
+                local owner = not owns and DyresToolkit.KindOwner(DyresToolkit.PROC_KIND_PREFIX .. key) or nil
+                return owns, owner
+            end
+        end
+        return false, nil
     end
 
     -- The procs of this character's class, in settings order.
@@ -833,10 +947,15 @@ function DyresToolkit.RegisterProcs(spec)
         end
         local learned = Learned()
         for _, proc in ipairs(list) do
-            if IsUsableProc(proc) then
+            local owner = not Owns(proc) and DyresToolkit.KindOwner(DyresToolkit.PROC_KIND_PREFIX .. proc.key)
+            if owner then
+                report(proc.label .. ": shown by " .. tostring(owner) .. ", not here")
+            elseif IsUsableProc(proc) then
                 report(proc.label .. ": spell " .. (state.known[proc.key] and "known" or "not known")
                     .. ", usable " .. (state.usable[proc.key] or "not read yet")
-                    .. ", arcs " .. (Switch("arc", proc.key) and "on" or "off") .. ", sound none (usable proc)")
+                    .. ", arcs " .. (Switch("arc", proc.key) and "on" or "off")
+                    .. ", sound " .. (not usableSounds and "none (usable proc)"
+                        or Switch("sound", proc.key) and "on" or "off"))
             else
             local parts = {}
             for _, id in ipairs(ProcIDs(proc)) do
@@ -922,6 +1041,10 @@ function DyresToolkit.RegisterProcs(spec)
                 handle.Apply()
             end
         elseif event == "PLAYER_REGEN_ENABLED" then
+            if state.ownerPending then
+                state.ownerPending = false
+                handle.Apply()
+            end
             if state.pending then
                 BuildArcs()
                 Refresh()
@@ -935,7 +1058,7 @@ function DyresToolkit.RegisterProcs(spec)
                 ApplySounds()
             end
         elseif event == "SPELL_UPDATE_USABLE" then
-            UpdateUsable()
+            UpdateUsable(true)
         end
     end)
     -- Only for an AddOn with a usable proc of this class.
@@ -951,6 +1074,19 @@ function DyresToolkit.RegisterProcs(spec)
     end
     if HasAuraSounds() then
         RegisterIfValid(events, "ADDON_RESTRICTION_STATE_CHANGED")
+    end
+    -- Another AddOn may claim a kind later (its own PLAYER_LOGIN): the arcs
+    -- and sounds follow the owner, out of combat (in combat, after it).
+    if type(DyresToolkit.OnOwnerChanged) == "function" then
+        for _, proc in ipairs(list) do
+            DyresToolkit.OnOwnerChanged(DyresToolkit.PROC_KIND_PREFIX .. proc.key, function()
+                if InCombatLockdown() then
+                    state.ownerPending = true
+                else
+                    handle.Apply()
+                end
+            end)
+        end
     end
     handles[spec.addon] = handle
     handle.Apply()
@@ -1018,9 +1154,47 @@ function DyresToolkit.AddProcSettings(category, layout, handle, opts)
         layout:AddInitializer(header)
         rows.header = header
     end
+    -- 2.12.0: a proc another AddOn owns keeps its rows, greyed, naming it.
+    local function OwnedHere(proc)
+        if type(handle.Owns) ~= "function" then
+            return true
+        end
+        return (handle.Owns(proc.key))
+    end
+    local function OwnerNote(proc)
+        if OwnedHere(proc) then
+            return ""
+        end
+        local _, owner = handle.Owns(proc.key)
+        local title = owner
+        if type(DyresToolkit.AddOns) == "function" then
+            for _, info in ipairs(DyresToolkit.AddOns()) do
+                if type(info) == "table" and info.addon == owner and type(info.title) == "string" then
+                    title = info.title
+                end
+            end
+        end
+        return " Shown by " .. tostring(title) .. " now, so this setting does nothing here."
+    end
+    local function Greyed(initializer, proc)
+        if type(initializer) == "table" and type(initializer.AddModifyPredicate) == "function" then
+            initializer:AddModifyPredicate(function() return OwnedHere(proc) end)
+        end
+        return initializer
+    end
+    local function Defaults(proc, part)
+        if part == "sound" then
+            return DyresToolkit.ProcSoundDefault(proc)
+        end
+        return DyresToolkit.ProcArcDefault(proc)
+    end
     local function Flag(proc, part, name, tooltip)
+        local text = tooltip
+        if type(handle.Owns) == "function" then
+            text = function() return tooltip .. OwnerNote(proc) end
+        end
         local setting = Settings.RegisterProxySetting(category, Variable(proc, part), Settings.VarType.Boolean,
-            name, part ~= "sound" or DyresToolkit.ProcSoundDefault(proc),
+            name, Defaults(proc, part),
             function()
                 local values = Store()[part]
                 return type(values) == "table" and values[proc.key] == true
@@ -1031,25 +1205,41 @@ function DyresToolkit.AddProcSettings(category, layout, handle, opts)
                 store[part][proc.key] = value == true
                 handle.Apply()
             end)
-        return ShownIf(Settings.CreateCheckbox(category, setting, tooltip), function() return handle.Known(proc.key) end)
-    end
-    local function Choices()
-        local library = SoundLibrary()
-        return library and library.Choices("aura")() or {}
+        local row = ShownIf(Settings.CreateCheckbox(category, setting, text), function() return handle.Known(proc.key) end)
+        return Greyed(row, proc)
     end
     for _, proc in ipairs(list) do
         local extra = type(proc.tooltip) == "string" and proc.tooltip ~= "" and (" " .. proc.tooltip) or ""
-        if IsUsableProc(proc) then
-            -- A usable proc: the arc switch only (the engine plays no sound for it).
+        local usable = IsUsableProc(proc)
+        -- An aura proc's sound is an aura sound (a file); a usable proc's is
+        -- played by the engine, so any sound (2.12.0).
+        local filter = not usable and "aura" or nil
+        local function Choices()
+            local library = SoundLibrary()
+            return library and library.Choices(filter)() or {}
+        end
+        local arc, sound
+        local silent = usable and not (type(handle.UsableSounds) == "function" and handle.UsableSounds())
+        if silent then
+            -- A usable proc without usableSounds: the arc switch only.
             rows[proc.key] = {arc = Flag(proc, "arc", proc.label .. " arc",
                 "An arc each side of you, in its own color, while " .. proc.label .. " can be used. It is "
                     .. "dimmed while you are short of rage or other power, also in combat." .. extra)}
+        elseif usable then
+            arc = Flag(proc, "arc", proc.label .. " arc",
+                "An arc each side of you, in its own color, while " .. proc.label .. " can be used. It is "
+                    .. "dimmed while you are short of rage or other power, also in combat." .. extra)
+            sound = Flag(proc, "sound", proc.label .. " sound",
+                "Play a sound the moment " .. proc.label .. " can be used, also in combat; at most once every "
+                    .. USABLE_SOUND_GAP .. " seconds." .. extra)
         else
-        local arc = Flag(proc, "arc", proc.label .. " arc",
-            "An arc each side of you, in its own color, while " .. proc.label .. " is up. It drains with the "
-                .. "time left and goes the moment you use it, also in combat." .. extra)
-        local sound = Flag(proc, "sound", proc.label .. " sound",
-            "Play a sound the moment " .. proc.label .. " procs, also in combat." .. extra)
+            arc = Flag(proc, "arc", proc.label .. " arc",
+                "An arc each side of you, in its own color, while " .. proc.label .. " is up. It drains with the "
+                    .. "time left and goes the moment you use it, also in combat." .. extra)
+            sound = Flag(proc, "sound", proc.label .. " sound",
+                "Play a sound the moment " .. proc.label .. " procs, also in combat." .. extra)
+        end
+        if not silent then
         local choice = Settings.RegisterProxySetting(category, Variable(proc, "sound_choice"),
             Settings.VarType.String or "string", "Sound", proc.sound or DyresToolkit.DEFAULT_PROC_SOUND,
             function()
@@ -1059,16 +1249,21 @@ function DyresToolkit.AddProcSettings(category, layout, handle, opts)
             function(value)
                 local store = Store()
                 store.sounds = type(store.sounds) == "table" and store.sounds or {}
-                store.sounds[proc.key] = DyresToolkit.SanitizeProcSound(value, proc.sound)
+                if usable then
+                    store.sounds[proc.key] = DyresToolkit.SanitizeUsableProcSound(value, proc.sound)
+                else
+                    store.sounds[proc.key] = DyresToolkit.SanitizeProcSound(value, proc.sound)
+                end
                 handle.Apply()
                 handle.Preview(proc.key)
             end)
-        local dropdown = ShownIf(Settings.CreateDropdown(category, choice, Choices,
-            "The sound when " .. proc.label .. " procs. Choosing one plays it once. The sounds come from "
-                .. "Dyre's Sounds." .. extra), function() return handle.Known(proc.key) end)
+        local dropdown = Greyed(ShownIf(Settings.CreateDropdown(category, choice, Choices,
+            "The sound when " .. proc.label .. (usable and " can be used" or " procs")
+                .. ". Choosing one plays it once. The sounds come from Dyre's Sounds." .. extra),
+            function() return handle.Known(proc.key) end), proc)
         local library = SoundLibrary()
         if library then
-            library.SetupMenu(dropdown, "aura")
+            library.SetupMenu(dropdown, filter)
         end
         if type(dropdown) == "table" and type(dropdown.SetParentInitializer) == "function" then
             dropdown:SetParentInitializer(sound, function()
