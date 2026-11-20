@@ -4,6 +4,14 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.11.1
+
+### Fixes
+- Proc cues now work on game clients in every language, not only English. Before, the proc arcs and sounds in Dyre's Shields Up never showed on a French client (a player report), or on any other non-English client.
+- Warlock "! Seduction" macro: works on game clients in every language. It checked for a pet named in English ("Succubus/Incubus"), so on other clients it did nothing; it now uses your demon's family as your client names it.
+- Control macros stay within the game's 255-byte limit when a spell's name is long in your language (such as Russian or Chinese), so the end of the macro is no longer cut off. When a macro would be too long, it first leaves out the spell name after `#showtooltip` (the icon still shows), then the marker's fallback, then the marker line. The cast line always stays.
+- Raid markers in group messages now show as icons for every player, whatever their game language: the messages use the codes `{rt1}` to `{rt8}` in place of words such as `{moon}`.
+
 ## 2.11.0
 
 ### Features

@@ -965,8 +965,12 @@ function DyresToolkit.CreateControlTracker(spec)
                 control = each
             end
         end
+        local condition = def.condition
+        if def.petFamily then
+            condition = (condition or "") .. DyresToolkit.PetFamilyCondition()
+        end
         return DyresToolkit.FocusCastMacro({spell = def.spell, marker = def.marker and Marker(def.marker) or nil,
-            condition = def.condition, shift = def.shift, untargeted = control and control.untargeted})
+            condition = condition, shift = def.shift, untargeted = control and control.untargeted})
     end
 
     -- Out of combat only, and only while this AddOn owns the class's macros

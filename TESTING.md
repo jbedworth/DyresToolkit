@@ -61,6 +61,8 @@ to the toolkit), Dyre's Sounds installed, and a Mage with the talent.
 - [ ] The buff ID is learned: after the first proc out of combat, the class
       AddOn's debug line (handle `Report`) says "(confirmed)" for an ID,
       and after /reload the arcs show from the first proc on.
+- [ ] A non-English client (2.11.1; French if a player can check): the arcs
+      and the sound show for a proc, and the debug line lists "(named)" IDs.
 - [ ] Without the talent the "Procs" header and rows are hidden; after
       learning it (no reload) they show. "Proc arc size" shows only when
       the talent was known as the page was built.

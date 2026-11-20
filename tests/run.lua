@@ -2371,6 +2371,44 @@ test("FocusCastMacro writes WTF 1.4.1's Banish and Seduction macros, focus or ch
         nil, "chain = false overrides the flag")
 end)
 
+test("FocusCastMacro stays within 255 bytes for a long name in another language (2.11.1)", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    macroSpells(state, false)
+    -- Shackle Undead in Russian: 17 letters, 32 bytes.
+    local name = "\208\161\208\186\208\190\208\178\209\139\208\178\208\176\208\189\208\184\208\181 "
+        .. "\208\189\208\181\208\182\208\184\209\130\208\184"
+    state.env.C_Spell.GetSpellName = function(id) return id == 9484 and name or nil end
+    local body = toolkit.FocusCastMacro({spell = 9484, marker = 8})
+    equal(#body <= 255, true, "fits: " .. #body .. " bytes")
+    equal(body:find("^#showtooltip\n") ~= nil, true, "first the tooltip's name goes")
+    contains(body, "/use [@focus,harm,nodead][@mouseover,harm,nodead][harm,nodead] " .. name)
+    contains(body, "/tm [@focus,harm,nodead]", "the marker stays, on the focus")
+    -- Longer still: the marker's fallback, then the marker line go; the cast line never.
+    local long = string.rep("\229\174\137", 33)
+    state.env.C_Spell.GetSpellName = function() return long end
+    body = toolkit.FocusCastMacro({spell = 9484, marker = 8})
+    equal(#body <= 255, true, "fits: " .. #body .. " bytes")
+    equal(body:find("/tm", 1, true), nil, "no marker line")
+    contains(body, "[harm,nodead] " .. long)
+    -- An English name keeps the full macro, as before.
+    state.env.C_Spell.GetSpellName = function() return "Shackle Undead" end
+    equal(toolkit.FocusCastMacro({spell = 9484, marker = 8}):find("^#showtooltip Shackle Undead\n") ~= nil, true)
+end)
+
+test("PetFamilyCondition: the pet's family as the client names it, else nothing", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    state.env.UnitCreatureFamily = function() return "Sukkubus" end
+    equal(toolkit.PetFamilyCondition(), ",pet:Sukkubus")
+    state.env.UnitCreatureFamily = function() return nil end
+    equal(toolkit.PetFamilyCondition(), "", "no pet")
+    state.env.UnitCreatureFamily = function() return SECRET end
+    equal(toolkit.PetFamilyCondition(), "", "a secret family is never used")
+    state.env.UnitCreatureFamily = function() return "Bad;Name" end
+    equal(toolkit.PetFamilyCondition(), "", "a character a condition cannot hold")
+end)
+
 test("FocusCastMacro writes WTF 1.4.1's Fear macro: Shift keeps your focus", function()
     local state = fixture()
     local toolkit = state.toolkit
@@ -2446,7 +2484,7 @@ test("FormatAnnouncement fills tokens from a values table; a missing marker take
     equal(toolkit.FormatAnnouncement("%C %I for %X", {C = 20, I = "Water"}), "20 Water for %X",
         "an unknown token stays")
     equal(toolkit.FormatAnnouncement("Sheep %T", {T = SECRET}), "Sheep", "a secret name is never used")
-    equal(toolkit.MarkerCode(5), "{moon}")
+    equal(toolkit.MarkerCode(5), "{rt5}", "every client's chat knows {rt5}")
     equal(toolkit.MarkerCode(0), "")
     equal(toolkit.MarkerCode(42), "")
     equal(toolkit.ValidMarker(8), true)
@@ -2984,7 +3022,7 @@ test("Banish with a working focus counts only at your focus, clicks to recast, a
     equal(row.holder.attributes.type1, "macro")
     equal(row.holder.attributes.macrotext1, "/use [@focus,exists,harm,nodead] Banish")
     equal(row.holder.shown, true)
-    equal(state.sent[2], "PARTY:Banishing Imp {moon}", "%M: the moon the macro gives your focus")
+    equal(state.sent[2], "PARTY:Banishing Imp {rt5}", "%M: the moon the macro gives your focus")
     state.units.focus = mob("Creature-10", "Imp")
     emit(state, "PLAYER_FOCUS_CHANGED")
     equal(row.guid, nil, "your focus became another mob")
@@ -3115,11 +3153,13 @@ test("the control macros: WTF's text, written only while known, owned, and out o
     equal(state.toolkit.FocusCastMacro({spell = 6358}) ~= nil, true)
     for _, macro in ipairs(state.macros) do byName[macro.name] = macro.body end
     equal(byName["! Seduction"], nil, "in combat it waits")
+    -- The pet's family as a French client names it (2.11.1).
+    state.env.UnitCreatureFamily = function(unit) return unit == "pet" and "Succube" or nil end
     state.combat = false
     emit(state, "PLAYER_REGEN_ENABLED")
     byName = {}
     for _, macro in ipairs(state.macros) do byName[macro.name] = macro.body end
-    contains(byName["! Seduction"], "/use [@focus,harm,nodead,pet:Succubus/Incubus] Seduction")
+    contains(byName["! Seduction"], "/use [@focus,harm,nodead,pet:Succube] Seduction")
     store.macros = false
     tracker:Refresh()
     equal(#state.macros, 0, "off deletes them")
@@ -5309,6 +5349,31 @@ test("proc cues: art outside the AddOn's own folder, or half of it, gets the too
         left = "interface\\addons\\dyresshieldsup\\Art\\BoltLeft"}})
     equal(handle.Container("missilebarrage", "right").slots[1].button.bar.calls.SetStatusBarTexture[1],
         "interface\\addons\\dyresshieldsup\\Art\\Bolt")
+end)
+
+test("proc cues: a French client matches the buff by its French name (player report)", function()
+    local state = fixture()
+    local env = procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local french = {[PROC_TALENT] = "Barrage de projectiles", [PROC_TALENT_TWO] = "Barrage de projectiles",
+        [PROC_BUFF] = "Barrage de projectiles", [PROC_SPARE] = "Barrage de projectiles",
+        [PROC_OTHER] = "Projectiles des arcanes", [9901] = "Décimation"}
+    env.C_Spell.GetSpellName = function(id) return french[id] end
+    equal(state.toolkit.ProcBuffName(mageProcs()[1]), "Barrage de projectiles", "the first listed ID's name")
+    local handle, db = procAddon(state)
+    equal(handle.Container("missilebarrage", "right").slots[1].ids[PROC_BUFF], true, "the listed ID counts")
+    equal(handle.Container("missilebarrage", "right").slots[1].ids[PROC_OTHER], nil, "another spell never counts")
+    equal(#procSounds(state, PROC_BUFF), 1, "its sound is registered")
+    state.buffs["Barrage de projectiles"] = {spellId = PROC_NEW}
+    emit(state, "UNIT_AURA", "player")
+    equal(db.procIDs.missilebarrage, PROC_NEW, "learned by its French name")
+    state.buffs["Missile Barrage"] = {spellId = 7777}
+    -- A proc with no listed IDs takes its talent's name (Decimation).
+    equal(state.toolkit.ProcBuffName({buff = "Decimation", talents = {9901}, ids = {}}), "Décimation")
+    -- An English client keeps the English name; nothing named: the English name.
+    env.C_Spell.GetSpellName = function(id) return PROC_NAMES[id] end
+    equal(state.toolkit.ProcBuffName(mageProcs()[1]), "Missile Barrage")
+    env.C_Spell.GetSpellName = function() return SECRET end
+    equal(state.toolkit.ProcBuffName(mageProcs()[1]), "Missile Barrage", "a secret name is never used")
 end)
 
 test("proc cues: the buff ID is learned out of combat only, never in combat, and never a talent", function()

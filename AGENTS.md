@@ -436,9 +436,16 @@ another AddOn can still use it. DSU steps aside when SAO is loaded (John:
 - Rules (the prototype's):
   - Auras are never read in combat. A candidate counts only when
     `C_Spell.GetSpellName` names it the buff (a secret name never counts).
+    The buff's name is in the client's language (2.11.1, a French player
+    report; `BuffName`, exported as `ProcBuffName`): a proc's `buff` is
+    English, and a non-English client names the IDs in its own language,
+    so nothing matched. A listed ID named `buff` keeps `buff` (English);
+    else the first listed ID's name; with no listed IDs (Decimation), the
+    talent's name; else `buff`. Never compare a name from the client with
+    English text.
     Out of combat (UNIT_AURA for the player, PLAYER_REGEN_ENABLED, each
     Apply), for a known proc with its arc or sound on,
-    `GetAuraDataBySpellName("player", buff, "HELPFUL").spellId` is saved in
+    `GetAuraDataBySpellName("player", BuffName(proc), "HELPFUL").spellId` is saved in
     `learned()` and used from then on. A secret answer is never tested or
     indexed.
   - A talent ID is never a buff ID: the talent's passive aura carries the
@@ -609,7 +616,23 @@ rules are data; CONTRACT stays 2; WTF 1.4.1 and MTF 1.2.3 keep working.
   form changes only its `/use`. Lengths: "Polymorph: Turtle" with marker 8
   is 193 with focus, 236 with the Era chain (no /clearfocus there; with it,
   267, over the 255 limit); tests/run.lua checks every control macro fits.
-- Announce.lua: `RAID_MARKERS`, `ValidMarker`, `MarkerCode`,
+  Other languages (2.11.1, a localization audit, 2026-11-20; John: "Yes,
+  fix all three"): a body is bytes, and a Cyrillic or Chinese name takes 2
+  or 3 a letter (Shackle Undead in Russian made 268). `FocusCastMacro`
+  checks `#body` against `MACRO_MAX_BYTES` (255) and gives up, in order:
+  the name after `#showtooltip`, the marker line's fallback, the marker
+  line, the Shift and right-click clear. The cast line stays whole; if
+  nothing fits, the shortest is written. English macros do not change.
+  Seduction (`petFamily` in ClassData): `PetFamilyCondition()` adds
+  ",pet:<UnitCreatureFamily("pet")>" as the client names it, since
+  `[pet:x]` tests the pet's name or family in the client's language and
+  the English "pet:Succubus/Incubus" matched nothing elsewhere. The macro
+  is written only while the pet knows the spell (and on UNIT_PET), so the
+  pet is out then; a missing, secret, or odd family ([ ] , ; / :) gives
+  no pet test. Never put English game names in macro conditions.
+- Announce.lua: `RAID_MARKERS` (chat codes `{rt1}`..`{rt8}` since 2.11.1:
+  every client knows them; `{moon}` and the other words need the reader's
+  client to know the English word), `ValidMarker`, `MarkerCode`,
   `GroupChannel(say)`, `SendChat`, `FormatAnnouncement(text, values)` (MTF's
   values table; false or "" drops the token and the space before it;
   secrets give ""), `CreateAnnouncer{repeatSeconds = 3, say, enabled}` with

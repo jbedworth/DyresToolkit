@@ -17,11 +17,11 @@ local DyresToolkit = ns.toolkit
 -- own SavedVariables (the family rule: the toolkit never owns them) and
 -- passes functions that return its live tables.
 --
--- A proc: key, label, buff (the client's buff name), class, talents (the
+-- A proc: key, label, buff (the buff's English name), class, talents (the
 -- talent's spell IDs: only a player who knows one gets the cue and the rows;
 -- never a buff ID, since the talent's passive aura carries the buff's name),
 -- ids (candidate buff IDs; each counts only when C_Spell.GetSpellName names
--- it the buff), color {r, g, b}, sound (a Dyre's Sounds key), and optional
+-- it the buff in the client's language: see BuffName), color {r, g, b}, sound (a Dyre's Sounds key), and optional
 -- soundOn (false: the sound switch starts off), tooltip (extra text for its rows, such as a macro), stacks (a stacking
 -- proc's most stacks, 2 to 10: the right arc then shows only at that many,
 -- and the sound plays again as a stack is added), and art (below).
@@ -302,6 +302,45 @@ local function IsTalent(proc, id)
     return false
 end
 
+-- The proc's buff name in the client's language (a French player report,
+-- 2026-11-20: proc.buff is English, and GetSpellName gives "Idées claires"
+-- for Clearcasting, so nothing matched). A listed ID the client names
+-- proc.buff keeps proc.buff (an English client, unchanged); else the first
+-- listed ID's name; a proc with no IDs (Decimation) takes its talent's
+-- name, as the buff and the talent share it; else proc.buff.
+local function LocalName(id)
+    local name = type(C_Spell) == "table" and type(C_Spell.GetSpellName) == "function"
+        and C_Spell.GetSpellName(id)
+    if IsSecret(name) or type(name) ~= "string" or name == "" then
+        return nil
+    end
+    return name
+end
+
+local function BuffName(proc)
+    local ids, first = proc.ids or {}, nil
+    for _, id in ipairs(ids) do
+        local name = LocalName(id)
+        if name == proc.buff then
+            return proc.buff
+        end
+        first = first or name
+    end
+    if first then
+        return first
+    end
+    if #ids == 0 then
+        for _, id in ipairs(proc.talents or {}) do
+            local name = LocalName(id)
+            if name then
+                return name
+            end
+        end
+    end
+    return proc.buff
+end
+DyresToolkit.ProcBuffName = BuffName
+
 -- The buff IDs read in client, per proc: data, not a setting, so the AddOn
 -- keeps it with the character (a profile characterKeys entry). A talent ID
 -- is never kept.
@@ -480,10 +519,9 @@ function DyresToolkit.RegisterProcs(spec)
                 ids[#ids + 1] = id
             end
         end
+        local buff = BuffName(proc)
         for _, id in ipairs(proc.ids) do
-            local name = type(C_Spell) == "table" and type(C_Spell.GetSpellName) == "function"
-                and C_Spell.GetSpellName(id)
-            if name and not IsSecret(name) and name == proc.buff then
+            if LocalName(id) == buff then
                 Add(id)
             end
         end
@@ -695,7 +733,7 @@ function DyresToolkit.RegisterProcs(spec)
         for _, proc in ipairs(list) do
             if not IsUsableProc(proc) and state.known[proc.key]
                     and (Switch("arc", proc.key) or Switch("sound", proc.key)) then
-                local aura = C_UnitAuras.GetAuraDataBySpellName("player", proc.buff, AURA_FILTER)
+                local aura = C_UnitAuras.GetAuraDataBySpellName("player", BuffName(proc), AURA_FILTER)
                 -- A secret answer is never tested or indexed.
                 if aura and not IsSecret(aura) and type(aura) == "table" then
                     local id = aura.spellId
