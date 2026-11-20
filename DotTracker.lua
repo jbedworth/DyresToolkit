@@ -64,6 +64,15 @@ DyresToolkit.TRACKER_GROW = {"down", "up"}
 -- unseen click area (family rule). A change needs Rebuild. Owners check this
 -- flag before they offer the setting.
 DyresToolkit.TRACKER_HIDE_EMPTY = true
+-- Panel switches (unreleased; a player, 2026-11-19: "Is there a way to
+-- disable the target dot window or hide it? I like having the focus/ other
+-- targets but I already have this info on the target window."; John: "a 3
+-- panels toggle show/off, default to show"): store.show[key] false hides that
+-- panel (target, focus, list), also while unlocked; anything else shows it.
+-- The list still leaves out your target and focus. A change needs Refresh
+-- (the pinned sections change out of combat). Owners check this flag before
+-- they offer the settings.
+DyresToolkit.TRACKER_PANELS = {"target", "focus", "list"}
 local SLOT_GAP = 6
 local PADDING = 6
 -- Seconds a list row stays without a unit to bind, out of combat; in combat
@@ -358,6 +367,12 @@ function DyresToolkit.CreateDotTracker(spec)
     -- TRACKER_HIDE_EMPTY: only true counts. Read at each row's build.
     local function HideEmpty()
         return store.hideEmpty == true
+    end
+
+    -- TRACKER_PANELS: only false hides a panel. Read live.
+    local function PanelShown(key)
+        local show = store.show
+        return not (type(show) == "table" and show[key] == false)
     end
 
     -- The slots a row shows, as SLOTS indexes in the saved order: one for
@@ -1095,7 +1110,7 @@ function DyresToolkit.CreateDotTracker(spec)
                 end
             end
             for _, key in ipairs({"target", "focus"}) do
-                tracker.sections[key]:SetShown(Enabled())
+                tracker.sections[key]:SetShown(Enabled() and PanelShown(key))
             end
         end)
     end
@@ -1237,7 +1252,7 @@ function DyresToolkit.CreateDotTracker(spec)
             listTop = StackOffset("list")
         else
             for _, key in ipairs({"target", "focus"}) do
-                if not sections[key] and IsLiveHostile(PINNED[key].unit) then
+                if not sections[key] and PanelShown(key) and IsLiveHostile(PINNED[key].unit) then
                     listTop = math.max(listTop, StackOffset(key) + RowStep() + PinnedSpacing())
                 end
             end
@@ -1300,7 +1315,7 @@ function DyresToolkit.CreateDotTracker(spec)
                 end
             end
         end
-        list:SetShown(Enabled() and #listed > 0)
+        list:SetShown(Enabled() and PanelShown("list") and #listed > 0)
         FollowPinnedRows()
     end
 

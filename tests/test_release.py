@@ -287,9 +287,11 @@ class ReleaseTests(unittest.TestCase):
                 builder._validate_tga("icon.tga", data)
         self.assertEqual(builder.MEDIA_FILES, ("Textures/Stripes.tga", "Textures/ShieldFill.tga",
                                                "Textures/ShieldEdge.tga", "Textures/SwordsFill.tga",
-                                               "Textures/SwordsEdge.tga"))
+                                               "Textures/SwordsEdge.tga", "Textures/ProcArc.tga",
+                                               "Textures/ProcArcLeft.tga"))
         self.assertEqual(sorted(path.name for path in (ROOT / "Textures").iterdir()),
-                         ["ShieldEdge.tga", "ShieldFill.tga", "Stripes.tga", "SwordsEdge.tga", "SwordsFill.tga"])
+                         ["ProcArc.tga", "ProcArcLeft.tga", "ShieldEdge.tga", "ShieldFill.tga", "Stripes.tga",
+                          "SwordsEdge.tga", "SwordsFill.tga"])
         for name in builder.MEDIA_FILES:
             builder._validate_tga(name, (ROOT / name).read_bytes())
         path, _ = self.build()

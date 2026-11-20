@@ -114,6 +114,16 @@ minimap) are yours on every character and are not in a profile.
   Dyre's AddOn's settings. `/dyre minimap` hides or shows the button.
 - **One settings home.** Options → AddOns → **Dyre's AddOns** holds these
   settings, with each Dyre's AddOn's page under it. `/dyre` opens it.
+- **Proc cues** (the engine for Dyre's Shields Up's proc overlays): while a
+  proc's buff is up, an arc shows on each side of your character and drains
+  with the time left, and a sound plays as it appears, also in combat. Dyre's
+  Shields Up chooses the procs for each class and has their art, switches,
+  sound, and arc size on its own page, in its own update. An AddOn that
+  brings no art gets a plain crescent in the proc's color. Sounds come from
+  Dyre's Sounds.
+  A stacking proc (Fingers of Frost) shows the right arc only while it has
+  all its stacks, so you see when one is used, and its sound plays again
+  when a stack is added.
 
 Frames always start locked when you log in. Frames move only out of combat.
 

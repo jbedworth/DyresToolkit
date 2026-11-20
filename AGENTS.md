@@ -346,6 +346,209 @@ has this exception: the profile copies live in DyresToolkitDB.profiles.
   after the Toolkit, with a `refresh` for live apply (or none, and the
   player is asked to reload).
 
+### Proc cues (unreleased, 2.11.0; John, 2026-11-18)
+
+John: "It would be nice if there was a shared engine that multiple classes
+can use for their procs, but the class-specific stuff stayed closer to its
+own class-specific addon ... the visual on-screen representation of procs
+that make certain abilities hit better is a general need; what those are
+vary class to class." He approved: the engine here, the Mage data in Mage
+Tools Forever. Procs.lua is ported from Dyre's Shields Up's prototype (its
+Procs.lua, uncommitted on 2026-11-18, and its AGENTS.md "Proc cues"): the
+design and every rule, not its namespace. A class AddOn passes its procs as
+data; the toolkit draws two mirrored arcs (one widget, one arc each side of
+the caster) while a proc's buff is up and plays a sound when it appears,
+both in combat. Additions only: CONTRACT stays 2, so a dependent checks
+that the functions exist.
+
+The client (John, 2026-11-18, after a review of SpellActivationOverlay,
+SAO: "DSU is the right home for our 'spell activation overlays'; we already
+do this for the shields, which is an activation overlay, across various
+classes"; "build the catalog one set of classes at a time, starting with a
+simple set of mage, warlock, paladin, and warrior overlays, in DSU"): Dyre's
+Shields Up holds every class's proc data and art and is the one caller of
+`RegisterProcs`; Mage Tools Forever and Warlock Tools Forever hold none
+(their unreleased proc entries moved there). The engine stays here, so
+another AddOn can still use it. DSU steps aside when SAO is loaded (John:
+"We'll plan to coexist"); that is DSU's rule, not the engine's.
+
+- A proc: `key` (letters, digits, `_`), `label`, `buff` (the client's buff
+  name), `class` (class file), `talents` (spell IDs), `ids` (candidate buff
+  IDs), `color` {r, g, b}, `sound` (a Dyre's Sounds key), optional
+  `tooltip` (extra text for its rows, such as a macro), `stacks` (a
+  stacking proc's most stacks; see Stacks below), and `art` (see Art
+  below).
+- `SanitizeProcs(saved, procs)` -> `{arc = {[key] = bool}, sound = {[key] =
+  bool}, sounds = {[key] = soundKey}, position, scale}`; both switches on by
+  default; a sound kept only when Dyre's Sounds can make it an aura sound
+  (`SanitizeProcSound(key, default)`; without the library the key is kept);
+  a broken place dropped. The AddOn calls it from its own SanitizeDB, so the
+  table stays in its SavedVariables and its profile part (the family rule:
+  the toolkit never owns an AddOn's SavedVariables).
+- `SanitizeProcIDs(saved, procs)` -> `{[key] = learned buff ID}` (whole,
+  positive, never a talent ID); the AddOn keeps it as a profile
+  `characterKeys` entry (data the character found, not a setting).
+- `RegisterProcs(spec)` -> handle, or nil when no proc in `spec.procs`
+  matches the player's class (then no frame, no events, no rows). spec:
+  `addon` (folder), `procs`, `store()` and `learned()` (functions that
+  return the AddOn's live tables, so a profile copy written in place is
+  seen), optional `title` (default "Proc arcs"), `point` (default CENTER
+  0, -20), and `art` (the default for its procs). Once per AddOn (a second call gives the same handle). Call it at
+  PLAYER_LOGIN after the AddOn's settings load. One widget per AddOn: key
+  `procarcs`, store `store()` (its `position` and `scale`), sizes scale
+  only, mouse "unlocked"; while unlocked both sample arcs show, full, in the
+  first known proc's color.
+- Handle: `Apply()` (after any setting or profile change: arcs rebuilt when
+  the IDs changed, sounds registered again, refresh, learn), `Known(key)`,
+  `List()`, `Widget()`, `ResetPosition()` (true when there is a widget),
+  `Preview(key)` (plays the chosen sound, never in combat), `Report(report)`
+  (one line per proc: "<label>: talent known|not known, buff IDs <id>
+  (named|confirmed), ..., arcs ready|none, sound registered|off"); also
+  `Addon()`, `Store()`, and, for tests and debug, `Frame()` and
+  `Container(key, side)` ("left" or "right").
+- `AddProcSettings(category, layout, handle, opts)` -> rows by proc key, or
+  nil (no settings API, no handle): on the AddOn's own page, a section
+  header (`opts.header`, default "Procs") shown only while some proc's
+  talent is known; per proc "<label> arc" and "<label> sound" switches and a
+  "Sound" dropdown (Dyre's Sounds' aura sounds, its nested menu through
+  `SetupMenu(initializer, "aura")`) under the sound switch, each shown only
+  while its talent is known, tooltips ending with `proc.tooltip`; variables
+  `DYRE_<ADDON>_PROC_<KEY>_ARC`, `_SOUND`, `_SOUND_CHOICE` (uppercase).
+  The sound switch's default is `ProcSoundDefault(proc)`: on, unless the
+  proc has `soundOn = false` (DSU's Clearcasting, John, 2026-11-20, as DBR's
+  "off, the game already plays a sound for it"); `SanitizeProcs` uses it for
+  an unset or non-boolean switch, and the setting's default matches.
+  Then `AddWidgetSettings` for the arcs ("Proc arc size", Reset size) only
+  when a talent is known as the page is built (those rows take no shown
+  predicate; a talent learned later shows them after a /reload). Choosing a
+  sound plays it once.
+- The AddOn's profile `refresh` calls `ReapplyWidgets(addon)` (place, size)
+  and then `handle.Apply()`.
+- One cue per proc for the family (John, 2026-11-18: Nightfall moves to WTF
+  on this engine, while Dyre's Buff Reminders' Proc Chimes has its own
+  Nightfall sound): `RegisterProcs` claims the Owners kind
+  `PROC_KIND_PREFIX .. key` ("proc:nightfall") for the AddOn at
+  `PROC_OWNER_PRIORITY` (10, a class Tools AddOn's) for each proc of the
+  player's class. An AddOn with its own copy (DBR) checks `KindOwner` and
+  steps aside for a kind another AddOn owns; so the proc keys match DBR's
+  `PROC_SOUNDS` keys ("nightfall", "mageclearcasting"). A switch turned off
+  keeps the claim (off means off).
+- Rules (the prototype's):
+  - Auras are never read in combat. A candidate counts only when
+    `C_Spell.GetSpellName` names it the buff (a secret name never counts).
+    Out of combat (UNIT_AURA for the player, PLAYER_REGEN_ENABLED, each
+    Apply), for a known proc with its arc or sound on,
+    `GetAuraDataBySpellName("player", buff, "HELPFUL").spellId` is saved in
+    `learned()` and used from then on. A secret answer is never tested or
+    indexed.
+  - A talent ID is never a buff ID: the talent's passive aura carries the
+    buff's name, so it is never learned, kept, in the arcs' filter, or given
+    a sound (in the filter the arcs would show all the time).
+  - Talents: `IsPlayerSpell`, else `C_SpellBook.IsSpellKnown`, else
+    `IsSpellKnown`, any of the proc's talent IDs; checked again on
+    SPELLS_CHANGED (a talent learned later gets its cue, a respec loses it).
+  - Two containers per proc, one per side, from `CreateAuraContainer`
+    (the engine on Forever, plain Lua on Era), each slot filter "HELPFUL"
+    with `includeSpellIDs` a SET (`{[id] = true}`; a list matched nothing in
+    client, DSU's Shield.lua), each side its own table. The engine shows the
+    slot while the buff is up, drains a StatusBar with the time left
+    (`SetDurationBar`, RemainingTime), and hides it when the buff goes.
+  - Containers are made, shown, and hidden only out of combat: the engine's
+    slot frames are forbidden to AddOn code in combat (MageProcs, seen in
+    client: "calling 'SetScale' on bad self"). A change in combat waits for
+    PLAYER_REGEN_ENABLED; the widget frame (ours) shows or hides at once. A
+    new ID gets new containers; the old ones are hidden.
+  - Sound: `C_UnitAuras.AddAuraSound(Added, {spellID, unitToken "player",
+    outputChannel "master", throttleSeconds 1, soundFileName/soundFileID})`
+    from Dyre's Sounds' `AuraSound` (the choice, else the proc's default,
+    else `DEFAULT_PROC_SOUND` "magical"), once per buff ID; every Apply
+    removes the old ones first. During an Encounter restriction
+    (`C_RestrictedActions.IsAddOnRestrictionActive(Encounter)`) nothing
+    changes; it waits for ADDON_RESTRICTION_STATE_CHANGED (registered only
+    with aura sounds, where the event is valid) or PLAYER_REGEN_ENABLED.
+    Sounds stay in Dyre's Sounds (global `DyresSounds`, RequireContract(1),
+    with Resolve, AuraSound, Play, Choices, SetupMenu); none ship here.
+  - Classic Era: no `AddAuraSound`, so no sound and no error; the plain-Lua
+    containers still draw the arcs.
+  - Events only: no OnUpdate, no timers, no polling (tests/run.lua checks
+    the file).
+- Art (John, 2026-11-18: "I would prefer if each client of the 'toolkit
+  platform' APIs could provide their own artwork instead of having all art
+  across all addins baked into the toolkit"; he took the three
+  recommendations: a plain fallback here, art per proc with a spec default,
+  and the lightning moved to Mage Tools Forever). A proc's `art`, else the
+  spec's `art`, is `{right = path, left = path, tint = bool}`:
+  - Both paths must be in the registering AddOn's own folder
+    (`Interface\AddOns\<addon>\`, matched without regard to case, with
+    something after it and no `..`); else the art is ignored. The left file
+    is the right one mirrored: a StatusBar sets its fill's texture
+    coordinates itself, so the toolkit cannot flip one file.
+  - `tint` (default true): the art is white and the proc's color tints it
+    (track, bar, and the unlocked samples); false: drawn white-on, in its
+    own colors.
+  - The game gives AddOn code no way to know whether a texture file exists
+    (a missing one draws nothing or green), so each AddOn's own tests check
+    its files.
+  - Geometry, a contract for every proc art: square (256x256 32-bit TGA
+    suggested), the ring center CENTER_X 8/128 in from the flat side, the
+    crescent OUTER_SPAN 118/128 of the height, the art within radii 89 to
+    118 of 128; ARC_SCALE 1.1 of the 160 ring size (DSU's), so it sits
+    outside DSU's shield ring.
+  - Resolved once at RegisterProcs; the AddOn's tables are not changed.
+- The fallback arcs: Textures/ProcArc.tga (right) and ProcArcLeft.tga
+  (left), a plain white crescent (a bright core, a soft glow, thinner and
+  fading at the tips), made by scripts/make_proc_arcs.py (pure Python,
+  4x4 samples). They take the proc's color. Before, these files were
+  lightning (moved to Mage Tools Forever, then to Dyre's Shields Up with
+  the proc data), and before that copies of Dyre's Shields
+  Up's ShieldArc.tga, whose ratios every proc art keeps.
+- Stacks (John, 2026-11-18, from players of other proc AddOns: "Fingers of
+  frost procs should drop one side when 1 stack is consumed"): a proc with
+  `stacks` N (whole, 2 to 10) shows the left arc from one stack and the
+  right arc only at N. AddOn code cannot read the count in combat, so the
+  game decides: the right slot's arc and track sit inside a StatusBar (the
+  gate, no texture) handed to `button:SetApplicationBar(gate,
+  {minApplications = N, maxApplications = N})`; the engine's
+  ApplyApplicationBar calls `SetShown(applications >= minApplications)`
+  (Blizzard_CustomAuraButton.lua 68-75 and 419-430; options in
+  AuraContainerUtilDocumentation.lua; Gethe 943764493e6b). Found through
+  MageProcs' GameAura.lua comments (facts only). A client without
+  SetApplicationBar, or a call that fails, shows both arcs as before.
+  Auras.lua's plain-Lua container has the same gate for Era. The sound also
+  registers `Enum.UnitAuraSoundTrigger.ApplicationsIncreased` (1,
+  UnitAuraConstantsDocumentation.lua) when the client has it, so a stack
+  added plays; a stack used has no trigger: the right arc going is its cue.
+  Not checked in client (no Frost Mage to test with; Frost checks never
+  hold a release).
+- Usable procs (unreleased; Dyre's Shields Up's request, John, 2026-11-19:
+  "yes, send it to the coordinator; skip Paladin for now"): Warrior
+  Overpower (7384) and Revenge (6572) are not buffs; the game makes the
+  ability usable for a few seconds. A proc with `usable` = the rank 1 spell
+  ID (whole, positive) needs no `buff`, `ids`, or `talents` (talents
+  optional; with none, "known" is the spell itself through the same
+  talent check). Read by name (`C_Spell.GetSpellName`, so every rank
+  counts) with `C_Spell.IsSpellUsable`, else the global `IsUsableSpell`, at
+  every Apply and on SPELL_UPDATE_USABLE (registered only when the AddOn has
+  a usable proc of the player's class), also in combat. Usable: "full";
+  not usable but short of power (the second return): "dim"
+  (`USABLE_DIM_ALPHA` 0.4), so rage does not make it flicker; else "off". A
+  secret answer is never compared and changes nothing. Its arcs are two
+  textures on the widget's own plain frame (no aura slot), full art in the
+  proc's color (its `art`, the spec's, else the plain crescent), shown,
+  hidden, and dimmed at once in combat. No aura sound, no learned ID
+  (`SanitizeProcIDs` keeps none), and no Owners claim: Dyre's Buff
+  Reminders' reactive sounds (Overpower, Revenge) never step aside (DBR
+  AGENTS.md "Proc sounds"); a later step may move the sound here with DBR
+  stepping aside. Settings: the arc switch only (no sound switch or
+  dropdown). `handle.Usable(key)` returns the look and the two textures
+  (tests and debug); `Report` says "<label>: spell known|not known, usable
+  full|dim|off|not read yet, arcs on|off, sound none (usable proc)".
+  DBR's probe (its TESTING.md) found IsSpellUsable readable in combat for
+  Revenge; the second return in combat is an open question (TESTING.md).
+- Not checked in client yet (TESTING.md "Proc cues"). No dependent uses it
+  yet: Dyre's Shields Up adds the catalog in its own release, at least 24 h
+  after the Toolkit.
+
 ### Tracking engine, stage A (2.5.0; lead plan, 2026-11-01)
 
 The DoT and crowd-control tracking moves here from WTF and MTF in stages
@@ -572,6 +775,27 @@ WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
   takes clicks unseen). The row (name, health, backdrop) still shows while
   its unit is a live hostile; `panelOpacity` can make the backdrop clear.
   A change needs `Rebuild`. Not checked in client.
+- Panel switches (unreleased; a player, 2026-11-19: "Is there a way to
+  disable the target dot window or hide it? I like having the focus/ other
+  targets but I already have this info on the target window."; John: "a 3
+  panels toggle show/off, default to show. A checkbox is fine for now."):
+  `store.show[key]` for target, focus, and list (`TRACKER_PANELS`, a flag
+  owners check before they offer it); only false hides that panel, also
+  while unlocked. The list still leaves out your target and focus, and a
+  hidden pinned panel takes no room above the list. A change needs
+  `Refresh` (the pinned sections change out of combat). Owners: DDT and WTF
+  add three checkboxes, default on, in their own releases (24 h after the
+  Toolkit, or gated on the flag).
+- Bar orientation (HealthBars.lua `Vertical`; WTF player report,
+  2026-11-19: "attempt to compare a secret" from `DrawPrediction` on the
+  target bar in combat): a secret `GetOrientation` is never compared; the
+  bar's last readable answer is used (a weak-keyed table), else horizontal.
+  The same for `GetReverseFill` in `Anchor` (the overlay's last answer
+  stands) and the fill's `GetAtlas`/`GetTexture` in `BarArt` (a secret gives
+  no bar art, so the caller's look draws). Note: the test mock's SECRET
+  errors only when compared with another table (Lua 5.1 calls `__eq` only
+  for two tables), so these tests prove the IsSecret paths run, not that
+  no string compare is left.
 - Grow direction (2.9.2; John, 2026-11-14: "for each frame (Target,
   Focus, Other) we need to be able to set whether the DoTs should grow up
   or down from the origin"; "Keep the name above/below setting we already
@@ -1222,6 +1446,22 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
 
 ### Rules
 
+- Settings rows are pooled and shared with Blizzard's own settings (a
+  player's error, 2026-11-19: Blizzard's Status Text setting failed with
+  "attempt to compare a secret number value (execution tainted by
+  'DyresToolkit')"; the toolkit had replaced `SetupDropdownMenu` on the
+  pooled dropdown frames; John chose option A, 2026-11-19). Never replace a
+  method on a Blizzard row frame or on a settings initializer, never write a
+  field on a Blizzard frame, and never leave a function of ours on one (no
+  `getSelectionTextFunc`). Use `hooksecurefunc` only: Blizzard's code runs
+  first, untainted, then ours. Per-frame state goes in a weak-keyed table.
+  Applied in GroupSettings.lua (`NestSoundMenu`: hooks the initializer's
+  `InitFrame` and each pooled frame's `InitDropdown`; rebuilds the nested
+  menu only while `frame:GetElementData()` is our row), Widgets.lua
+  (`AddDefaultTick`), and Profiles.lua (`AttachRowButton`: InitFrame and
+  Resetter hooks). Dyre's Sounds 1.7.2's Menu.lua follows the same rule.
+  Not checked in client yet: change Interface > Status Text after opening
+  Dyre's pages; no error.
 - Frames always start locked at login. Frames move only out of combat.
 - The minimap button uses LibDataBroker-1.1 and LibDBIcon-1.0, embedded
   (author: "the standard way"); Forever has no AddOn compartment
@@ -1235,19 +1475,21 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
 - Runtime: DyresToolkit.toc, Libs/ (LibStub, CallbackHandler-1.0,
   LibDataBroker-1.1, LibDBIcon-1.0, and Ace3-LICENSE.txt), Core.lua,
   Layout.lua, Widgets.lua, Settings.lua, Profiles.lua, Minimap.lua, Auras.lua, Units.lua,
-  HealthBars.lua, Spells.lua, Macros.lua, Announce.lua, ClassData.lua,
+  Procs.lua, HealthBars.lua, Spells.lua, Macros.lua, Announce.lua, ClassData.lua,
   Owners.lua, Control.lua, DotTracker.lua, PlateDots.lua, DotPredict.lua,
   Tank.lua, Threat.lua, PetTaunt.lua, TankButtons.lua, Pull.lua,
   TankProbe.lua, GroupSettings.lua, loaded in that order; Bindings.xml (the
   client loads it); Textures/Stripes.tga and the threat icons
   (Textures/ShieldFill.tga, ShieldEdge.tga, SwordsFill.tga,
-  SwordsEdge.tga; scripts/make_icons.py).
+  SwordsEdge.tga; scripts/make_icons.py); the fallback proc arcs
+  (Textures/ProcArc.tga, ProcArcLeft.tga; scripts/make_proc_arcs.py).
 - tests/run.lua: the Lua 5.1 mock suite; it loads tests/tank.lua (the group
   warnings and tank tools, with their own richer client mock, ported from
   Dyre's Tank Tools) into the same run. tests/test_*.py: the release helpers.
 - Package only the TOC, Libs/ files listed in scripts/build_release.py, the
-  twenty-five runtime files, Bindings.xml, the five textures in
-  `MEDIA_FILES` (Stripes and the four icon layers), and LICENSE, under `DyresToolkit/`, named
+  twenty-six runtime files, Bindings.xml, the seven textures in
+  `MEDIA_FILES` (Stripes, the four icon layers, and the two proc arcs), and
+  LICENSE, under `DyresToolkit/`, named
   `DyresToolkit-<version>-forever.zip`, with `release.json` for WowUp.
 
 ## Client and API verification

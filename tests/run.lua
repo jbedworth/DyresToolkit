@@ -10,7 +10,7 @@ end
 
 local ADDON = "DyresToolkit"
 local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua", "Auras.lua", "Units.lua",
-    "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua", "ClassData.lua", "Owners.lua",
+    "Procs.lua", "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua", "ClassData.lua", "Owners.lua",
     "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",
     "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua"}
 local tests = {}
@@ -1050,7 +1050,7 @@ test("the TOC loads the libraries, then the runtime, in order", function()
     end
     equal(table.concat(files, ","), "Libs\\LibStub\\LibStub.lua,Libs\\CallbackHandler-1.0\\CallbackHandler-1.0.lua,"
         .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
-        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Profiles.lua,Minimap.lua,Auras.lua,Units.lua,HealthBars.lua,"
+        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Profiles.lua,Minimap.lua,Auras.lua,Units.lua,Procs.lua,HealthBars.lua,"
         .. "Spells.lua,Macros.lua,Announce.lua,ClassData.lua,Owners.lua,Control.lua,DotTracker.lua,"
         .. "PlateDots.lua,DotPredict.lua,Tank.lua,Threat.lua,PetTaunt.lua,TankButtons.lua,Pull.lua,"
         .. "TankProbe.lua,GroupSettings.lua")
@@ -1313,6 +1313,29 @@ test("on Forever the aura container is the engine's", function()
     equal(made.template, "CustomAuraContainerTemplate")
 end)
 
+test("on Era the stack gate shows from minApplications stacks, as the engine's", function()
+    local state = fixture()
+    auraWorld(state)
+    local container = state.toolkit.CreateAuraContainer(state.UIParent)
+    local gate = region()
+    function gate:SetShown(shown) self.shown = shown end
+    local options = {minApplications = 2, maxApplications = 2}
+    container:AddAuraSlot("fof", "HELPFUL", {candidateFilters = {includeSpellIDs = {[400670] = true}},
+        initializeFrame = function(button) button:SetApplicationBar(gate, options) end})
+    state.auras["target:HELPFUL"] = {{spellId = 400670, name = "Fingers of Frost", applications = 2,
+        duration = 15, expirationTime = 115}}
+    container:SetUnit("target")
+    equal(gate.shown, true, "two stacks")
+    equal(gate.value, 2)
+    equal(gate.max, 2)
+    state.auras["target:HELPFUL"][1].applications = 1
+    container:UpdateAllAuras()
+    equal(gate.shown, false, "one stack")
+    state.auras["target:HELPFUL"][1].applications = nil
+    container:UpdateAllAuras()
+    equal(gate.shown, false, "no count")
+end)
+
 -- A health bar of some frame AddOn, with its texts.
 local function healthBar(options)
     options = options or {}
@@ -1322,7 +1345,10 @@ local function healthBar(options)
     function bar:GetReverseFill() return options.reverse == true end
     function bar:GetFrameLevel() return 5 end
     function bar:GetStatusBarColor() return 0, 1, 0 end
-    function bar:GetOrientation() return options.vertical and "VERTICAL" or "HORIZONTAL" end
+    function bar:GetOrientation()
+        if options.orientation ~= nil then return options.orientation end
+        return options.vertical and "VERTICAL" or "HORIZONTAL"
+    end
     function bar:GetRegions() return unpack(self.regions) end
     function bar:GetParent() return self.parentFrame end
     function bar:IsForbidden() return false end
@@ -1405,6 +1431,33 @@ test("the block shows the damage to come, and DIES when it kills", function()
     toolkit.DrawPrediction(bar, "target", 300, 1000, STYLE)
     toolkit.HidePrediction(bar)
     equal(overlay.shown, false)
+end)
+
+test("a secret bar orientation is never compared: the last readable one, else horizontal", function()
+    local state = fixture()
+    local env = barWorld(state)
+    env.issecretvalue = function(value) return rawequal(value, SECRET) end
+    local toolkit = state.toolkit
+    -- Secret from the start: drawn as horizontal, no error.
+    local options = {orientation = SECRET}
+    local bar = healthBar(options)
+    equal(toolkit.DrawPrediction(bar, "target", 300, 1000, STYLE), false)
+    equal(state.made[1].shown, true, "drawn: a health bar is horizontal")
+    -- A bar read as vertical once stays vertical while its answer is secret.
+    local vertOptions = {orientation = "VERTICAL"}
+    local vert = healthBar(vertOptions)
+    equal(toolkit.DrawPrediction(vert, "plate", 300, 1000, STYLE), false, "vertical: not drawn")
+    vertOptions.orientation = SECRET
+    equal(toolkit.DrawPrediction(vert, "plate", 300, 1000, STYLE), false, "still vertical, nothing compared")
+    -- Reverse fill and the fill's art secret too (the WTF report's next lines).
+    local other = healthBar()
+    function other:GetReverseFill() return SECRET end
+    function other.fill:GetAtlas() return SECRET end
+    function other.fill:GetTexture() return SECRET end
+    local barStyle = {fill = "bar", color = {0.6, 0.2, 0.9}, opacity = 70, outline = "solid", dies = true}
+    equal(toolkit.DrawPrediction(other, "target", 300, 1000, barStyle), false, "no error with secrets")
+    function other.fill:GetAtlas() return nil end
+    equal(toolkit.DrawPrediction(other, "target", 300, 1000, barStyle), false, "a secret texture alone")
 end)
 
 test("a secret health still draws: the bars compare it, and DIES goes through the gate", function()
@@ -3911,6 +3964,27 @@ test("grow direction up: the list's rows stack upward, and a list not yet dragge
     equal(listRows()[2].point[1], "BOTTOMLEFT")
 end)
 
+test("panel switches: store.show false hides target, focus, or list; the rest show", function()
+    local state = fixture()
+    dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt"), nameplate2 = mob("Creature-2", "Grunt")})
+    local tracker, store = dotTracker(state)
+    equal(state.toolkit.TRACKER_PANELS[1], "target")
+    equal(tracker.sections.target.shown, true, "shown by default")
+    equal(tracker.sections.focus.shown, true)
+    cast(state, "Grunt", 172, "c1")
+    equal(tracker.list.shown, true, "the list shows its row")
+    store.show = {target = false, list = false}
+    tracker:Refresh()
+    equal(tracker.sections.target.shown, false, "target off")
+    equal(tracker.sections.focus.shown, true, "focus stays")
+    equal(tracker.list.shown, false, "list off, also with a row")
+    store.show = {target = true, focus = "yes", list = nil}
+    tracker:Refresh()
+    equal(tracker.sections.target.shown, true, "only false hides")
+    equal(tracker.sections.focus.shown, true)
+    equal(tracker.list.shown, true)
+end)
+
 test("Dyre's Debuff Tracker's DoT tracker steps aside for the class AddOn's", function()
     local state = fixture()
     dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})
@@ -4696,6 +4770,778 @@ test("WTF at 10 draws over Dyre's Debuff Tracker at 5; its rows show the active 
     wtf:Refresh()
     equal(state.toolkit.HealthBars.IsActiveSource("DyresDebuffTracker"), true, "off steps aside")
     assert(ddt)
+end)
+
+-- Proc cues (unreleased, 2.11.0; John, 2026-11-18) ------------------------------------
+
+-- Missile Barrage, as Mage Tools Forever will pass it: talents 400588 and
+-- 1326083, buff 400589, 44401 a spare candidate; 5143 (Arcane Missiles) is a
+-- candidate the client names otherwise, so it never counts.
+local PROC_TALENT, PROC_TALENT_TWO, PROC_BUFF, PROC_SPARE, PROC_OTHER = 400588, 1326083, 400589, 44401, 5143
+-- A buff ID no source lists, as the client might give it.
+local PROC_NEW = 1234567
+local PROC_NAMES = {[PROC_TALENT] = "Missile Barrage", [PROC_TALENT_TWO] = "Missile Barrage",
+    [PROC_BUFF] = "Missile Barrage", [PROC_SPARE] = "Missile Barrage", [PROC_OTHER] = "Arcane Missiles"}
+local PROC_ARC = "Interface\\AddOns\\DyresToolkit\\Textures\\ProcArc"
+local PROC_ARC_LEFT = "Interface\\AddOns\\DyresToolkit\\Textures\\ProcArcLeft"
+local PROC_VARIABLE = "DYRE_DYRESSHIELDSUP_PROC_MISSILEBARRAGE_"
+
+local function mageProcs()
+    return {{key = "missilebarrage", label = "Missile Barrage", buff = "Missile Barrage", class = "MAGE",
+        talents = {PROC_TALENT, PROC_TALENT_TWO}, ids = {PROC_BUFF, PROC_SPARE, PROC_OTHER},
+        color = {1, 0.35, 0.85}, sound = "alertselect",
+        tooltip = "Macro: /stopcasting, then /cast Arcane Missiles."}}
+end
+
+-- A texture that keeps what the code set.
+local function procTexture()
+    local texture = stub({shown = true})
+    function texture:Show() self.shown = true end
+    function texture:Hide() self.shown = false end
+    function texture:SetShown(shown) self.shown = shown and true or false end
+    function texture:IsShown() return self.shown end
+    function texture:SetTexture(path) self.texture = path end
+    function texture:SetVertexColor(r, g, b) self.color = {r, g, b} end
+    function texture:SetAlpha(alpha) self.alpha = alpha end
+    return texture
+end
+
+-- The engine's AuraContainer: AddOn code may not make it or touch it in
+-- combat (the client's "calling 'SetScale' on bad self").
+local function engineContainer(state, parent)
+    if state.combat then
+        error("an engine container made in combat")
+    end
+    local container = uiFrame(state, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
+    container.slots = {}
+    state.containersMade = (state.containersMade or 0) + 1
+    local function guard(name, method)
+        container[name] = function(self, ...)
+            if state.combat then
+                error("calling '" .. name .. "' on bad self")
+            end
+            return method(self, ...)
+        end
+    end
+    guard("Show", function(self) self.shown = true end)
+    guard("Hide", function(self) self.shown = false end)
+    guard("SetShown", function(self, shown) self.shown = shown and true or false end)
+    guard("SetPoint", function(self, ...) self.point = {...} end)
+    guard("SetSize", function(self, width, height) self.width, self.height = width, height end)
+    guard("SetUnit", function(self, unit) self.unit = unit end)
+    guard("UpdateAllAuras", function(self) self.updated = true end)
+    guard("AddAuraSlot", function(self, key, filter, options)
+        local button = uiFrame(state, "Button", nil, self)
+        function button:CreateTexture() return procTexture() end
+        function button:SetDurationBar(bar, barOptions) self.bar, self.barOptions = bar, barOptions end
+        if state.noStackGate then
+            button.SetApplicationBar = false -- an older client: no such method
+        else
+            function button:SetApplicationBar(bar, barOptions)
+                self.applicationBar, self.applicationOptions = bar, barOptions
+            end
+        end
+        options.initializeFrame(button)
+        self.slots[#self.slots + 1] = {key = key, filter = filter, ids = options.candidateFilters.includeSpellIDs,
+            button = button}
+    end)
+    return container
+end
+
+-- A client for the proc cues: class, talents, buff names, aura reads (counted,
+-- and in combat), aura sounds (refused during an encounter), Dyre's Sounds,
+-- and either the engine (Forever) or plain aura reads (era: no aura sounds).
+local function procWorld(state, options)
+    options = options or {}
+    local env = world(state, {player = {guid = "Player-1", name = "Samara"}})
+    state.uiFrames, state.named, state.now = {}, {}, 100
+    state.class, state.talents = options.class or "MAGE", options.talents or {}
+    state.noStackGate = options.noStackGate == true
+    state.buffs, state.auras, state.auraSounds, state.played = {}, {}, {}, {}
+    state.auraReads, state.combatAuraReads, state.soundCount = 0, 0, 0
+    env.GetTime = function() return state.now end
+    env.UnitClass = function() return "Class", state.class end
+    env.IsPlayerSpell = function(id) return state.talents[id] == true end
+    env.C_Spell = {GetSpellName = function(id) return PROC_NAMES[id] end}
+    env.Enum = {UnitAuraSoundTrigger = {Added = 0}, AddOnRestrictionType = {Encounter = 1},
+        StatusBarTimerDirection = {RemainingTime = 1}}
+    env.C_RestrictedActions = {IsAddOnRestrictionActive = function(kind) return kind == 1 and state.encounter == true end}
+    env.C_UnitAuras = {
+        GetAuraDataBySpellName = function(unit, name)
+            state.auraReads = state.auraReads + 1
+            if state.combat then
+                state.combatAuraReads = state.combatAuraReads + 1
+            end
+            return unit == "player" and state.buffs[name] or nil
+        end,
+        GetAuraDataByIndex = function(unit, index)
+            local list = state.auras[unit]
+            return list and list[index]
+        end,
+    }
+    if options.era then
+        env.C_XMLUtil = nil
+    else
+        env.C_XMLUtil = {GetTemplateInfo = function(name) return name == "CustomAuraContainerTemplate" and {} or nil end}
+        env.C_UnitAuras.AddAuraSound = function(trigger, info)
+            if state.encounter then
+                error("aura sounds cannot change during an encounter")
+            end
+            state.soundCount = state.soundCount + 1
+            state.auraSounds[state.soundCount] = {trigger = trigger, info = info}
+            return state.soundCount
+        end
+        env.C_UnitAuras.RemoveAuraSound = function(handle)
+            if state.encounter then
+                error("aura sounds cannot change during an encounter")
+            end
+            state.auraSounds[handle] = nil
+        end
+    end
+    local sounds = {alertselect = "AlertSelect.wav", magical = "MagicalDisappear.mp3", talent = 12345}
+    local library = {
+        Resolve = function(key) return sounds[key] and key or nil end,
+        AuraSound = function(key)
+            return type(sounds[key]) == "string" and {soundFileName = "Sounds\\" .. sounds[key]} or nil
+        end,
+        Play = function(key, _, channel)
+            state.played[#state.played + 1] = key .. ":" .. tostring(channel)
+            return true
+        end,
+        Choices = function(filter) return function() return {filter = filter} end end,
+        SetupMenu = function(initializer, filter) initializer.soundMenu = filter end,
+    }
+    if not options.noSounds then
+        env.DyresSounds = {RequireContract = function(required) if required == 1 then return library end end}
+    end
+    env.CreateFrame = function(kind, name, parent, template)
+        if kind == "AuraContainer" then
+            return engineContainer(state, parent)
+        end
+        local frame = uiFrame(state, kind, name, parent, template)
+        frame.textures = {}
+        function frame:CreateTexture()
+            local texture = procTexture()
+            self.textures[#self.textures + 1] = texture
+            return texture
+        end
+        return frame
+    end
+    -- The settings rows: initializers that keep their shown predicates and parent.
+    local function initializer(category, setting, tooltip)
+        local object = {setting = setting, tooltip = tooltip, shown = {}}
+        function object:AddShownPredicate(predicate) self.shown[#self.shown + 1] = predicate end
+        function object:SetParentInitializer(parent, predicate) self.parent, self.parentShown = parent, predicate end
+        function object:IsShown()
+            for _, predicate in ipairs(self.shown) do
+                if not predicate() then return false end
+            end
+            return true
+        end
+        if category then
+            category.initializers[#category.initializers + 1] = object
+        end
+        return object
+    end
+    env.Settings.VarType.String = "string"
+    env.Settings.CreateCheckbox = function(category, setting, tooltip) return initializer(category, setting, tooltip) end
+    env.Settings.CreateSlider = function(category, setting, _, tooltip) return initializer(category, setting, tooltip) end
+    env.Settings.CreateDropdown = function(category, setting, options, tooltip)
+        local object = initializer(category, setting, tooltip)
+        object.options = options
+        return object
+    end
+    env.Settings.NotifyUpdate = function() end
+    env.CreateSettingsListSectionHeaderInitializer = function(text)
+        local object = initializer(nil)
+        object.header = text
+        return object
+    end
+    env.CreateSettingsButtonInitializer = function(name, button, click, tooltip)
+        local object = initializer(nil, nil, tooltip)
+        object.name, object.button, object.click = name, button, click
+        return object
+    end
+    return env
+end
+
+-- An AddOn using the proc cues, as Dyre's Shields Up or Mage Tools Forever
+-- would: its own tables, sanitized, passed as functions; its own page.
+local function procAddon(state, options)
+    options = options or {}
+    local toolkit = state.toolkit
+    local procs = options.procs or mageProcs()
+    local db = {procs = toolkit.SanitizeProcs(options.saved, procs),
+        procIDs = toolkit.SanitizeProcIDs(options.learned, procs)}
+    local handle = toolkit.RegisterProcs({addon = "DyresShieldsUp", procs = procs, art = options.art,
+        store = function() return db.procs end, learned = function() return db.procIDs end})
+    local category = {name = "Shields Up", initializers = {}}
+    local layout = {rows = {}}
+    function layout:AddInitializer(object)
+        self.rows[#self.rows + 1] = object
+        category.initializers[#category.initializers + 1] = object
+    end
+    local rows = toolkit.AddProcSettings(category, layout, handle)
+    return handle, db, rows, layout
+end
+
+-- Live aura sound registrations for one spell ID.
+local function procSounds(state, id)
+    local list = {}
+    for _, entry in pairs(state.auraSounds) do
+        if entry.info.spellID == id then
+            list[#list + 1] = entry
+        end
+    end
+    return list
+end
+
+local function procEvents(state)
+    for _, frame in ipairs(state.uiFrames) do
+        if frame.events.SPELLS_CHANGED then return frame end
+    end
+end
+
+test("proc cues: a class with no matching proc gets nil, no frame, no events, and no rows", function()
+    local state = fixture()
+    procWorld(state, {class = "PRIEST", talents = {[PROC_TALENT] = true}})
+    local handle, _, rows = procAddon(state)
+    equal(handle, nil)
+    equal(rows, nil)
+    equal(#state.uiFrames, 0, "no widget frame and no event frame")
+    equal(#state.toolkit.Widgets("DyresShieldsUp"), 0)
+    equal(next(state.auraSounds), nil)
+    equal(state.toolkit.AddProcSettings({initializers = {}}, nil, nil), nil, "no handle: no rows")
+end)
+
+test("proc cues: each class proc claims its owner kind for the registering AddOn", function()
+    local state = fixture()
+    local env = procWorld(state, {talents = {[PROC_TALENT] = true}})
+    family(env, {DyresShieldsUp = "DyresToolkit", DyresBuffReminders = "DyresToolkit"})
+    local handle = procAddon(state)
+    equal(handle ~= nil, true)
+    local toolkit = state.toolkit
+    equal(toolkit.KindOwner(toolkit.PROC_KIND_PREFIX .. "missilebarrage"), "DyresShieldsUp")
+    toolkit.ClaimOwner(toolkit.PROC_KIND_PREFIX .. "missilebarrage", "DyresBuffReminders", 5)
+    equal(toolkit.KindOwner(toolkit.PROC_KIND_PREFIX .. "missilebarrage"), "DyresShieldsUp",
+        "a lower claim (a stand-alone copy) does not take it")
+end)
+
+-- Warrior's usable procs (DSU's request, John, 2026-11-19): not buffs; the
+-- game makes the ability usable for a few seconds.
+local OVERPOWER, REVENGE = 7384, 6572
+local function warriorProcs()
+    return {{key = "overpower", label = "Overpower", class = "WARRIOR", usable = OVERPOWER, color = {1, 0.5, 0}},
+        {key = "revenge", label = "Revenge", class = "WARRIOR", usable = REVENGE, color = {0.3, 0.6, 1}}}
+end
+
+test("proc cues: a usable proc shows full, dims short of power, hides, also in combat; secrets change nothing", function()
+    local state = fixture()
+    local env = procWorld(state, {class = "WARRIOR", talents = {[OVERPOWER] = true, [REVENGE] = true}})
+    family(env, {DyresShieldsUp = "DyresToolkit"})
+    local names = {[OVERPOWER] = "Overpower", [REVENGE] = "Revenge"}
+    env.C_Spell.GetSpellName = function(id) return names[id] end
+    local answers, asked = {}, {}
+    env.C_Spell.IsSpellUsable = function(spell)
+        asked[#asked + 1] = spell
+        local answer = answers[spell] or {false, false}
+        return answer[1], answer[2]
+    end
+    local handle, db, rows = procAddon(state, {procs = warriorProcs()})
+    assert(handle, "a Warrior with usable procs gets a handle")
+    local toolkit = state.toolkit
+    equal(toolkit.KindOwner(toolkit.PROC_KIND_PREFIX .. "overpower"), nil, "a usable proc claims no owner kind")
+    equal(next(state.auraSounds), nil, "no aura sound for a usable proc")
+    equal(state.containersMade, nil, "no aura container for a usable proc")
+    local events = procEvents(state)
+    equal(events.events.SPELL_UPDATE_USABLE, true, "SPELL_UPDATE_USABLE, only with a usable proc")
+    local function Fire() events.scripts.OnEvent(events, "SPELL_UPDATE_USABLE") end
+    local look, arcs = handle.Usable("overpower")
+    equal(look, "off")
+    equal(arcs.left.shown, false)
+    equal(asked[1], "Overpower", "read by name, so every rank counts")
+    -- Usable: full, in combat too.
+    state.combat = true
+    answers.Overpower = {true, false}
+    Fire()
+    look = handle.Usable("overpower")
+    equal(look, "full")
+    equal(arcs.left.shown, true)
+    equal(arcs.right.shown, true)
+    equal(arcs.left.alpha, 1)
+    equal(arcs.left.color[1], 1, "in the proc's color")
+    equal(handle.Frame().shown, true)
+    -- Short of rage: dimmed, not hidden.
+    answers.Overpower = {false, true}
+    Fire()
+    equal(handle.Usable("overpower"), "dim")
+    equal(arcs.left.shown, true)
+    equal(arcs.left.alpha < 1, true, "dimmed")
+    -- A secret answer: nothing changes, nothing compared.
+    answers.Overpower = {SECRET, SECRET}
+    Fire()
+    equal(handle.Usable("overpower"), "dim", "kept")
+    -- Neither: hidden.
+    answers.Overpower = {false, false}
+    Fire()
+    equal(handle.Usable("overpower"), "off")
+    equal(arcs.left.shown, false)
+    -- The arc switch off hides it even while usable.
+    state.combat = false
+    answers.Revenge = {true, false}
+    Fire()
+    local _, revengeArcs = handle.Usable("revenge")
+    equal(revengeArcs.left.shown, true)
+    db.procs.arc.revenge = false
+    handle.Apply()
+    equal(revengeArcs.left.shown, false, "switch off: hidden")
+    -- Settings: the arc switch only.
+    assert(rows.overpower.arc, "an arc switch")
+    equal(rows.overpower.sound, nil, "no sound switch")
+    equal(rows.overpower.choice, nil, "no sound dropdown")
+    local lines = {}
+    handle.Report(function(line) lines[#lines + 1] = line end)
+    equal(lines[1], "Overpower: spell known, usable off, arcs on, sound none (usable proc)")
+    -- Saved learned IDs are never kept for a usable proc.
+    equal(next(toolkit.SanitizeProcIDs({overpower = 99}, warriorProcs())), nil)
+end)
+
+test("proc cues: without the spell, a usable proc stays hidden; a buff-only AddOn does not register SPELL_UPDATE_USABLE", function()
+    local state = fixture()
+    local env = procWorld(state, {class = "WARRIOR", talents = {}})
+    env.C_Spell.IsSpellUsable = function() return true, false end
+    local handle = procAddon(state, {procs = warriorProcs()})
+    equal(handle.Known("overpower"), false)
+    local _, arcs = handle.Usable("overpower")
+    equal(arcs.left.shown, false, "not known: hidden even when usable")
+    local mage = fixture()
+    procWorld(mage, {talents = {[PROC_TALENT] = true}})
+    procAddon(mage)
+    equal(procEvents(mage).events.SPELL_UPDATE_USABLE, nil)
+end)
+
+test("proc cues: a stacking proc's right arc sits in the game's stack gate, and a stack added plays", function()
+    local state = fixture()
+    local env = procWorld(state, {talents = {[PROC_TALENT] = true}})
+    env.Enum.UnitAuraSoundTrigger.ApplicationsIncreased = 1
+    local procs = mageProcs()
+    procs[1].stacks = 2
+    local handle = procAddon(state, {procs = procs})
+    local left, right = handle.Container("missilebarrage", "left"), handle.Container("missilebarrage", "right")
+    local leftButton, rightButton = left.slots[1].button, right.slots[1].button
+    equal(leftButton.applicationBar, nil, "the left arc shows from one stack")
+    local gate = rightButton.applicationBar
+    equal(gate ~= nil, true, "the right arc has a gate")
+    equal(gate.kind, "StatusBar")
+    equal(rightButton.applicationOptions.minApplications, 2)
+    equal(rightButton.applicationOptions.maxApplications, 2)
+    equal(rightButton.bar.parent, gate, "the draining arc is inside the gate")
+    equal(leftButton.bar.parent, leftButton)
+    equal(gate.calls.SetStatusBarTexture, nil, "the gate draws nothing itself")
+    local triggers = {}
+    for _, entry in ipairs(procSounds(state, PROC_BUFF)) do
+        triggers[#triggers + 1] = entry.trigger
+    end
+    table.sort(triggers)
+    equal(table.concat(triggers, ","), "0,1", "Added, and ApplicationsIncreased")
+end)
+
+test("proc cues: without the stack gate or stacks, both arcs show as before, one sound", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}, noStackGate = true})
+    local procs = mageProcs()
+    procs[1].stacks = 2
+    local handle = procAddon(state, {procs = procs})
+    local right = handle.Container("missilebarrage", "right")
+    equal(right.slots[1].button.bar.parent, right.slots[1].button, "no gate on an older client")
+    equal(#procSounds(state, PROC_BUFF), 1, "no ApplicationsIncreased: Added only")
+    local plain = fixture()
+    local env = procWorld(plain, {talents = {[PROC_TALENT] = true}})
+    env.Enum.UnitAuraSoundTrigger.ApplicationsIncreased = 1
+    local other = procAddon(plain)
+    equal(other.Container("missilebarrage", "right").slots[1].button.applicationBar, nil, "no stacks: no gate")
+    equal(#procSounds(plain, PROC_BUFF), 1, "no stacks: Added only")
+end)
+
+test("proc cues: without the talent, no arcs, no sound, no aura read, and the rows hidden", function()
+    local state = fixture()
+    procWorld(state)
+    local handle, db, rows, layout = procAddon(state)
+    equal(handle.Known("missilebarrage"), false)
+    equal(handle.Container("missilebarrage", "left"), nil)
+    equal(handle.Frame():IsShown(), false)
+    equal(next(state.auraSounds), nil)
+    equal(layout.rows[1], rows.header, "the section header comes first")
+    equal(rows.header.header, "Procs")
+    equal(rows.header:IsShown(), false)
+    for _, part in ipairs({"arc", "sound", "choice"}) do
+        equal(rows.missilebarrage[part]:IsShown(), false, part)
+    end
+    equal(state.settings.DYRE_DYRESSHIELDSUP_PROCARCS_SCALE, nil, "no size slider")
+    state.buffs["Missile Barrage"] = {spellId = PROC_NEW}
+    emit(state, "UNIT_AURA", "player")
+    equal(db.procIDs.missilebarrage, nil)
+    equal(state.auraReads, 0, "no aura is read for a talent you do not know")
+    -- A talent learned later gets its cue at SPELLS_CHANGED.
+    state.buffs["Missile Barrage"] = nil
+    state.talents[PROC_TALENT_TWO] = true
+    emit(state, "SPELLS_CHANGED")
+    equal(handle.Known("missilebarrage"), true, "the second talent ID counts too")
+    equal(rows.header:IsShown(), true)
+    equal(rows.missilebarrage.arc:IsShown(), true)
+    equal(handle.Container("missilebarrage", "right") ~= nil, true)
+    equal(#procSounds(state, PROC_BUFF), 1)
+    state.talents[PROC_TALENT_TWO] = nil
+    emit(state, "SPELLS_CHANGED")
+    equal(handle.Container("missilebarrage", "right"), nil, "a respec takes it away")
+    equal(next(state.auraSounds), nil)
+    equal(handle.Frame():IsShown(), false)
+end)
+
+test("proc cues: two containers, left and right, each with its own set of the named buff IDs", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local handle, _, rows = procAddon(state)
+    local frame = handle.Frame()
+    equal(frame.dyre.widgetKey, "procarcs", "a toolkit widget")
+    equal(frame.dyre.title, "Proc arcs")
+    equal(frame.dyre.mouseMode, "unlocked")
+    equal(frame.parent, state.UIParent)
+    equal(frame:IsShown(), true)
+    local left, right = handle.Container("missilebarrage", "left"), handle.Container("missilebarrage", "right")
+    equal(state.containersMade, 2, "two containers for one proc")
+    for name, container in pairs({left = left, right = right}) do
+        equal(#container.slots, 1, name)
+        local slot = container.slots[1]
+        equal(slot.filter, "HELPFUL", name)
+        equal(container.unit, "player", name)
+        equal(container.shown, true, name)
+        equal(slot.ids[PROC_BUFF], true, name .. ": a set keyed by ID")
+        equal(slot.ids[PROC_SPARE], true, name .. ": the spare the client names the buff")
+        equal(slot.ids[1], nil, name .. ": not a list")
+        equal(slot.ids[PROC_OTHER], nil, name .. ": a candidate named otherwise")
+        equal(slot.ids[PROC_TALENT], nil, name .. ": never the talent")
+        local bar = slot.button.bar
+        equal(bar.calls.SetStatusBarColor[2], 0.35, name .. ": the proc's color")
+        equal(slot.button.barOptions.direction, 1, name .. ": drains with the time left")
+    end
+    equal(left.slots[1].ids ~= right.slots[1].ids, true, "each side its own set")
+    local leftBar, rightBar = left.slots[1].button.bar, right.slots[1].button.bar
+    equal(leftBar.calls.SetStatusBarTexture[1], PROC_ARC_LEFT)
+    equal(rightBar.calls.SetStatusBarTexture[1], PROC_ARC)
+    equal(leftBar.point[1], "RIGHT")
+    equal(rightBar.point[1], "LEFT")
+    equal(leftBar.point[4], -rightBar.point[4], "mirrored about the center")
+    equal(math.abs(frame.dyre.contentWidth - 2 * (leftBar.width - leftBar.point[4])) < 1e-9, true,
+        "the widget holds both arcs")
+    -- The rows: shown, named, with the proc's tooltip, the sound under its switch.
+    equal(rows.header:IsShown(), true)
+    local arc, sound, choice = rows.missilebarrage.arc, rows.missilebarrage.sound, rows.missilebarrage.choice
+    equal(arc.setting.variable, PROC_VARIABLE .. "ARC")
+    equal(sound.setting.variable, PROC_VARIABLE .. "SOUND")
+    equal(choice.setting.variable, PROC_VARIABLE .. "SOUND_CHOICE")
+    equal(arc.setting.name, "Missile Barrage arc")
+    equal(sound.setting.name, "Missile Barrage sound")
+    for _, row in ipairs({arc, sound, choice}) do
+        equal(row:IsShown(), true, row.setting.variable)
+        contains(row.tooltip, "Macro: /stopcasting, then /cast Arcane Missiles.")
+    end
+    equal(choice.parent, sound, "nested under the sound switch")
+    equal(choice.soundMenu, "aura", "Dyre's Sounds' aura sounds")
+    equal(choice.options().filter, "aura")
+    equal(state.settings.DYRE_DYRESSHIELDSUP_PROCARCS_SCALE.name, "Proc arc size")
+    -- The switches write the AddOn's own table.
+    state.settings[PROC_VARIABLE .. "ARC"].set(false)
+    equal(left.shown, false)
+    equal(right.shown, false)
+    equal(frame:IsShown(), false)
+    state.settings[PROC_VARIABLE .. "ARC"].set(true)
+    equal(left.shown, true)
+    equal(frame:IsShown(), true)
+end)
+
+-- Art in the registering AddOn's (DyresShieldsUp's) own folder.
+local OWN_ART = "Interface\\AddOns\\DyresShieldsUp\\Art\\"
+
+test("proc cues: each AddOn's own art: a proc's own, else the spec's; tinted, or in its own colors", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local procs = mageProcs()
+    procs[2] = {key = "frosty", label = "Frosty", buff = "Missile Barrage", class = "MAGE",
+        talents = {PROC_TALENT}, ids = {PROC_BUFF}, color = {0.2, 0.9, 1}, sound = "alertselect",
+        art = {right = OWN_ART .. "Frost", left = OWN_ART .. "FrostLeft", tint = false}}
+    local handle = procAddon(state, {procs = procs,
+        art = {right = OWN_ART .. "Bolt", left = OWN_ART .. "BoltLeft"}})
+    local function bar(key, side)
+        return handle.Container(key, side).slots[1].button.bar
+    end
+    equal(bar("missilebarrage", "right").calls.SetStatusBarTexture[1], OWN_ART .. "Bolt", "the spec's art")
+    equal(bar("missilebarrage", "left").calls.SetStatusBarTexture[1], OWN_ART .. "BoltLeft")
+    equal(bar("missilebarrage", "right").calls.SetStatusBarColor[2], 0.35, "tinted when tint is not false")
+    equal(bar("frosty", "right").calls.SetStatusBarTexture[1], OWN_ART .. "Frost", "the proc's own art first")
+    equal(bar("frosty", "left").calls.SetStatusBarTexture[1], OWN_ART .. "FrostLeft")
+    local white = bar("frosty", "right").calls.SetStatusBarColor
+    equal(table.concat({white[1], white[2], white[3]}, ","), "1,1,1", "tint false: its own colors")
+    equal(procs[2].art.right, OWN_ART .. "Frost", "the AddOn's tables are not changed")
+end)
+
+test("proc cues: art outside the AddOn's own folder, or half of it, gets the toolkit's plain crescent", function()
+    for _, art in ipairs({
+        {right = "Interface\\AddOns\\DyresToolkit\\Textures\\Other", left = "Interface\\AddOns\\DyresToolkit\\Textures\\OtherLeft"},
+        {right = OWN_ART .. "Bolt"},
+        {right = OWN_ART .. "..\\..\\Elsewhere\\Bolt", left = OWN_ART .. "BoltLeft"},
+        {right = "Interface\\AddOns\\DyresShieldsUp\\", left = OWN_ART .. "BoltLeft"},
+        "not a table",
+    }) do
+        local state = fixture()
+        procWorld(state, {talents = {[PROC_TALENT] = true}})
+        local handle = procAddon(state, {art = art})
+        local right = handle.Container("missilebarrage", "right").slots[1].button.bar
+        local left = handle.Container("missilebarrage", "left").slots[1].button.bar
+        equal(right.calls.SetStatusBarTexture[1], PROC_ARC, tostring(type(art) == "table" and art.right))
+        equal(left.calls.SetStatusBarTexture[1], PROC_ARC_LEFT)
+        equal(right.calls.SetStatusBarColor[2], 0.35, "tinted")
+    end
+    -- The folder is matched without regard to case, as the game reads paths.
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local handle = procAddon(state, {art = {right = "interface\\addons\\dyresshieldsup\\Art\\Bolt",
+        left = "interface\\addons\\dyresshieldsup\\Art\\BoltLeft"}})
+    equal(handle.Container("missilebarrage", "right").slots[1].button.bar.calls.SetStatusBarTexture[1],
+        "interface\\addons\\dyresshieldsup\\Art\\Bolt")
+end)
+
+test("proc cues: the buff ID is learned out of combat only, never in combat, and never a talent", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local handle, db = procAddon(state)
+    local firstLeft, firstRight = handle.Container("missilebarrage", "left"), handle.Container("missilebarrage", "right")
+    -- The talent's passive aura has the buff's name: never learned.
+    for _, talent in ipairs({PROC_TALENT, PROC_TALENT_TWO}) do
+        state.buffs["Missile Barrage"] = {spellId = talent}
+        emit(state, "UNIT_AURA", "player")
+        equal(db.procIDs.missilebarrage, nil, talent .. " is a talent")
+        equal(handle.Container("missilebarrage", "left"), firstLeft)
+        equal(#procSounds(state, talent), 0)
+    end
+    equal(state.toolkit.SanitizeProcIDs({missilebarrage = PROC_TALENT}, mageProcs()).missilebarrage, nil,
+        "a saved talent ID is dropped")
+    -- In combat no aura is read at all.
+    state.buffs["Missile Barrage"] = {spellId = PROC_NEW}
+    state.combat = true
+    local reads = state.auraReads
+    emit(state, "UNIT_AURA", "player")
+    emit(state, "UNIT_AURA", "player")
+    equal(state.combatAuraReads, 0, "the aura API is not called in combat")
+    equal(state.auraReads, reads)
+    equal(db.procIDs.missilebarrage, nil)
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(db.procIDs.missilebarrage, PROC_NEW, "learned once combat ends")
+    local left, right = handle.Container("missilebarrage", "left"), handle.Container("missilebarrage", "right")
+    equal(left ~= firstLeft and right ~= firstRight, true, "new containers for the new ID")
+    equal(firstLeft.shown, false, "the old ones are hidden")
+    equal(firstRight.shown, false)
+    equal(left.slots[1].ids[PROC_NEW], true)
+    equal(right.slots[1].ids[PROC_BUFF], true)
+    equal(#procSounds(state, PROC_NEW), 1)
+    -- The same ID again changes nothing.
+    emit(state, "UNIT_AURA", "player")
+    equal(handle.Container("missilebarrage", "left"), left)
+    local lines = {}
+    handle.Report(function(line) lines[#lines + 1] = line end)
+    equal(lines[1], "Missile Barrage: talent known, buff IDs 400589 (named), 44401 (named), 1234567 (confirmed), "
+        .. "arcs ready, sound registered")
+    -- A secret answer is never tested or indexed.
+    state.buffs["Missile Barrage"] = SECRET
+    emit(state, "UNIT_AURA", "player")
+    equal(db.procIDs.missilebarrage, PROC_NEW)
+    -- Saved, so the next login uses it at once.
+    local again = fixture()
+    procWorld(again, {talents = {[PROC_TALENT] = true}})
+    local nextLogin = procAddon(again, {learned = {missilebarrage = PROC_NEW}})
+    equal(nextLogin.Container("missilebarrage", "right").slots[1].ids[PROC_NEW], true)
+end)
+
+test("proc cues: in combat the containers are not made or touched; the change waits for combat's end", function()
+    local state = fixture()
+    procWorld(state)
+    local handle = procAddon(state)
+    -- A talent learned in combat (the mock refuses an engine container then).
+    state.combat = true
+    state.talents[PROC_TALENT] = true
+    emit(state, "SPELLS_CHANGED")
+    equal(state.containersMade, nil, "no container made in combat")
+    equal(handle.Container("missilebarrage", "left"), nil)
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    local left, right = handle.Container("missilebarrage", "left"), handle.Container("missilebarrage", "right")
+    equal(state.containersMade, 2)
+    equal(left.shown and right.shown, true)
+    -- A switch in combat: the widget hides at once, the containers after combat.
+    state.combat = true
+    state.settings[PROC_VARIABLE .. "ARC"].set(false)
+    equal(handle.Frame():IsShown(), false, "the widget frame is ours: at once")
+    equal(left.shown, true, "the containers are not touched in combat")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(left.shown, false)
+    equal(right.shown, false)
+end)
+
+test("proc cues: one sound per buff ID, off with its switch, and changes wait out an encounter", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local handle, db = procAddon(state)
+    for _, id in ipairs({PROC_BUFF, PROC_SPARE}) do
+        local sounds = procSounds(state, id)
+        equal(#sounds, 1, id .. ": once, for two arcs")
+        equal(sounds[1].trigger, 0, "Added")
+        equal(sounds[1].info.unitToken, "player")
+        equal(sounds[1].info.outputChannel, "master")
+        equal(sounds[1].info.throttleSeconds, 1)
+        contains(sounds[1].info.soundFileName, "AlertSelect.wav")
+    end
+    equal(#procSounds(state, PROC_OTHER), 0)
+    equal(#procSounds(state, PROC_TALENT), 0)
+    state.settings[PROC_VARIABLE .. "ARC"].set(false)
+    state.settings[PROC_VARIABLE .. "ARC"].set(true)
+    handle.Apply()
+    equal(#procSounds(state, PROC_BUFF), 1, "registered again, never twice")
+    state.settings[PROC_VARIABLE .. "SOUND"].set(false)
+    equal(next(state.auraSounds), nil, "the sound switch removes them")
+    equal(handle.Frame():IsShown(), true, "the arcs have their own switch")
+    state.settings[PROC_VARIABLE .. "SOUND"].set(true)
+    state.settings[PROC_VARIABLE .. "SOUND_CHOICE"].set("magical")
+    equal(db.procs.sounds.missilebarrage, "magical")
+    contains(procSounds(state, PROC_BUFF)[1].info.soundFileName, "MagicalDisappear.mp3")
+    equal(state.played[#state.played], "magical:Master", "choosing one plays it once")
+    state.settings[PROC_VARIABLE .. "SOUND_CHOICE"].set("talent")
+    equal(db.procs.sounds.missilebarrage, "alertselect", "a sound kit cannot be an aura sound: the default")
+    -- During an encounter nothing changes (the mock refuses); it waits.
+    state.encounter = true
+    state.settings[PROC_VARIABLE .. "SOUND_CHOICE"].set("magical")
+    contains(procSounds(state, PROC_BUFF)[1].info.soundFileName, "AlertSelect.wav")
+    state.encounter = false
+    emit(state, "ADDON_RESTRICTION_STATE_CHANGED")
+    equal(#procSounds(state, PROC_BUFF), 1)
+    contains(procSounds(state, PROC_BUFF)[1].info.soundFileName, "MagicalDisappear.mp3")
+    -- Without Dyre's Sounds: no sound, the choice kept.
+    state.env.DyresSounds = nil
+    handle.Apply()
+    equal(next(state.auraSounds), nil)
+    equal(state.toolkit.SanitizeProcSound("magical", "alertselect"), "magical")
+end)
+
+test("proc cues: settings are repaired with both switches on by default; learned IDs are whole numbers", function()
+    local toolkit = fixture().toolkit
+    local clean = toolkit.SanitizeProcs(nil, mageProcs())
+    equal(clean.arc.missilebarrage, true)
+    equal(clean.sound.missilebarrage, true)
+    equal(clean.sounds.missilebarrage, "alertselect", "the proc's default")
+    equal(clean.position, nil)
+    equal(clean.scale, nil)
+    local repaired = toolkit.SanitizeProcs({arc = {missilebarrage = "no", gone = false},
+        sound = {missilebarrage = false}, sounds = {missilebarrage = 7}, scale = 120,
+        position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 10, y = 20, extra = 1}}, mageProcs())
+    equal(repaired.arc.missilebarrage, true, "not false: on")
+    equal(repaired.arc.gone, nil, "a proc not passed is dropped")
+    equal(repaired.sound.missilebarrage, false)
+    equal(repaired.sounds.missilebarrage, "alertselect")
+    equal(repaired.scale, 120)
+    equal(repaired.position.x, 10)
+    equal(repaired.position.extra, nil)
+    equal(toolkit.SanitizeProcs({position = {point = 4}}, mageProcs()).position, nil, "a broken place is dropped")
+    equal(toolkit.SanitizeProcs("junk", "junk").arc.missilebarrage, nil)
+    for _, bad in ipairs({-3, 0, 1.5, "400589", PROC_TALENT_TWO}) do
+        equal(toolkit.SanitizeProcIDs({missilebarrage = bad}, mageProcs()).missilebarrage, nil, tostring(bad))
+    end
+    equal(toolkit.SanitizeProcIDs({missilebarrage = PROC_NEW}, mageProcs()).missilebarrage, PROC_NEW)
+    -- soundOn = false: the sound switch starts off; the player's choice wins.
+    local quiet = mageProcs()
+    quiet[1].soundOn = false
+    equal(toolkit.SanitizeProcs(nil, quiet).sound.missilebarrage, false, "starts off")
+    equal(toolkit.SanitizeProcs({sound = {missilebarrage = true}}, quiet).sound.missilebarrage, true, "turned on")
+    equal(toolkit.SanitizeProcs({sound = {missilebarrage = "x"}}, quiet).sound.missilebarrage, false, "junk: default")
+    equal(toolkit.SanitizeProcs(nil, quiet).arc.missilebarrage, true, "the arc stays on")
+    equal(toolkit.ProcSoundDefault(mageProcs()[1]), true)
+end)
+
+test("proc cues: on Era there is no aura sound and no error; the plain-Lua arcs follow the buff", function()
+    local state = fixture()
+    procWorld(state, {era = true, talents = {[PROC_TALENT] = true}})
+    local handle = procAddon(state)
+    equal(state.toolkit.AuraEngineKind(), "lua")
+    local left, right = handle.Container("missilebarrage", "left"), handle.Container("missilebarrage", "right")
+    local leftButton, rightButton = left.byKey.missilebarrage.button, right.byKey.missilebarrage.button
+    equal(leftButton.shown, false, "no buff: hidden")
+    equal(rightButton.shown, false)
+    state.auras.player = {{name = "Missile Barrage", spellId = PROC_BUFF, duration = 15, expirationTime = 115, icon = 1}}
+    emit(state, "UNIT_AURA", "player")
+    equal(leftButton.shown, true, "the buff: both sides show")
+    equal(rightButton.shown, true)
+    state.auras.player = {}
+    emit(state, "UNIT_AURA", "player")
+    equal(leftButton.shown, false)
+    equal(rightButton.shown, false)
+    equal(procEvents(state).events.ADDON_RESTRICTION_STATE_CHANGED, nil, "no aura sounds: no restriction event")
+    local lines = {}
+    handle.Report(function(line) lines[#lines + 1] = line end)
+    contains(lines[1], "arcs ready, sound off")
+    emit(state, "PLAYER_REGEN_ENABLED")
+    emit(state, "SPELLS_CHANGED")
+end)
+
+test("proc cues: unlocked, both sample arcs show in the proc's color; the widget resets", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local handle, db = procAddon(state)
+    local samples = {}
+    for _, texture in ipairs(handle.Frame().textures) do
+        samples[texture.texture] = texture
+    end
+    equal(samples[PROC_ARC].shown, false)
+    equal(samples[PROC_ARC_LEFT].shown, false)
+    state.toolkit.Unlock()
+    equal(samples[PROC_ARC].shown, true, "the full width while placing it")
+    equal(samples[PROC_ARC_LEFT].shown, true)
+    equal(samples[PROC_ARC_LEFT].color[2], 0.35)
+    state.toolkit.Lock()
+    equal(samples[PROC_ARC].shown, false)
+    -- With art of its own, the samples show that art, in its own colors.
+    local own = fixture()
+    procWorld(own, {talents = {[PROC_TALENT] = true}})
+    local procs = mageProcs()
+    procs[1].art = {right = OWN_ART .. "Frost", left = OWN_ART .. "FrostLeft", tint = false}
+    local ownHandle = procAddon(own, {procs = procs})
+    own.toolkit.Unlock()
+    local paths = {}
+    for _, texture in ipairs(ownHandle.Frame().textures) do
+        paths[#paths + 1] = texture.texture
+        equal(texture.shown, true)
+        equal(table.concat(texture.color, ","), "1,1,1", "tint false")
+    end
+    table.sort(paths)
+    equal(table.concat(paths, " "), OWN_ART .. "Frost " .. OWN_ART .. "FrostLeft")
+    db.procs.position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = 10, y = 20}
+    equal(handle.ResetPosition(), true)
+    equal(db.procs.position, nil)
+    equal(handle.Widget(), handle.Frame())
+    equal(#handle.List(), 1)
+    equal(handle.Preview("missilebarrage"), true)
+    state.combat = true
+    equal(handle.Preview("missilebarrage"), false, "no preview in combat")
+end)
+
+test("proc cues: events only, no polling, and no combat log", function()
+    local text = assert(io.open("Procs.lua")):read("*a")
+    for line in text:gmatch("[^\n]+") do
+        if not line:match("^%s*%-%-") then
+            for _, word in ipairs({"OnUpdate", "C_Timer", "COMBAT_LOG_EVENT", "SetRaidTarget"}) do
+                equal(line:find(word, 1, true), nil, "Procs.lua: " .. word)
+            end
+        end
+    end
 end)
 
 -- The group warnings and tank tools (2.9.0): their own harness, the same run.

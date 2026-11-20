@@ -41,6 +41,50 @@
 - [ ] After /reload, frames start locked and stay where they were dropped.
 - [ ] In combat, /dyre opens nothing and says so; a drag ends after combat.
 
+### Proc cues (unreleased, 2.11.0)
+
+Not checked in client yet. Needs a class AddOn that registers procs (Mage
+Tools Forever with Missile Barrage, or Dyre's Shields Up's prototype moved
+to the toolkit), Dyre's Sounds installed, and a Mage with the talent.
+
+- [ ] Forever, out of combat: when Missile Barrage procs, both arcs show,
+      one each side of the character, in the proc's color, and drain with
+      the time left; casting Arcane Missiles hides both at once. With Dyre's
+      Shields Up's catalog the arcs are its art; an AddOn with no art of
+      its own gets the plain crescent.
+- [ ] Forever, in combat (a fight long enough for several procs): the arcs
+      show and drain on both sides; no Lua error and no taint blamed on
+      DyresToolkit (`/console taintLog 1` or BugSack).
+- [ ] The sound plays as the buff appears, out of combat and in combat, once
+      per proc (not once per arc); the sound switch off silences it; a new
+      choice in the dropdown plays once and is then the proc sound.
+- [ ] The buff ID is learned: after the first proc out of combat, the class
+      AddOn's debug line (handle `Report`) says "(confirmed)" for an ID,
+      and after /reload the arcs show from the first proc on.
+- [ ] Without the talent the "Procs" header and rows are hidden; after
+      learning it (no reload) they show. "Proc arc size" shows only when
+      the talent was known as the page was built.
+- [ ] A stacking proc (Fingers of Frost, `stacks` 2; never holds a release:
+      no Frost Mage to test with): at two charges both arcs show; after one
+      Ice Lance only the left arc shows; a new proc back to two shows the
+      right arc again and plays the sound; in combat too. No Lua error.
+- [ ] `/dyre unlock` shows both sample arcs, full, to drag; the size slider
+      grows the gap with them; reset puts them back under the character.
+- [ ] In a boss encounter, changing the sound waits until the encounter
+      ends, then the new sound plays.
+- [ ] Classic Era: Missile Barrage is Forever only, so nothing shows and no
+      Lua error. A proc the Era client has shows its arcs with the buff
+      (plain-Lua containers) and plays no sound.
+- [ ] Usable procs (Warrior Overpower 7384 and Revenge 6572, from Dyre's
+      Shields Up): after a dodge (Overpower) or a block, dodge, or parry
+      (Revenge), both arcs show full in combat; they go when the window
+      closes or you use the ability. Open question: does `IsSpellUsable`'s
+      second return (short of power) read in combat? If yes, the arcs dim
+      while rage is short instead of flickering; if it is secret or always
+      false, they hide then (note what you see). No sound from the engine:
+      Dyre's Buff Reminders still plays its own. `/dsu debug_procs` shows
+      "usable full|dim|off". No Lua error, no taint.
+
 ### Profiles (2.10.0)
 
 Not checked in client yet.

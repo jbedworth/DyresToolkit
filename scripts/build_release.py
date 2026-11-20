@@ -29,7 +29,7 @@ LIBRARY_FILES = ("Libs/LibStub/LibStub.lua",
                  "Libs/LibDBIcon-1.0/LibDBIcon-1.0.lua")
 LIBRARY_NOTICES = ("Libs/Ace3-LICENSE.txt",)
 RUNTIME_FILES = ("Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua",
-                 "Auras.lua", "Units.lua", "HealthBars.lua", "Spells.lua", "Macros.lua",
+                 "Auras.lua", "Units.lua", "Procs.lua", "HealthBars.lua", "Spells.lua", "Macros.lua",
                  "Announce.lua", "ClassData.lua", "Owners.lua", "Control.lua", "DotTracker.lua",
                  "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",
                  "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua")
@@ -43,10 +43,13 @@ TEXT_FILES = (ADDON + ".toc",) + LIBRARY_FILES + RUNTIME_FILES + BINDING_FILES +
 # block's stripes for HealthBars.lua (copied byte for byte from Warlock Tools
 # Forever 1.4.0, John's own art, made by its scripts/make_stripes.py); since
 # 2.9.0 the threat label's tinted icons, a fill and an outline each, made by
-# scripts/make_icons.py. Each must be an uncompressed 32-bit, square,
-# power-of-two TGA. No sounds.
+# scripts/make_icons.py; since 2.11.0 the proc cues' fallback arcs, a plain
+# crescent for a proc whose AddOn gives no art of its own (Procs.lua, "Art";
+# our own art, made by scripts/make_proc_arcs.py). Each must be an uncompressed 32-bit,
+# square, power-of-two TGA. No sounds.
 MEDIA_FILES = ("Textures/Stripes.tga", "Textures/ShieldFill.tga", "Textures/ShieldEdge.tga",
-               "Textures/SwordsFill.tga", "Textures/SwordsEdge.tga")
+               "Textures/SwordsFill.tga", "Textures/SwordsEdge.tga", "Textures/ProcArc.tga",
+               "Textures/ProcArcLeft.tga")
 PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
 TGA_HEADER_SIZE = 18
 TGA_TRUECOLOR = 2

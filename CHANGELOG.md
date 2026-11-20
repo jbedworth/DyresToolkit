@@ -4,6 +4,18 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.11.0
+
+### Features
+- Proc cues: a shared engine for proc overlays. When a proc's buff comes up, two arcs show, one each side of your character, and drain with the time left; a sound plays as the buff appears. Both work in combat. Dyre's Shields Up brings the procs for each class, with their art, switches, sounds, and arc size, in its own update. Sounds come from Dyre's Sounds. On Classic Era the arcs show with no sound. An AddOn that gives no art of its own gets a plain crescent in its proc's color. A stacking proc, such as Fingers of Frost, shows the right arc only while all its stacks are up, so one arc goes when you use a stack, also in combat; its sound plays again when a stack is added.
+- Proc cues: a second kind of proc, for abilities the game makes usable for a few seconds, such as Warrior Overpower and Revenge. Its arcs show while you can use it, in combat too, and dim while you are short of rage instead of flickering. Dyre's Shields Up brings them in its own update. These play no sound from the toolkit; Dyre's Buff Reminders keeps its own.
+- Proc cues: an AddOn can start a proc's sound switch off, for a proc the game already gives a cue, such as Clearcasting. The arcs still start on.
+- DoT tracker: a new store setting, show, turns each of the three panels (target, focus, others) on or off. All three show by default. Dyre's Debuff Tracker and Warlock Tools Forever add the checkboxes in their own updates.
+
+### Fixes
+- Game settings: changing a Blizzard setting, such as Interface > Status Text, after you opened a Dyre's AddOns settings page no longer gives "attempt to compare a secret number value (execution tainted by 'DyresToolkit')". The toolkit no longer changes the settings rows that Blizzard's own settings reuse. The warning-sound dropdowns now show the sound's name without its group.
+- DoT damage prediction: no more "attempt to compare a secret" error in combat when the game hides a health bar's direction, fill side, or texture (seen on the target frame). The toolkit keeps what it last read for that bar, else draws with your chosen look.
+
 ## 2.10.3
 
 ### Features

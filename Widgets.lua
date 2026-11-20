@@ -422,8 +422,11 @@ end
 -- mark is drawn when this setting's frame is set up and hidden on release.
 local TICK_WIDTH, TICK_HEIGHT = 2, 12
 
+-- Each pooled slider's gold mark, kept here, not as a field on Blizzard's frame.
+local defaultTicks = setmetatable({}, {__mode = "k"})
+
 local function PlaceTick(slider)
-    local tick = slider.dyreDefaultTick
+    local tick = defaultTicks[slider]
     local info = tick.info
     local thumb = slider:GetThumbTexture()
     local half = thumb and thumb:GetWidth() / 2 or 0
@@ -437,19 +440,23 @@ function ns.AddDefaultTick(initializer, range)
         return
     end
     initializer.dyreDefault = range
-    local baseInitFrame = initializer.InitFrame
-    initializer.InitFrame = function(self, frame)
-        baseInitFrame(self, frame)
+    -- A secure hook, not a replacement: Blizzard's row setup runs first,
+    -- untainted (the settings list's frames are pooled and shared with
+    -- Blizzard's own settings; 2026-11-19 taint fix).
+    if type(hooksecurefunc) ~= "function" then
+        return
+    end
+    hooksecurefunc(initializer, "InitFrame", function(self, frame)
         local slider = frame.SliderWithSteppers and frame.SliderWithSteppers.Slider
         if not slider then
             return
         end
-        local tick = slider.dyreDefaultTick
+        local tick = defaultTicks[slider]
         if not tick then
             tick = slider:CreateTexture(nil, "BORDER")
             tick:SetSize(TICK_WIDTH, TICK_HEIGHT)
             tick:SetColorTexture(GOLD[1], GOLD[2], GOLD[3])
-            slider.dyreDefaultTick = tick
+            defaultTicks[slider] = tick
             slider:HookScript("OnSizeChanged", function()
                 if tick:IsShown() then
                     PlaceTick(slider)
@@ -462,7 +469,7 @@ function ns.AddDefaultTick(initializer, range)
         tick.info = initializer.dyreDefault
         PlaceTick(slider)
         tick:Show()
-    end
+    end)
 end
 
 -- For an AddOn's own sliders (2.2.0): range = {min, max, default}.

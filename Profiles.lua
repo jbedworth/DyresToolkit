@@ -716,12 +716,18 @@ end
 -- run InitFrame).
 -- Returns nil without those methods or CreateFrame; the caller then adds a
 -- button row as before.
+local rowButtons = setmetatable({}, {__mode = "k"})
+
 local function AttachRowButton(initializer, text, onClick, tooltip, enabled)
     if type(initializer) ~= "table" or type(initializer.InitFrame) ~= "function"
-            or type(initializer.Resetter) ~= "function" or type(CreateFrame) ~= "function" then
+            or type(initializer.Resetter) ~= "function" or type(CreateFrame) ~= "function"
+            or type(hooksecurefunc) ~= "function" then
         return nil
     end
-    local initFrame, resetter = initializer.InitFrame, initializer.Resetter
+    -- Secure hooks, not replacements: Blizzard's row setup and reset run
+    -- first, untainted (pooled frames are shared with Blizzard's settings;
+    -- 2026-11-19 taint fix). Our button per pooled frame is kept here.
+    local buttons = rowButtons
     local shown = {}
     local function Update()
         for button in pairs(shown) do
@@ -730,9 +736,8 @@ local function AttachRowButton(initializer, text, onClick, tooltip, enabled)
             end
         end
     end
-    function initializer:InitFrame(frame)
-        initFrame(self, frame)
-        local button = frame.dyreRowButton
+    hooksecurefunc(initializer, "InitFrame", function(_, frame)
+        local button = buttons[frame]
         if not button then
             button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
             button:SetSize(80, 22)
@@ -741,7 +746,7 @@ local function AttachRowButton(initializer, text, onClick, tooltip, enabled)
                     GameTooltip:Hide()
                 end
             end)
-            frame.dyreRowButton = button
+            buttons[frame] = button
         end
         local control = frame.Control
         local after = control and (control.IncrementButton or control.Dropdown) or control
@@ -769,14 +774,14 @@ local function AttachRowButton(initializer, text, onClick, tooltip, enabled)
         shown[button] = true
         Update()
         button:Show()
-    end
-    function initializer:Resetter(frame)
-        if frame.dyreRowButton then
-            shown[frame.dyreRowButton] = nil
-            frame.dyreRowButton:Hide()
+    end)
+    hooksecurefunc(initializer, "Resetter", function(_, frame)
+        local button = buttons[frame]
+        if button then
+            shown[button] = nil
+            button:Hide()
         end
-        return resetter(self, frame)
-    end
+    end)
     return Update
 end
 

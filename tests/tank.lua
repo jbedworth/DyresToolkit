@@ -252,6 +252,15 @@ local function fixture(options)
     end
     env.UnitThreatSituation = function(_, unit) return state.simple[unit] end
     env.GetBuildInfo = function() return "1.16.1", "70338" end
+    -- The client's secure hook: the original runs first, then the hook.
+    env.hooksecurefunc = function(object, name, hook)
+        local original = object[name]
+        object[name] = function(...)
+            local results = {original(...)}
+            hook(...)
+            return unpack(results)
+        end
+    end
     env.IsInInstance = function() return false, "none" end
     env.IsAltKeyDown = function() return state.alt == true end
     env.IsControlKeyDown = function() return state.ctrl == true end
@@ -367,7 +376,15 @@ local function fixture(options)
             end
             setting.options = options
             local initializer = {data = {}, setting = setting}
-            function initializer:InitFrame(frame) self.framed = frame end
+            -- Blizzard's row setup: the pooled frame draws this row and sets
+            -- up its plain list (InitDropdown), when the frame has one.
+            function initializer:InitFrame(frame)
+                self.framed = frame
+                frame.row = self
+                if type(frame.InitDropdown) == "function" then
+                    frame:InitDropdown()
+                end
+            end
             function initializer:Resetter(frame) self.reset = frame end
             function initializer:GetSetting() return self.setting end
             setting.initializer = initializer
@@ -1089,6 +1106,36 @@ test("the settings: John's name for the target label, and the pull slider shows 
     equal(slider.dyreDefault.default, 10, "the gold mark at the default")
     equal(slider.dyreDefault.min, 1)
     equal(slider.dyreDefault.max, 60)
+end)
+
+test("the gold mark is drawn from a secure hook, with nothing of ours on the pooled slider", function()
+    local state = fixture({globals = {MinimalSliderWithSteppersMixin = {Label = {Right = "RIGHT"}}}})
+    local initializer = state.sliders.DYRE_PULL
+    local blizzard = 0
+    -- The slider initializer's own InitFrame (the client's) runs before the mark.
+    initializer.InitFrame = nil
+    initializer = {options = initializer.options, InitFrame = function() blizzard = blizzard + 1 end}
+    state.toolkit.AddDefaultTick(initializer, {min = 1, max = 60, default = 10})
+    local row = state.env.CreateFrame("Frame")
+    local released = 0
+    function row:Release() released = released + 1 end
+    local bar = state.env.CreateFrame("Slider", nil, row)
+    function bar:GetThumbTexture() return nil end
+    function bar:GetWidth() return 200 end
+    row.SliderWithSteppers = {Slider = bar}
+    initializer:InitFrame(row)
+    equal(blizzard, 1, "the client's InitFrame ran")
+    local tick
+    for _, frame in ipairs(state.frames) do
+        if frame.parent == bar and frame.kind == "Texture" then tick = frame end
+    end
+    -- The mock's textures may not be listed in state.frames: then check the field is gone.
+    equal(bar.dyreDefaultTick, nil, "no field of ours on the pooled slider")
+    initializer:InitFrame(row)
+    equal(blizzard, 2)
+    row:Release()
+    equal(released, 1, "the client's Release still runs")
+    if tick then equal(tick.shown, false, "the mark hides when the row is released") end
 end)
 
 -- The bar is a toolkit widget: it drags with every Dyre's frame while
@@ -2304,9 +2351,14 @@ end
 local function SoundMenu(state, variable)
     local setting = state.settings[variable]
     local initializer = setting.initializer
-    local frame = {SetupDropdownMenu = function() state.originalMenu = true end}
+    -- A pooled dropdown row frame: Blizzard's InitDropdown sets up the plain list.
+    local frame = {Control = {Dropdown = {}}}
+    function frame:GetElementData() return self.row end
+    function frame:InitDropdown()
+        state.originalMenu = true
+        state.env.Settings.InitDropdown(self.Control.Dropdown, nil, "plain")
+    end
     initializer:InitFrame(frame)
-    frame.SetupDropdownMenu({}, {}, setting, nil, nil, initializer)
     local init = state.dropdownInits[#state.dropdownInits]
     local function Node()
         local node = {children = {}}
@@ -2368,7 +2420,7 @@ test("sounds with Dyre's Sounds: its groups follow Game Warnings, saved by key, 
     equal(library.played[1][3], "Master")
     equal(#state.sounds, 0, "no game sound for it")
     equal(root.children[2].children[2].isSelected("gong"), true)
-    equal(initializer.getSelectionTextFunc(), "Interface: Gong")
+    equal(initializer.getSelectionTextFunc, nil, "no function of ours left on a pooled dropdown")
     red:SetValue("oldbell")
     equal(state.env.DyresToolkitCharDB.redSound, "bell", "an older key saved as its own (Resolve)")
     red:SetValue("nothing")
@@ -2414,7 +2466,8 @@ test("defaults with Dyre's Sounds 1.5.0: Bell buzz and Cartoon shake play and sh
     local red, losing = state.settings.DYRE_RED_SOUND, state.settings.DYRE_LOSING_SOUND
     equal(red:GetValue(), "alertbellbuzz")
     equal(losing:GetValue(), "alertshake")
-    equal(red.initializer.getSelectionTextFunc(), "Dyre's Alerts: Bell buzz")
+    equal(SoundMenu(state, "DYRE_RED_SOUND").children[2].children[1].isSelected("alertbellbuzz"), true,
+        "the menu marks Bell buzz as chosen")
     Plate(state, "nameplate1", {true, 3, 100})
     state.fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
     state.threat.nameplate1 = {true, 2, 100}
@@ -2481,15 +2534,23 @@ test("defaults with Dyre's Sounds before 1.5.0 or missing: the game fallbacks; a
     end
 end)
 
-test("sound menus wrap pooled dropdown frames only for their own dropdowns", function()
+test("sound menus: secure hooks only; Blizzard's own rows on a pooled frame keep their menu", function()
     local state = fixture({globals = {DyresSounds = SoundLibrary()}})
-    local _, frame = SoundMenu(state, "DYRE_RED_SOUND")
-    state.originalMenu = nil
-    local cleared
-    local button = {SetSelectionText = function(_, text) cleared = text == nil end}
-    frame.SetupDropdownMenu({}, button, {}, nil, nil, {})
-    equal(state.originalMenu, true, "another dropdown gets the original menu")
-    equal(cleared, true, "and a cleared label")
+    local _, frame, initializer = SoundMenu(state, "DYRE_RED_SOUND")
+    equal(state.originalMenu, true, "Blizzard's own setup ran first")
+    equal(type(state.dropdownInits[#state.dropdownInits].inserter), "function", "then our nested menu")
+    -- A value change sets the menu up again: ours again.
+    frame:InitDropdown()
+    equal(type(state.dropdownInits[#state.dropdownInits].inserter), "function")
+    -- Blizzard's own row on the same pooled frame: its plain list stays.
+    frame.row = {}
+    frame:InitDropdown()
+    equal(state.dropdownInits[#state.dropdownInits].inserter, "plain", "another row keeps Blizzard's menu")
+    for key in pairs(frame) do
+        assert(key == "Control" or key == "row" or key == "GetElementData" or key == "InitDropdown",
+            "unexpected field on the pooled frame: " .. tostring(key))
+    end
+    equal(initializer.getSelectionTextFunc, nil)
 end)
 
 test("the icon takes the label's color: green, yellow, red, blue, orange, and white for a secret", function()
@@ -3613,7 +3674,13 @@ test("profiles: the Profile section names this character and works through popup
     row.Control = {Dropdown = {}, IncrementButton = {}}
     source.initializer:InitFrame(row)
     equal(source.initializer.framed, row, "the client's own InitFrame still runs")
-    local copy = row.dyreRowButton
+    local function RowButton()
+        for _, frame in ipairs(state.frames) do
+            if frame.parent == row and frame.template == "UIPanelButtonTemplate" then return frame end
+        end
+    end
+    local copy = RowButton()
+    equal(row.dyreRowButton, nil, "no field of ours on the pooled row frame")
     equal(copy.text, "Copy")
     equal(copy.template, "UIPanelButtonTemplate")
     equal(copy.points[1][1], "LEFT")
@@ -3626,7 +3693,7 @@ test("profiles: the Profile section names this character and works through popup
     equal(copy.shown, false)
     equal(source.initializer.reset, row, "the client's own Resetter still runs")
     source.initializer:InitFrame(row)
-    equal(row.dyreRowButton, copy)
+    equal(RowButton(), copy, "the same button")
     equal(copy.shown, true)
     equal(#copy.points, 1)
     -- This character first and chosen, Copy grey (John, 2026-11-15).

@@ -116,39 +116,55 @@ function DTT.SoundOptions()
     return options
 end
 
-local function NestedSetupDropdownMenu(original)
-    return function(control, button, setting, options, initTooltip, initializer)
-        if not (initializer and initializer.dyreToolkitSoundMenu) then
-            -- A pooled frame that showed a sound would keep its label
-            -- (Dyre's Sounds' Menu.lua, found in client): clear it.
-            if type(button) == "table" and type(button.SetSelectionText) == "function" then
-                button:SetSelectionText(nil)
-            end
-            return original(control, button, setting, options, initTooltip, initializer)
-        end
-        Settings.InitDropdown(button, setting, SoundMenuInserter(), initTooltip)
+-- Taint (a player's error, 2026-11-19: Blizzard's "Status Text" setting
+-- failed with "attempt to compare a secret number value (execution tainted by
+-- 'DyresToolkit')"; John chose this fix): the settings list pools its row
+-- frames and shares them with Blizzard's own settings, so code here never
+-- replaces a method or writes a field on them and leaves no function of ours
+-- there (no getSelectionTextFunc). It adds secure hooks only: Blizzard's setup
+-- runs first, untainted, then the hook rebuilds the menu only while the row
+-- drawn is ours. The dropdown shows the chosen sound's name (the menu's own
+-- selection text).
+local hookedFrames = setmetatable({}, {__mode = "k"})
+
+local function Call(object, method, ...)
+    if type(object) == "table" and type(object[method]) == "function" then
+        return object[method](object, ...)
     end
+end
+
+local function NestDropdown(frame)
+    local initializer = Call(frame, "GetElementData")
+    local dropdown = type(initializer) == "table" and initializer.dyreToolkitSoundMenu
+        and type(frame.Control) == "table" and frame.Control.Dropdown
+    if type(dropdown) ~= "table" then
+        return
+    end
+    local setting = Call(initializer, "GetSetting")
+    local initTooltip
+    if type(Settings.CreateOptionsInitTooltip) == "function" then
+        initTooltip = Settings.CreateOptionsInitTooltip(setting, Call(initializer, "GetName"),
+            Call(initializer, "GetTooltip"), Call(initializer, "GetOptions"))
+    end
+    Settings.InitDropdown(dropdown, setting, SoundMenuInserter(), initTooltip)
 end
 
 local function NestSoundMenu(initializer)
     if type(initializer) ~= "table" or type(initializer.InitFrame) ~= "function"
-            or type(Settings.InitDropdown) ~= "function" then
+            or type(Settings.InitDropdown) ~= "function" or type(hooksecurefunc) ~= "function" then
         return
     end
     initializer.dyreToolkitSoundMenu = true
     initializer.data = initializer.data or {}
     initializer.data.forceSteppersHidden = true
-    initializer.getSelectionTextFunc = function()
-        return DTT.SoundLabel(initializer:GetSetting():GetValue()) or ""
-    end
-    local initFrame = initializer.InitFrame
-    function initializer:InitFrame(frame)
-        if type(frame.SetupDropdownMenu) == "function" and not frame.dyreToolkitSoundMenu then
-            frame.dyreToolkitSoundMenu = true
-            frame.SetupDropdownMenu = NestedSetupDropdownMenu(frame.SetupDropdownMenu)
+    hooksecurefunc(initializer, "InitFrame", function(_, frame)
+        -- The control sets its menu up again on a value change (InitDropdown).
+        if type(frame) == "table" and not hookedFrames[frame] and type(frame.InitDropdown) == "function" then
+            hookedFrames[frame] = true
+            hooksecurefunc(frame, "InitDropdown", NestDropdown)
         end
-        return initFrame(self, frame)
-    end
+        NestDropdown(frame)
+    end)
 end
 
 -- key: "redSound", "losingSound", "pullTick", or "pullGo". The dropdown
