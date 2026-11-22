@@ -4025,6 +4025,93 @@ test("panel switches: store.show false hides target, focus, or list; the rest sh
     equal(tracker.list.shown, true)
 end)
 
+-- A DDT player, 2026-11-20, GitHub issue 1: "I'd like to hide all of that
+-- and only show the debuff bars."
+test("panel frame switch: store.frame false clears every row's background and border, at once, also in combat", function()
+    local state = fixture()
+    dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})
+    local tracker, store = dotTracker(state)
+    equal(state.toolkit.TRACKER_FRAME, true)
+    cast(state, "Grunt", 172, "c1")
+    local rows = {tracker.pinned.target, tracker.pinned.focus, tracker.rows[1]}
+    local function Alphas(row)
+        local background, border = row.calls.SetBackdropColor, row.calls.SetBackdropBorderColor
+        assert(background and border, "the row's backdrop is colored")
+        return background[4], border[4]
+    end
+    for _, row in ipairs(rows) do
+        local background, border = Alphas(row)
+        assert(background > 0 and border == 1, "drawn by default")
+    end
+    local outline = tracker.pinned.target.outline
+    store.frame = false
+    state.combat = true
+    tracker:ApplyPanelColors()
+    for _, row in ipairs(rows) do
+        local background, border = Alphas(row)
+        equal(background, 0, "no background")
+        equal(border, 0, "no border")
+    end
+    equal(tracker.pinned.target.outline, outline, "the outline is its own setting")
+    state.combat = false
+    store.frame = "no"
+    tracker:ApplyPanelColors()
+    local background, border = Alphas(tracker.pinned.target)
+    assert(background > 0 and border == 1, "only false clears it")
+    store.frame = false
+    tracker:Rebuild()
+    background, border = Alphas(tracker.pinned.target)
+    equal(background, 0, "a rebuilt row keeps it")
+    equal(border, 0)
+end)
+
+-- John, 2026-11-21: "each needs it's own config (size, border width, etc.)";
+-- "The show mob health checkbox, and text config ... are missing from the
+-- Target/Focus/Others boxes".
+test("per-panel settings: store.panels overrides health, health text, frame, outline, and sizes per panel", function()
+    local state = fixture()
+    dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})
+    local tracker, store = dotTracker(state)
+    equal(state.toolkit.TRACKER_PANEL_OPTIONS[1], "health")
+    cast(state, "Grunt", 172, "c1")
+    local target, focus = tracker.pinned.target, tracker.pinned.focus
+    equal(target.width, focus.width, "the same size without per-panel values")
+    local wide, stackHeight = target.width, tracker.stack.height
+    store.panels = {target = {sizes = {bars = {barWidth = wide + 100}}, outlineWidth = 0, health = true,
+        healthText = "both", frame = false}, list = {health = true}}
+    tracker:Rebuild()
+    target, focus = tracker.pinned.target, tracker.pinned.focus
+    local list = tracker.rows[1]
+    equal(target.width, wide + 100, "the target's own bar width")
+    equal(focus.width, wide, "the focus keeps the tracker-wide size")
+    equal(list.width, wide, "the list too")
+    equal(target.outline, nil, "no outline on the target")
+    assert(focus.outline, "the focus keeps its outline")
+    equal(tracker.stack.height, stackHeight - 3, "the stack closes up by the target's outline")
+    assert(target.health and target.healthPercent and target.healthNumber, "the target's health and text")
+    equal(focus.health, nil, "no health on the focus")
+    assert(list.health, "the list's own health")
+    equal(list.healthPercent, nil, "the list's health text is the tracker-wide none")
+    equal(target.calls.SetBackdropColor[4], 0, "no frame on the target")
+    assert(focus.calls.SetBackdropColor[4] > 0, "the focus keeps its frame")
+    -- frame applies at once, also in combat.
+    state.combat = true
+    store.panels.focus = {frame = false}
+    tracker:ApplyPanelColors()
+    equal(focus.calls.SetBackdropColor[4], 0, "at once, in combat")
+    state.combat = false
+    -- A missing value uses the tracker-wide one; a missing size field too.
+    store.panels = {target = {sizes = {bars = {barWidth = wide + 100}}}}
+    store.health = true
+    tracker:Rebuild()
+    assert(tracker.pinned.focus.health, "tracker-wide health")
+    assert(tracker.pinned.target.health, "the target uses the tracker-wide health")
+    assert(tracker.pinned.target.outline, "and the tracker-wide outline")
+    store.panels = "junk"
+    tracker:Rebuild()
+    equal(tracker.pinned.target.width, wide, "a bad panels value: tracker-wide")
+end)
+
 test("Dyre's Debuff Tracker's DoT tracker steps aside for the class AddOn's", function()
     local state = fixture()
     dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt")})

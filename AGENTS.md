@@ -837,6 +837,34 @@ WTF 1.4.1's Tracker.lua, Dots.lua, and Predict.lua, moved with their rules
   `Refresh` (the pinned sections change out of combat). Owners: DDT and WTF
   add three checkboxes, default on, in their own releases (24 h after the
   Toolkit, or gated on the flag).
+- Per-panel settings (unreleased; John, 2026-11-21: "The panel settings
+  need to be organized by the panel they control, and each needs it's own
+  config (size, border width, etc.)"; "The show mob health checkbox, and text
+  config ... are missing from the Target/Focus/Others boxes"):
+  `store.panels[key]` (key "target", "focus", "list") may hold `health`,
+  `healthText`, `frame`, `outlineWidth`, and `sizes` ({compact, bars}, each
+  merged field by field over the tracker-wide sizes); nil uses the
+  tracker-wide store key (`PanelOption`). Every size helper (`Sizes`,
+  `TextScale`, `RowWidth`, `RowHeight`, `RowStep`, `BarIcon`, `NameLine`,
+  `SlotSize`, `SlotsWidth`, `PinnedSpacing`, `OutlineWidth`, `ScaleFont`,
+  `HealthTextWidth`) takes the panel key; rows use `row.panelKey`. The stack
+  follows each pinned panel's own height and outline (`StackOffset`: focus
+  below the target's row and outline, the list below the focus's); a list
+  growing up sits above the target's outline. `TRACKER_PANEL_OPTIONS` (the
+  list of names) is the flag owners check. Combat rules unchanged: frame
+  with `ApplyPanelColors` (at once, also in combat), the rest with
+  `Rebuild`. Owners: DDT (Panels section, one sub-section per panel); WTF
+  no longer has a tracker. Not checked in client.
+- Panel frame switch (unreleased; a DDT player, 2026-11-20, GitHub issue
+  DDT#1: "I'd like to hide all of that and only show the debuff bars.";
+  John: "Build parts 1 and 2"): `store.frame` false draws every tracker row
+  (pinned and list) with a clear background and border (`ColorPanel` sets
+  the backdrop alphas to 0); anything else draws them. The name, the bars,
+  the health fill, and the pinned outline (`outlineWidth`) stay. A change
+  needs `ApplyPanelColors` (backdrop colors only, so at once, also in
+  combat); a rebuilt row reads it again. `TRACKER_FRAME` is the flag owners
+  check before they offer it. Owners: DDT adds a "Show panel frame"
+  checkbox, default on; WTF may add one too. Not checked in client.
 - Bar orientation (HealthBars.lua `Vertical`; WTF player report,
   2026-11-19: "attempt to compare a secret" from `DrawPrediction` on the
   target bar in combat): a secret `GetOrientation` is never compared; the

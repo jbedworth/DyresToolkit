@@ -4,6 +4,12 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.13.0
+
+### Features
+- For AddOn authors: the DoT tracker's rows can be drawn with no background and no border: `frame = false` in the tracker's store (`TRACKER_FRAME`). The name, the bars, the health, and the target and focus outline stay. A change applies with `ApplyPanelColors`, at once, also in combat.
+- For AddOn authors: each DoT tracker panel (target, focus, and the other mobs) can have its own mob health, health text, frame, outline width, and sizes: `panels = {target = {...}, focus = {...}, list = {...}}` in the tracker's store (`TRACKER_PANEL_OPTIONS`). A value a panel does not set uses the tracker-wide one, so nothing changes until an AddOn sets one. The frame applies with `ApplyPanelColors`, at once; the others with `Rebuild`, out of combat.
+
 ## 2.12.0
 
 ### Features
