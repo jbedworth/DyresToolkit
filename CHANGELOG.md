@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.13.1
+
+### Fixes
+- Settings: the Grid size slider now has the gold mark at its default (32), as every other Dyre's slider has.
+
 ## 2.13.0
 
 ### Features

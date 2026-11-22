@@ -129,7 +129,13 @@ local function fixture(options)
                 return setting
             end,
             CreateCheckbox = function(object, setting) object.initializers[#object.initializers + 1] = setting end,
-            CreateSlider = function(object, setting) object.initializers[#object.initializers + 1] = setting end,
+            CreateSlider = function(object, setting)
+                object.initializers[#object.initializers + 1] = setting
+                local initializer = {setting = setting, InitFrame = function() end}
+                state.sliders = state.sliders or {}
+                state.sliders[setting.variable] = initializer
+                return initializer
+            end,
             CreateSliderOptions = function() return {} end,
             OpenToCategory = function(id) state.opened = id end,
         }
@@ -566,6 +572,10 @@ test("one Dyre's AddOns home, with each AddOn's page under it", function()
     equal(toolkit.IsLocked(), false)
     state.settings.DYRE_GRID_SIZE.set(48)
     equal(state.env.DyresToolkitDB.gridSize, 48)
+    local mark = state.sliders.DYRE_GRID_SIZE.dyreDefault
+    equal(mark and mark.default, 32, "the grid size slider has its gold default mark")
+    equal(mark.min, 8)
+    equal(mark.max, 128)
 end)
 
 test("an AddOn may ask for its page before the toolkit's own login", function()

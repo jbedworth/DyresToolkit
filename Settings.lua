@@ -158,7 +158,8 @@ function ns.InitializeSettings()
             and MinimalSliderWithSteppersMixin.Label then
         options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
     end
-    Settings.CreateSlider(home, size, options, "The space between grid lines.")
+    ns.AddDefaultTick(Settings.CreateSlider(home, size, options, "The space between grid lines."),
+        {min = ns.GRID_MIN, max = ns.GRID_MAX, default = ns.DEFAULT_GRID})
     Flag("DYRE_MINIMAP", "Minimap button", function() return not ns.db.minimap.hide end, ns.SetMinimapShown,
         "Left-click locks or unlocks frames; right-click opens a menu. /dyre minimap does the same.")
 end
