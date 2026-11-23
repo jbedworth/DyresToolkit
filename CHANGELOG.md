@@ -4,6 +4,14 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.14.1
+
+### Features
+- Settings: a new switch, **Welcome messages at login**, on the Dyre's AddOns page. Turn it off to hide the name-and-version line that each Dyre's AddOn says in chat at login. Errors and problems always show. It is on by default, so nothing changes until you turn it off. Each Dyre's AddOn follows it from its own next update.
+
+### Other changes
+- The same code as 2.14.0, which did not reach CurseForge.
+
 ## 2.14.0
 
 ### Features
