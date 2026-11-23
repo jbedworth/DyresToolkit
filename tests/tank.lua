@@ -2122,7 +2122,7 @@ test("settings page: the threat sections, then Group Warnings, then Tank Tools",
         end
     end
     equal(table.concat(order, ","), table.concat({
-        "DYRE_UNLOCKED", "DYRE_GRID", "DYRE_SNAP_GRID", "DYRE_GRID_SIZE", "DYRE_MINIMAP",
+        "DYRE_UNLOCKED", "DYRE_GRID", "DYRE_SNAP_GRID", "DYRE_GRID_SIZE", "DYRE_MINIMAP", "DYRE_WELCOME",
         "## Threat Indicators: Nameplates", "DYRE_PLATE_THREAT", "DYRE_THREAT_MODE", "DYRE_PLATE_PLACE",
         "DYRE_PLATE_X", "DYRE_PLATE_Y", "DYRE_PLATE_SCALE",
         "## Threat Indicators: Target Frame", "DYRE_TARGET_THREAT", "DYRE_TARGET_X", "DYRE_TARGET_Y",

@@ -114,6 +114,10 @@ minimap) are yours on every character and are not in a profile.
   Dyre's AddOn's settings. `/dyre minimap` hides or shows the button.
 - **One settings home.** Options → AddOns → **Dyre's AddOns** holds these
   settings, with each Dyre's AddOn's page under it. `/dyre` opens it.
+- **Welcome messages at login** (on by default): turn it off to hide the
+  name-and-version line each Dyre's AddOn says in chat at login. Errors and
+  problems always show. An AddOn follows this switch from its own update
+  that supports it.
 - **Proc cues** (the engine for Dyre's Shields Up's proc overlays): while a
   proc's buff is up, an arc shows on each side of your character and drains
   with the time left, and a sound plays as it appears, also in combat. Dyre's

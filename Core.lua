@@ -22,6 +22,8 @@ local addonName, ns = ...
 -- Contract 2 (2.0.0) adds widgets, which own all placement for an AddOn:
 --   CreateWidget(spec), AddWidgetSettings(category, layout, widget, opts),
 --   ResetWidgets(addon), Widgets(addon); see Widgets.lua.
+-- 2.14.0 adds ShowWelcome(): false when the player turned off the welcome
+-- line at login. Test for the function; without it, print the line.
 local DyresToolkit = {}
 _G.DyresToolkit = DyresToolkit
 ns.toolkit = DyresToolkit
@@ -55,6 +57,9 @@ function ns.SanitizeDB(db)
     end
     if type(db.snapToGrid) ~= "boolean" then
         db.snapToGrid = true
+    end
+    if type(db.welcome) ~= "boolean" then
+        db.welcome = true
     end
     local size = tonumber(db.gridSize)
     if not size or size ~= size then
@@ -157,6 +162,20 @@ end
 
 function ns.SetSnapToGrid(snap)
     ns.db.snapToGrid = snap == true
+end
+
+-- The welcome line at login (2.14.0; John, 2026-11-23: "toggle off our
+-- welcome messages unless there is an error/problem"). One account-wide
+-- switch for every Dyre's AddOn. An AddOn asks before it prints its
+-- title-and-version line (and any "ready" line); it always prints errors
+-- and problems. Without this function (an older toolkit, or none), it
+-- prints the welcome line as before.
+function DyresToolkit.ShowWelcome()
+    return ns.db.welcome ~= false
+end
+
+function ns.SetWelcome(shown)
+    ns.db.welcome = shown == true
 end
 
 function ns.SetGridSize(size)

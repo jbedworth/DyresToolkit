@@ -66,6 +66,7 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 ### Minimap button and settings
 - Left-click locks or unlocks frames; right-click opens a menu with the grid switches, the settings, and each installed Dyre's AddOn.
 - Options > AddOns > **Dyre's AddOns** holds these settings, with each Dyre's AddOn's page under it. `/dyre` opens it.
+- **Welcome messages at login** (on by default): turn it off to hide each Dyre's AddOn's name-and-version line in chat. Errors and problems always show.
 
 ### Commands
 - `/dyre` opens the settings; `/dyre unlock`, `/dyre lock`.

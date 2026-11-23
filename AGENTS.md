@@ -1546,6 +1546,15 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
   (author: "the standard way"); Forever has no AddOn compartment
   (Blizzard_Minimap.toc loads it for mainline only). LibDBIcon keeps its place
   in `DyresToolkitDB.minimap`.
+- Welcome messages (2.14.0; John, 2026-11-23: "Add an option to all of our
+  addons to toggle off our welcome messages unless there is an
+  error/problem", then "A: one Toolkit switch"): `DyresToolkitDB.welcome`
+  (account-wide, default true, not in profiles), the row "Welcome messages
+  at login" (`DYRE_WELCOME`) after the minimap switch, and
+  `DyresToolkit.ShowWelcome()`. Each Dyre's AddOn asks it (a feature test:
+  no function means print) before its title-and-version line and any
+  "ready" line; errors and problems always print. The toolkit itself prints
+  no welcome line.
 - The menu uses MenuUtil.CreateContextMenu (Blizzard_Menu loads for every
   game type).
 
