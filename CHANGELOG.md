@@ -7,7 +7,7 @@ notes and the CurseForge changelog, and fails if that section is missing.
 ## 2.14.1
 
 ### Features
-- Settings: a new switch, **Welcome messages at login**, on the Dyre's AddOns page. Turn it off to hide the name-and-version line that each Dyre's AddOn says in chat at login. Errors and problems always show. It is on by default, so nothing changes until you turn it off. Each Dyre's AddOn follows it from its own next update.
+- Settings: a new switch, **Welcome messages at login**, on the Dyre's AddOns page. Turn it off to hide the name-and-version line that each Dyre's AddOn says in chat at login. Errors and problems always show. It is on by default, so nothing changes until you turn it off. Every Dyre's AddOn that says a welcome line follows it from its 2026-11-23 update: Buff Reminders 1.13.3, Crit Mayhem 0.3.6, Quest Targeting 1.8.0, Shields Up 1.5.2, Mage Tools 1.6.2, Warlock Tools 1.12.3, Weapon Sets 1.2.1 and Weapon Skills 1.4.2.
 
 ### Other changes
 - The same code as 2.14.0, which did not reach CurseForge.
@@ -15,7 +15,7 @@ notes and the CurseForge changelog, and fails if that section is missing.
 ## 2.14.0
 
 ### Features
-- Settings: a new switch, **Welcome messages at login**, on the Dyre's AddOns page. Turn it off to hide the name-and-version line that each Dyre's AddOn says in chat at login. Errors and problems always show. It is on by default, so nothing changes until you turn it off. Each Dyre's AddOn follows it from its own next update.
+- Settings: a new switch, **Welcome messages at login**, on the Dyre's AddOns page. Turn it off to hide the name-and-version line that each Dyre's AddOn says in chat at login. Errors and problems always show. It is on by default, so nothing changes until you turn it off. Every Dyre's AddOn that says a welcome line follows it from its 2026-11-23 update: Buff Reminders 1.13.3, Crit Mayhem 0.3.6, Quest Targeting 1.8.0, Shields Up 1.5.2, Mage Tools 1.6.2, Warlock Tools 1.12.3, Weapon Sets 1.2.1 and Weapon Skills 1.4.2.
 
 ## 2.13.1
 
