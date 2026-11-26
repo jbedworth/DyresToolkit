@@ -41,6 +41,55 @@
 - [ ] After /reload, frames start locked and stay where they were dropped.
 - [ ] In combat, /dyre opens nothing and says so; a drag ends after combat.
 
+### Swing timer and range box (unreleased; Forever first)
+
+Settings: Dyre's AddOns → Dyre's Toolkit → "Swing Timer". `/dyre debug_swing`
+prints the checks and the state; `/dyre swing_reset` puts the frame back.
+
+- [ ] Show "In combat" (the default): hidden out of combat, shown when a fight
+      starts, hidden when it ends. "Always": shown all the time. "Off": never,
+      also while unlocked. `/dyre unlock`: a sample (three bars, RANGE) to move.
+- [ ] Melee: the main-hand bar fills once per swing, in step with your swings;
+      dual wielding, the off-hand row appears at the first off-hand swing.
+- [ ] Hunter, Auto Shot: the ranged bar fills once per shot; its last half
+      second is red; the label says HOLD STILL there, STOP while moving.
+      Moving in the red part delays the shot.
+- [ ] Hunter level 12 or more (Wing Clip), an enemy target, walking in: over
+      35 yd TOO FAR (red), then RANGE (green), then DEAD ZONE (red) inside
+      8 yd, then MELEE (green). No blinking on an edge. Also in combat.
+- [ ] Hunter below level 12 (no Wing Clip): TOO CLOSE inside 8 yd; MELEE
+      while your melee swings land, back to TOO CLOSE a few seconds after.
+- [ ] Warrior or Rogue with a bow, gun, crossbow, or thrown weapon: RANGE and
+      TOO FAR; TOO CLOSE in the dead zone. Wand user: RANGE and TOO FAR, never
+      a dead zone. Change weapons: the right check follows (`/dyre debug_swing`).
+- [ ] Turn "Range box" off: no state text, the theme's edge; `/dyre
+      debug_swing` says "swing checks: none". Theme "Tactical black and red":
+      flat bars, thin red edge. Width, size, and opacity sliders apply at once.
+- [ ] Classic Era: no bars (no PLAYER_SWING); the range box still works.
+- [ ] Clip zones (level 20 or more, Aimed Shot): first the rule. Run
+      `/run CF=CreateFrame("Frame") CF:SetScript("OnEvent",function(_,e,a,b,c) print(format("%.2f",GetTime()),e,a,b,c) end)`
+      then `/run CF:RegisterEvent("PLAYER_SWING") CF:RegisterUnitEvent("UNIT_SPELLCAST_START","player") CF:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED","player")`,
+      and cast Aimed Shot right after an Auto Shot, then just before the next.
+      The zone assumes a late cast pushes the next Auto Shot (PLAYER_SWING
+      type 2) back by the overlap; if it restarts the timer instead, the rule
+      changes. Then: the orange zone ends at the red zone and is about 2 s
+      wide; started before it, no delay; inside it, the next Auto Shot is late.
+      Sniper Shot (talent) gets the lighter shade.
+- [ ] Ranged haste (a quiver, Rapid Fire): the red zone gets shorter with
+      the ranged swing (0.5 s x swing / the bow's Speed). Without haste it is
+      0.5 s.
+- [ ] Hunter in melee: after a melee swing, the ranged bar starts over and is
+      grey; the next Auto Shot comes one full ranged swing after that melee
+      swing (if not, Forever does not reset the ranged timer: undo it).
+- [ ] Show Always: "Opacity out of combat" fades it out of combat, "Opacity
+      in combat" in combat; unlocked it is solid. Ctrl-drag on its top edge
+      moves it while locked.
+- [ ] Only bars in use: a Hunter shooting sees only the ranged bar (on top);
+      melee swings add the main-hand bar under it, and it leaves about two
+      seconds after the last swing; the frame grows and shrinks from its top
+      edge. A Warrior keeps the main hand, and the ranged bar joins while
+      shooting. Turn it off: every bar your weapons can use.
+
 ### Proc cues (unreleased, 2.11.0)
 
 Not checked in client yet. Needs a class AddOn that registers procs (Mage
@@ -165,6 +214,8 @@ Ported from Dyre's Tank Tools' checklist; none is checked in client yet.
 - [ ] Tank button bar on "Auto (tank only)": a Warrior's bar shows at once
       in Defensive Stance; in Battle or Berserker Stance it hides after 30
       seconds out of combat, not before.
+- [ ] Tank bar on Auto, any class: form a group and take the Tank role
+      without changing stance or form; the bar shows within about 2 seconds.
 - [ ] Stance dancing (out of Defensive Stance and back within 30 seconds, a
       few times): the bar does not flicker.
 - [ ] A fight that starts during the 30 seconds: the bar stays in combat,
@@ -189,6 +240,10 @@ Ported from Dyre's Tank Tools' checklist; none is checked in client yet.
 
 - [ ] Hunter with Growl on autocast in a party without the Tank role: the
       message box and the chat line; none solo or as the Tank role.
+- [ ] Solo with Growl already on autocast, form a group (also inside an
+      instance, as Ruins of Larderon): the message box and the chat line
+      within about 2 seconds, without touching Growl (John found it missing,
+      2026-11-25; the fix confirmed in client the same day).
 - [ ] Warlock with the Voidwalker's Torment on autocast: the same.
 - [ ] With Dyre's Buff Reminders installed: one warning, not two (once DBR
       yields through "warn:petTaunt").
@@ -342,6 +397,12 @@ it sends nothing and saves nothing. `/reload` first. Use a class with a DoT
       Fury, Defensive Stance, or forced):
       green while you tank, yellow while another has more threat, red when a
       mob leaves you.
+- [ ] Tank view, a pack pull (John, 2026-11-25: a siren on almost every
+      pull): no siren at the pull; mobs not yet on you show yellow PULLING,
+      then green. A mob that goes to another player with more threat turns
+      red with the siren. Right after a pull, `/dtt debug_threat` lists
+      the changes: a red one at the start (pull+0-2s, status=0) means a
+      pack's mob read 0, so the 3 s grace period is still needed.
 - [ ] Tank view in a group: yellow before a DPS pulls (at 80% of the pull
       point), blue for a mob another Tank-role player or raid main tank holds.
 - [ ] DPS view: green below the tank, yellow at 80% of the pull point on

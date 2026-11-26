@@ -169,6 +169,29 @@ local EVENTS = {"PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE", "UNIT_PET", "PET
     "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED"}
 local OPTIONAL_EVENTS = {"PLAYER_ROLES_ASSIGNED"}
 
+-- A group formed (John, found in client 2026-11-25: Growl already on
+-- autocast, a group formed, no warning until Growl was clicked off and on):
+-- the group, role, or pet bar can be not ready at the first event, and
+-- nothing fires later while autocast stays on (John confirmed, then asked
+-- for 2 s "to be safe"). So these events check now and
+-- once more RECHECK_DELAY seconds later (one-shot; a newer event replaces it).
+local RECHECK_DELAY = 2
+local RECHECK_EVENTS = {PLAYER_ENTERING_WORLD = true, GROUP_ROSTER_UPDATE = true, PLAYER_ROLES_ASSIGNED = true}
+local recheck
+
+local function ScheduleRecheck()
+    if type(C_Timer) ~= "table" or type(C_Timer.NewTimer) ~= "function" then
+        return
+    end
+    if recheck then
+        recheck:Cancel()
+    end
+    recheck = C_Timer.NewTimer(RECHECK_DELAY, function()
+        recheck = nil
+        DTT.CheckPetTaunt()
+    end)
+end
+
 local function OnEvent(_, event, unit)
     if event == "UNIT_PET" and unit ~= "player" then
         return
@@ -181,6 +204,9 @@ local function OnEvent(_, event, unit)
         return
     end
     DTT.CheckPetTaunt()
+    if RECHECK_EVENTS[event] then
+        ScheduleRecheck()
+    end
 end
 
 -- Only for a class with a pet taunt; the message box is made for it alone.
@@ -201,6 +227,7 @@ function DTT.InitializePetTaunt()
     end
     frame:SetScript("OnEvent", OnEvent)
     DTT.CheckPetTaunt()
+    ScheduleRecheck()
 end
 
 function DTT.ReportPetTauntDebug()

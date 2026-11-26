@@ -382,6 +382,8 @@ function DTT.SanitizeDB(db, classFile)
         markerOrder = DTT.SanitizeMarkerOrder(db.markerOrder),
         bar = type(db.bar) == "table" and db.bar or {},
         warning = type(db.warning) == "table" and db.warning or {},
+        -- The swing timer's settings (Swing.lua), repaired in place there.
+        swing = ns.SanitizeSwing and ns.SanitizeSwing(db.swing) or (type(db.swing) == "table" and db.swing or {}),
     }
 end
 
@@ -562,6 +564,9 @@ end
 -- order, pull display, and Pet Taunt warning read it again.
 function DTT.ApplyProfile()
     DTT.db = DyresToolkitCharDB
+    if ns.RefreshSwing then
+        ns.RefreshSwing()
+    end
     if not DTT.available then
         return
     end
@@ -591,6 +596,10 @@ end
 -- sections come below them on the page.
 function ns.InitializeTank()
     LoadDB()
+    -- The swing timer (Swing.lua) needs only its own APIs, not the threat API.
+    if ns.InitializeSwing then
+        ns.InitializeSwing()
+    end
     local available, why = CheckInstall()
     DTT.available, DTT.unavailable = available, why
     local conflict = FindSlashConflict()

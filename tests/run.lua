@@ -12,7 +12,7 @@ local ADDON = "DyresToolkit"
 local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua", "Auras.lua", "Units.lua",
     "Procs.lua", "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua", "ClassData.lua", "Owners.lua",
     "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",
-    "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua"}
+    "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua", "Swing.lua"}
 local tests = {}
 
 local function test(name, body)
@@ -1078,7 +1078,7 @@ test("the TOC loads the libraries, then the runtime, in order", function()
         .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Profiles.lua,Minimap.lua,Auras.lua,Units.lua,Procs.lua,HealthBars.lua,"
         .. "Spells.lua,Macros.lua,Announce.lua,ClassData.lua,Owners.lua,Control.lua,DotTracker.lua,"
         .. "PlateDots.lua,DotPredict.lua,Tank.lua,Threat.lua,PetTaunt.lua,TankButtons.lua,Pull.lua,"
-        .. "TankProbe.lua,GroupSettings.lua")
+        .. "TankProbe.lua,GroupSettings.lua,Swing.lua")
 end)
 
 -- Shared code for trackers (2.4.0) -------------------------------------------------
@@ -5827,7 +5827,9 @@ test("proc cues: events only, no polling, and no combat log", function()
 end)
 
 -- The group warnings and tank tools (2.9.0): their own harness, the same run.
-assert(loadfile("tests/tank.lua"))(test, equal, contains)
+local tankFixture = assert(loadfile("tests/tank.lua"))(test, equal, contains)
+-- The swing timer and range box: the same harness.
+assert(loadfile("tests/swing.lua"))(test, equal, contains, tankFixture)
 
 local failed = 0
 for index, entry in ipairs(tests) do

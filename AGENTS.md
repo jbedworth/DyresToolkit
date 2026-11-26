@@ -1095,7 +1095,14 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
   (if it says true, a Paladin who clicks it off keeps the tank view).
   Tank view:
   early yellow when another member or pet is at 80% of the pull point;
-  blue when another tank holds the mob. A sound when a label turns red
+  blue when another tank holds the mob. Red (LOST) is status 0 only: the
+  mob is not on you and someone else has more threat. Status 1 (not on you
+  yet, nobody has more) is yellow PULLING, never a sound (John, 2026-11-25:
+  the siren played on almost every pull as a Protection Warrior, while the
+  pack turned; "For tanks, can't we just siren if someone else is higher
+  than me on the threat table?"). `/dtt debug_threat` lists the last 10 red
+  and PULLING changes (`DTT.threatChanges`: seconds since combat started,
+  label, status, word, sound decision). A sound when a label turns red
   (`redSound`, default Dyre's Sounds' Bell buzz, else the raid warning;
   below), at most once in 2 seconds, never for a secret status.
 - The sounds come from a change of state, not from an event (John,
@@ -1523,6 +1530,114 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
   `OnUpdate`. Unknown events register only where `C_EventUtils.IsEventValid`
   says they exist (Era lacks some).
 
+### Swing timer and range box (unreleased; John, 2026-11-24)
+
+John asked for a Hunter range finder and swing timer, then chose the toolkit
+for it, every class ("for the same reason we didn't put the tanking stuff in
+its own addon"; "with the option to create another addon down the road").
+Swing.lua; its settings are a "Swing Timer" section after Tank Tools (before
+the Profile section), added from GroupSettings.lua through
+`ns.AddSwingSettings`. `ns.InitializeSwing` runs from `ns.InitializeTank`
+right after the saved settings load, so it works without the threat API.
+
+- Settings: `DyresToolkitCharDB.swing` (in the toolkit's profile part),
+  repaired in place by `ns.SanitizeSwing` (called from Tank.lua's
+  SanitizeDB): `show` "combat" (default), "always", or "off" (John: "Off
+  (never show), On In-Combat, Always show"; Off also hides it while
+  unlocked, and turns every range check off), `range` (the range box, true),
+  `hold` (Auto Shot's hold-still zone, true), `theme` "gold" or "tactical"
+  (John: "a wow-gold/black theme and a more tactical black/red theme"), and
+  `combatOpacity` and `idleOpacity` (10-100 on steps of 5, 100; John:
+  "opacity settings for in and out of combat (if someone sets show
+  always)"; full while unlocked; the widget has no opacity size of its own),
+  `inUse` (true; John: "hide/show the timer bars that aren't being used and
+  have the widget grow/shrink"), and `frame` (the widget's store: place,
+  scale, width). No Enable checkbox: Show's Off is the off switch (John named
+  the three choices).
+- Rows (`Swing.RowOrder`): ranged first for Hunter, Mage, Warlock, and
+  Priest (John: "melee is last-resort for them"; the class orders rows only),
+  else main hand, off hand, ranged. With `inUse`, the primary row
+  (`Swing.PrimaryRow`: ranged for those classes with a ranged weapon, else
+  main hand) always shows; another row shows while its swing runs and
+  `Swing.LINGER` (2 s) after (a one-shot timer per row shrinks the frame),
+  and the main hand also while the state is MELEE. The frame keeps its top
+  edge as it grows and shrinks (`SetContentSize(..., "TOP")`).
+- Events only (no polling, no OnUpdate); all checked on Forever in John's
+  probes, 2026-11-24 (the shared notes' forever-hunter-probe): PLAYER_SWING
+  (swingDuration, swingType 0 main hand, 1 off hand, 2 ranged) starts a bar
+  through `StatusBar:SetTimerDuration` with a `C_DurationUtil.CreateDuration`
+  object (the client fills it). Range from `C_Spell.EnableSpellRangeCheck`
+  and SPELL_RANGE_CHECK_UPDATE (spellIdentifier, isInRange, checksRange; the
+  identifier comes back as an ID, matched by name). The client keeps a range
+  check on across /reload, so every check turned on is turned off when no
+  longer wanted (`Swing.SetupProbes`). `C_SwingTimer.EnableRangeCheck` and
+  PLAYER_SWING_RANGE_UPDATE never turned on in client (checksRange false,
+  also in combat): not used. Forever's own Edit Mode swing timer is left
+  alone (John: "it is horribly ugly so we won't touch it").
+- Checks (John: "Just follow what weaponswingtimersixfixx does for now",
+  then "Melee spell per class"): ranged is Auto Shot when known, else the
+  equipped ranged weapon's attack by item subclass (Shoot Bow 2480, Shoot Gun
+  7918, Shoot Crossbow 7919, Throw 2764, wand Shoot 5019), by name (Auto Shot
+  by ID 75 said "in range" from too far). Melee: one instant melee spell per
+  class, each only after an in-client check (`Swing.MELEE_PROBES`): Hunter
+  Wing Clip. Raptor Strike's range is true at every distance on Forever:
+  never used (a next-swing ability; Heroic Strike and Maul are avoided for
+  the same reason until checked).
+- The rule (`Swing.RangeState`, SixxFix's order): no live enemy target, no
+  state; ranged in range RANGE; melee in range MELEE; no melee check and a
+  main-hand swing in the last swing time plus half a second MELEE; ranged
+  out of range and near (`CheckInteractDistance(target, 3)`, about 10 yards,
+  read once per event) DEAD ZONE with a melee check, TOO CLOSE without (John:
+  "Yes, use that"; ForeverHunterDeadzone shows DEAD ZONE in melee there);
+  else TOO FAR. Wands have no dead zone (John: every ranged weapon attack
+  has one, wands do not). A change waits `Swing.SETTLE` (0.15 s, a one-shot
+  timer) and is dropped if it changes back (Wing Clip flipped every 0.3 s on
+  the melee edge in client).
+- The look: one widget (`DyresToolkitSwingTimer`, key "swing", width
+  120-400, scale; a thin strip along its top takes the mouse while locked,
+  so Ctrl-drag moves it then), a backdrop box whose edge is green (RANGE,
+  MELEE), red (the others), or the theme's color with no state; the state
+  text above the bars. Rows possible: main hand always; off hand after its
+  first swing (until equipment changes); ranged with a ranged weapon or after
+  a ranged swing. Without PLAYER_SWING (Classic Era) no rows, the range box
+  only. Unlocked: a sample (all rows, RANGE).
+- Hunters (Auto Shot known; John's "Do-Not-Move" zone): the last part of
+  each ranged swing, Auto Shot's cast, is red, and two one-shot timers set
+  the label HOLD STILL, or STOP while moving (PLAYER_STARTED_MOVING,
+  PLAYER_STOPPED_MOVING), then back. Its length scales with ranged haste
+  (`Swing.HoldTime`: 0.5 s x this swing / the weapon's base speed, at most
+  the swing; 0.5 s without a base speed). The base speed is the weapon
+  tooltip's Speed line (`C_TooltipInfo.GetItemByID`, the game's `SPEED`
+  label, a decimal point or comma), read once per item. WeaponSwingTimer
+  SixxFix's Forever finding (John: "Yes, both"); not checked in client.
+- A melee swing (main or off hand) restarts the ranged timer on Forever
+  (WeaponSwingTimer SixxFix's finding, its grey "reset"; not checked in
+  client): the ranged bar starts over from that swing with the last ranged
+  length, grey (`RESET_COLOR`) until the next shot, and the hold-still
+  timers start over with it.
+- Clip zones (John, 2026-11-24: "What about the aimed shot/sniper shot
+  clipping zones?", then "Build it now"; `clip`, true): on the ranged bar,
+  orange from (swing - HOLD - cast time) up to the red zone, one per
+  cast-time shot known (`Swing.CLIP_SPELLS`: Aimed Shot 19434, by name;
+  Sniper Shot 1310687), capped at the whole bar before the red zone.
+  Cast times read live at each ranged swing (`C_Spell.GetSpellInfo(name)
+  .castTime`, ms; instant, unknown, or secret: no zone). Facts: Forever's
+  Aimed Shot is trainable at 20, a 2 s cast, its cooldown shared with
+  Multi-Shot (TalentsForeverBook, second-hand); Sniper Shot is a Forever
+  Marksmanship talent (row 7). Multi-Shot is instant on Forever (castTime 0
+  in client): no zone. NOT CHECKED IN CLIENT: the rule assumes Era's
+  behavior (a late cast pushes the next Auto Shot back, not a timer reset);
+  John's Hunter was level 18 (TESTING.md has the probe).
+- `/dyre debug_swing` (APIs, settings, each check and its answer, the state,
+  the weapon subclass, near) and `/dyre swing_reset`.
+- Reference AddOns, facts only (no license in either, never copy code):
+  ForeverHunterDeadzone (PLAYER_SWING; the four states; polls range) and
+  WeaponSwingTimer SixxFix (the class-free order; class spell lists; polls
+  range every 0.1 s).
+- Later, not built: a melee check for each other class after its in-client
+  check (Warrior Rend or Hamstring, Rogue Sinister Strike, ...); swing bars
+  on Classic Era from the combat log; a countdown number on the bars.
+
 ### Rules
 
 - Settings rows are pooled and shared with Blizzard's own settings (a
@@ -1566,16 +1681,17 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
   Procs.lua, HealthBars.lua, Spells.lua, Macros.lua, Announce.lua, ClassData.lua,
   Owners.lua, Control.lua, DotTracker.lua, PlateDots.lua, DotPredict.lua,
   Tank.lua, Threat.lua, PetTaunt.lua, TankButtons.lua, Pull.lua,
-  TankProbe.lua, GroupSettings.lua, loaded in that order; Bindings.xml (the
+  TankProbe.lua, GroupSettings.lua, Swing.lua, loaded in that order; Bindings.xml (the
   client loads it); Textures/Stripes.tga and the threat icons
   (Textures/ShieldFill.tga, ShieldEdge.tga, SwordsFill.tga,
   SwordsEdge.tga; scripts/make_icons.py); the fallback proc arcs
   (Textures/ProcArc.tga, ProcArcLeft.tga; scripts/make_proc_arcs.py).
 - tests/run.lua: the Lua 5.1 mock suite; it loads tests/tank.lua (the group
   warnings and tank tools, with their own richer client mock, ported from
-  Dyre's Tank Tools) into the same run. tests/test_*.py: the release helpers.
+  Dyre's Tank Tools) into the same run, and tests/swing.lua (the swing
+  timer) with tank.lua's harness. tests/test_*.py: the release helpers.
 - Package only the TOC, Libs/ files listed in scripts/build_release.py, the
-  twenty-six runtime files, Bindings.xml, the seven textures in
+  twenty-seven runtime files, Bindings.xml, the seven textures in
   `MEDIA_FILES` (Stripes, the four icon layers, and the two proc arcs), and
   LICENSE, under `DyresToolkit/`, named
   `DyresToolkit-<version>-forever.zip`, with `release.json` for WowUp.

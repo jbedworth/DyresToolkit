@@ -32,7 +32,7 @@ RUNTIME_FILES = ("Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profi
                  "Auras.lua", "Units.lua", "Procs.lua", "HealthBars.lua", "Spells.lua", "Macros.lua",
                  "Announce.lua", "ClassData.lua", "Owners.lua", "Control.lua", "DotTracker.lua",
                  "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",
-                 "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua")
+                 "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua", "Swing.lua")
 # Key bindings for the tank buttons (2.9.0): the client loads Bindings.xml
 # from the AddOn's folder by itself, so the TOC does not list it.
 BINDING_FILES = ("Bindings.xml",)

@@ -4,6 +4,19 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.15.0
+
+### Features
+- New: a swing timer with a range box, for every class. A bar for each swing (main hand, off hand, ranged) in a box that turns green in range and red out of range, with the state as text: RANGE, MELEE, DEAD ZONE, TOO CLOSE, or TOO FAR. Settings are under "Swing Timer": Show (In combat, Always, or Off), opacity in combat and out of combat, "Only bars in use", the range box, the theme (Gold and black, or Tactical black and red), and size and width. `/dyre unlock` to move it, or Ctrl-drag its top edge.
+- Only bars in use (on by default): one bar always shows, and the others join while you use them, so the frame grows and shrinks. Hunters, Mages, Warlocks, and Priests get the ranged bar on top; a Hunter shooting sees the ranged bar, and the main-hand bar joins in melee.
+- Hunters: the last half second of the ranged bar is the red "hold still" zone of Auto Shot's cast, with HOLD STILL, or STOP while you move. Before it, orange clip zones for Aimed Shot and Sniper Shot: start the cast before its orange zone, or it delays your next Auto Shot. They follow your cast times, haste included. The red zone follows your ranged haste too. A melee swing restarts the ranged bar, shown grey until your next shot. DEAD ZONE and MELEE apart need Wing Clip (level 12); before that, TOO CLOSE covers both, and MELEE shows while your melee swings land.
+- The bars need WoW: Forever's swing event. On Classic Era, only the range box works.
+
+### Fixes
+- Pet taunt warning: with your pet's taunt already on autocast, forming a group now shows the warning. Before, it could stay silent until you turned autocast off and on again.
+- Threat, tank view: no more siren at the start of a pack pull. A mob that is not on you yet, while nobody has more threat than you, now shows yellow PULLING with no sound. Red and the siren mean someone else has more threat than you and the mob is not on you. `/dtt debug_threat` lists the last 10 of these changes.
+- Tank bar (Auto): when you get the Tank role as a group forms, the bar now shows. Before, it could wait until you changed stance or form.
+
 ## 2.14.1
 
 ### Features

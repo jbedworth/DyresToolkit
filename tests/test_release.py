@@ -302,11 +302,13 @@ class ReleaseTests(unittest.TestCase):
 
     def test_package_ships_the_key_bindings_and_the_tank_files(self):
         # 2.9.0: the client loads Bindings.xml from the folder (the TOC does not
-        # list it); the group warnings and tank tools load after DotPredict.lua.
+        # list it); the group warnings and tank tools load after DotPredict.lua,
+        # then the swing timer.
         self.assertEqual(builder.BINDING_FILES, ("Bindings.xml",))
         self.assertNotIn("Bindings.xml", builder.TOC_LOADS)
-        self.assertEqual(builder.RUNTIME_FILES[-7:], ("Tank.lua", "Threat.lua", "PetTaunt.lua", "TankButtons.lua",
-                                                      "Pull.lua", "TankProbe.lua", "GroupSettings.lua"))
+        self.assertEqual(builder.RUNTIME_FILES[-8:], ("Tank.lua", "Threat.lua", "PetTaunt.lua", "TankButtons.lua",
+                                                      "Pull.lua", "TankProbe.lua", "GroupSettings.lua", "Swing.lua"))
+        self.assertIn("DyresToolkit/Swing.lua", zipfile.ZipFile(self.build()[0]).namelist())
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()

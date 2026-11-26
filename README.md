@@ -10,7 +10,9 @@ with them. It also gives every player threat warnings and tank tools.
   view and your threat percent, both in green, yellow, or red.
   - Shield, the tank view: green while the mob is on you, yellow while another
     player or pet has more threat or is at 80% of the pull point, blue while
-    another tank has it, red when you lost it.
+    another tank has it, yellow PULLING while it has not turned to you yet
+    but nobody has more threat (no sound), red when someone else has more
+    threat and it is not on you.
   - Crossed swords, the DPS and healer view: green below the tank, yellow
     at 80% of the pull point (on your target), orange when you have more
     threat than the tank, red when the mob is on you. Orange and red play

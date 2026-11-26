@@ -9,7 +9,8 @@ local test, equal, contains = ...
 local ADDON = "DyresToolkit"
 local FILES = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Spells.lua", "Macros.lua",
     "ClassData.lua", "Owners.lua",
-    "Tank.lua", "Threat.lua", "PetTaunt.lua", "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua"}
+    "Tank.lua", "Threat.lua", "PetTaunt.lua", "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua",
+    "Swing.lua"}
 
 -- A secret stands in for the client's opaque combat values; tests mark them with
 -- issecretvalue, and any comparison, concatenation, indexing, arithmetic, or
@@ -948,6 +949,23 @@ test("Auto: the bar shows for the group's tank, also for a class that does not t
     equal(BarShown(state), true, "a raid's main tank")
 end)
 
+test("Auto: the Tank role not ready at the group event: the check 2 seconds later shows the bar", function()
+    local state = fixture({class = "MAGE"})
+    state.group = {role = "DAMAGER"}
+    state.fire("GROUP_ROSTER_UPDATE")
+    equal(BarShown(state), false, "no Tank role yet at the event")
+    state.group = {role = "TANK"}
+    state.advance(1)
+    equal(BarShown(state), false, "not yet after 1 second")
+    state.advance(1)
+    equal(BarShown(state), true, "the check 2 seconds later shows it")
+    local never = fixture({class = "MAGE", db = {barMode = "never"}})
+    never.group = {role = "TANK"}
+    never.fire("GROUP_ROSTER_UPDATE")
+    never.advance(2)
+    equal(BarShown(never), false, "Never: no check shows it")
+end)
+
 test("Auto: while the role is Tank, the bar never hides", function()
     local state = fixture({group = {role = "TANK"}, form = 17})
     equal(BarShown(state), true, "group role Tank in Battle Stance")
@@ -1190,12 +1208,15 @@ test("tank view: green on you, yellow when another has more, red when lost; the 
     state.fire("UNIT_THREAT_LIST_UPDATE", "target")
     equal(label.text.color[1], 1, "yellow")
     equal(label.text.color[2], 0.85)
-    for _, status in ipairs({1, 0}) do
-        state.threat.target = {false, status, 80}
-        state.fire("UNIT_THREAT_LIST_UPDATE", "target")
-        equal(label.text.text, "80%")
-        equal(label.text.color[2], 0.2, "red")
-    end
+    -- Status 1: not on you, but nobody has more threat (John, 2026-11-25).
+    state.threat.target = {false, 1, 80}
+    state.fire("UNIT_THREAT_LIST_UPDATE", "target")
+    equal(label.text.text, "PULLING", "status 1: the word, not the percent")
+    equal(label.text.color[2], 0.85, "status 1: yellow")
+    state.threat.target = {false, 0, 80}
+    state.fire("UNIT_THREAT_LIST_UPDATE", "target")
+    equal(label.text.text, "80%")
+    equal(label.text.color[2], 0.2, "status 0: red")
     equal(label.points[1][1], "BOTTOM", "above the target bar")
 end)
 
@@ -1286,9 +1307,12 @@ end)
 
 test("without a percent the label shows the view's word", function()
     local state = fixture({group = {role = "TANK"}})
-    state.simple.target = 1
+    state.simple.target = 0
     state.fire("UNIT_THREAT_SITUATION_UPDATE", "target")
     equal(TargetLabel(state).text.text, "LOST")
+    state.simple.target = 1
+    state.fire("UNIT_THREAT_SITUATION_UPDATE", "target")
+    equal(TargetLabel(state).text.text, "PULLING")
     state.settings.DYRE_THREAT_MODE:SetValue("dps")
     equal(TargetLabel(state).text.text, "HIGH")
 end)
@@ -1441,7 +1465,7 @@ test("a sound plays when a mob turns red on a threat event, once, and not again 
     state.fire("UNIT_THREAT_LIST_UPDATE", "nameplate2")
     equal(#state.sounds, 1, "a second mob within 2 seconds: no second sound")
     state.now = 5
-    state.threat.target = {false, 1, 90}
+    state.threat.target = {false, 0, 90}
     state.fire("UNIT_THREAT_LIST_UPDATE", "target")
     equal(#state.sounds, 2, "the target turns red later: the sound again")
     state.settings.DYRE_RED_SOUND:SetValue("none")
@@ -1462,6 +1486,62 @@ local function RedSounds(state)
     end
     return count
 end
+
+-- John, 2026-11-25: a siren on almost every pull as a Protection Warrior;
+-- "For tanks, can't we just siren if someone else is higher than me on the
+-- threat table?"
+test("tank view, a pull: a pack's mobs at status 1 show PULLING with no siren; status 0 sirens", function()
+    local state = fixture({units = {target = true, nameplate1 = true, nameplate2 = true},
+        group = {role = "TANK"}, threat = {target = {true, 3, 100}}})
+    state.plates.nameplate1 = {bar = state.env.UIParent:CreateTexture()}
+    state.plates.nameplate2 = {bar = state.env.UIParent:CreateTexture()}
+    state.simple.nameplate1, state.simple.nameplate2 = 1, 1
+    state.now = 100
+    state.combat = true
+    state.fire("PLAYER_REGEN_DISABLED")
+    state.fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    state.fire("NAME_PLATE_UNIT_ADDED", "nameplate2")
+    state.fire("UNIT_THREAT_SITUATION_UPDATE", "player")
+    equal(RedSounds(state), 0, "status 1 at the pull: no siren")
+    equal(state.ns.soundCounts.red.seen, 0, "status 1 is not red")
+    state.simple.nameplate1, state.simple.nameplate2 = 3, 3
+    state.fire("UNIT_THREAT_SITUATION_UPDATE", "player")
+    equal(RedSounds(state), 0, "they turn to you: no siren")
+    state.now = 110
+    state.simple.nameplate2 = 0
+    state.fire("UNIT_THREAT_LIST_UPDATE", "nameplate2")
+    equal(RedSounds(state), 1, "someone else has more threat: the siren")
+    -- The debug record: the PULLING changes at the pull and the red change.
+    local changes = state.ns.threatChanges
+    equal(#changes, 3)
+    equal(changes[1].status, 1)
+    equal(changes[1].word, "PULLING")
+    equal(changes[1].sound, "never")
+    equal(changes[1].sincePull, 0)
+    equal(changes[3].status, 0)
+    equal(changes[3].word, "LOST")
+    equal(changes[3].sound, "played")
+    equal(changes[3].sincePull, 10)
+    state.env.SlashCmdList.DYRESTOOLKITTANK("debug_threat")
+    contains(state.find("change 10s ago pull+0.0s"), "status=1 PULLING sound=never")
+    contains(state.find("change 0s ago pull+10.0s"), "status=0 LOST sound=played")
+end)
+
+test("debug_threat: no changes yet says none; the record keeps the last 10", function()
+    local state = fixture({group = {role = "TANK"}, threat = {target = {true, 3, 100}}})
+    state.env.SlashCmdList.DYRESTOOLKITTANK("debug_threat")
+    assert(state.find("debug_threat changes: none"), "none yet")
+    state.combat = true
+    for index = 1, 12 do
+        state.now = index * 10
+        state.threat.target = {true, 3, 100}
+        state.fire("UNIT_THREAT_LIST_UPDATE", "target")
+        state.threat.target = {false, 0, 50}
+        state.fire("UNIT_THREAT_LIST_UPDATE", "target")
+    end
+    equal(#state.ns.threatChanges, 10, "at most 10")
+    equal(state.ns.threatChanges[1].time, 30, "the oldest two dropped")
+end)
 
 test("a pull: PLAYER_REGEN_DISABLED before the threat event plays the red sound once", function()
     local state = fixture({group = {role = "DAMAGER"}, threat = {target = {false, 0, 20}}})
@@ -1541,9 +1621,9 @@ end)
 
 test("a form change that turns a label red plays nothing (the player changed the view)", function()
     -- Caster form, then Bear Form in combat (the reverse is the next test).
-    local state = fixture({class = "DRUID", threat = {target = {false, 1, 90}}, db = {soloSounds = true}})
+    local state = fixture({class = "DRUID", threat = {target = {false, 0, 90}}, db = {soloSounds = true}})
     state.fire("UNIT_THREAT_LIST_UPDATE", "target")
-    equal(TargetLabel(state).text.color[2], 0.5, "caster form, DPS view: orange")
+    equal(TargetLabel(state).text.color[2], 0.85, "caster form, DPS view: early yellow")
     state.combat = true
     state.form = 5
     state.fire("UPDATE_SHAPESHIFT_FORM")
@@ -2131,7 +2211,9 @@ test("settings page: the threat sections, then Group Warnings, then Tank Tools",
         "DYRE_SOLO_SOUNDS",
         "## Group Warnings", "DYRE_GROUP_WARNINGS", "DYRE_PULL_BARS", "DYRE_PULL_DISPLAY", "DYRE_PULL_TICK", "DYRE_PULL_GO",
         "DYRE_DYRESTOOLKIT_PULLTIMER_SCALE", "DYRE_DYRESTOOLKIT_PULLTIMER_OPACITY", "DYRE_PET_TAUNT",
-        "## Tank Tools", "DYRE_TANK_TOOLS", "DYRE_TANK_BAR_MODE", "DYRE_PULL"}, ","))
+        "## Tank Tools", "DYRE_TANK_TOOLS", "DYRE_TANK_BAR_MODE", "DYRE_PULL",
+        "## Swing Timer", "DYRE_SWING_SHOW", "DYRE_SWING_OPACITY_COMBAT", "DYRE_SWING_OPACITY_IDLE",
+        "DYRE_SWING_IN_USE", "DYRE_SWING_RANGE", "DYRE_SWING_HOLD", "DYRE_SWING_CLIP", "DYRE_SWING_THEME"}, ","))
 end)
 
 -- John, 2026-11-15: "Each of the non-core ... features of DT need an
@@ -3307,6 +3389,49 @@ test("pet taunt: no warning solo, as the tank, with autocast off, unknown, off, 
     equal(quiet.count("Pet taunt on"), 0, "another owner: no warning from the toolkit")
 end)
 
+test("pet taunt: solo with Growl on autocast, then a group forms: the warning shows on screen", function()
+    local state = hunter({group = false})
+    equal(state.count("Pet taunt on"), 0, "solo: no warning")
+    state.now = 10
+    state.group = {role = "DAMAGER"}
+    state.fire("GROUP_ROSTER_UPDATE")
+    equal(state.count("Pet taunt on"), 1, "the group formed: the warning")
+    local pop = state.env.DyresToolkitWarning
+    local content
+    for _, frame in ipairs(state.frames) do
+        if frame.parent == pop and frame.kind == "Frame" and frame.template == nil then
+            content = frame
+        end
+    end
+    assert(content, "the message box's text frame")
+    equal(content:IsShown(), true, "the message box shows")
+    state.advance(2)
+    equal(state.count("Pet taunt on"), 1, "the check 2 seconds later: no second warning")
+end)
+
+test("pet taunt: the group is not ready at the first event: the check 2 seconds later warns", function()
+    local state = hunter({group = false})
+    state.now = 10
+    state.fire("GROUP_ROSTER_UPDATE")
+    equal(state.count("Pet taunt on"), 0, "no group yet at the event")
+    state.group = {role = "DAMAGER"}
+    state.advance(1)
+    equal(state.count("Pet taunt on"), 0, "not yet after 1 second")
+    state.advance(1)
+    equal(state.count("Pet taunt on"), 1, "the check 2 seconds later warns")
+    -- A newer event replaces the waiting check: one check, not two.
+    local fresh = hunter({group = false})
+    fresh.now = 10
+    fresh.fire("GROUP_ROSTER_UPDATE")
+    fresh.advance(1)
+    fresh.fire("GROUP_ROSTER_UPDATE")
+    fresh.group = {role = "DAMAGER"}
+    fresh.advance(1)
+    equal(fresh.count("Pet taunt on"), 0, "the first check was replaced")
+    fresh.advance(1)
+    equal(fresh.count("Pet taunt on"), 1, "the newer check warns")
+end)
+
 test("pet taunt: checks run out of combat only, and a secret answer gives no warning", function()
     local state = hunter({autocast = {}})
     state.combat = true
@@ -3658,14 +3783,14 @@ test("profiles: the Profile section names this character and works through popup
     local account = {profiles = {["Alt - Forever"] = {parts = {DyresToolkit = {threatMode = "dps"}},
         class = "Mage"}}}
     local state = ProfileFixture({db = {threatMode = "tank"}, account = account})
-    -- The Profile section comes last, after the pull slider; its header names
-    -- this character.
+    -- The Profile section comes last, after the swing timer's rows; its
+    -- header names this character.
     local tail = {}
     for index = #state.page - 4, #state.page do
         local entry = state.page[index]
         tail[#tail + 1] = type(entry) == "table" and tostring(entry.name) or tostring(entry)
     end
-    equal(table.concat(tail, ","), "DYRE_PULL,## Profile: Dyre - Forever (WARRIOR),DYRE_PROFILE_SOURCE,"
+    equal(table.concat(tail, ","), "DYRE_SWING_THEME,## Profile: Dyre - Forever (WARRIOR),DYRE_PROFILE_SOURCE,"
         .. "Export profile,Import profile")
     local source = state.settings.DYRE_PROFILE_SOURCE
     -- Copy sits at the right of the dropdown, on its row (no row of its own).
@@ -3771,3 +3896,6 @@ test("profiles: the Profile section names this character and works through popup
     equal(#state.popups, shown)
     contains(state.messages[#state.messages], "out of combat")
 end)
+
+-- The swing timer suite (tests/swing.lua) uses this harness too.
+return fixture

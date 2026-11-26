@@ -412,11 +412,28 @@ function DTT.InitializeButtons()
     -- Combat stops the hide wait; its end starts it again if no reason is back.
     watch:RegisterEvent("PLAYER_REGEN_DISABLED")
     watch:RegisterEvent("PLAYER_REGEN_ENABLED")
+    -- A group or role change: the role can be not ready at the first event
+    -- (the Pet Taunt warning's case, found in client 2026-11-25), so check
+    -- again RECHECK_DELAY seconds later (one-shot; a newer event replaces it).
+    local RECHECK_DELAY = 2
+    local RECHECK_EVENTS = {GROUP_ROSTER_UPDATE = true, PLAYER_ROLES_ASSIGNED = true, PLAYER_ENTERING_WORLD = true}
+    local recheck
     watch:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_REGEN_DISABLED" then
             DTT.CancelBarHide()
         elseif DTT.db.barMode == "auto" then
             DTT.UpdateBarShown()
+            if RECHECK_EVENTS[event] and type(C_Timer) == "table" and type(C_Timer.NewTimer) == "function" then
+                if recheck then
+                    recheck:Cancel()
+                end
+                recheck = C_Timer.NewTimer(RECHECK_DELAY, function()
+                    recheck = nil
+                    if DTT.db.barMode == "auto" then
+                        DTT.UpdateBarShown()
+                    end
+                end)
+            end
         end
     end)
 end

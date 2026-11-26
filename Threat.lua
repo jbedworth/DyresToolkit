@@ -16,7 +16,9 @@ local DTT = ns.tank
 --
 -- The views (author, 2026-11-10):
 --   tank: green while you hold the mob securely, yellow while you hold it but
---         another unit has more threat, red when it is not on you.
+--         another unit has more threat, yellow PULLING while it is not on
+--         you but nobody has more threat (status 1, no sound), red when it is
+--         not on you and another unit has more threat (status 0).
 --   dps:  green while you are below the tank, yellow at 80% of the pull
 --         point where your percent reads (your target; John, 2026-11-13: "An
 --         early yellow for DPS would be nice (no sound, just flip it yellow
@@ -92,7 +94,11 @@ local VIEWS = {
         edge = TEXTURES .. "ShieldEdge",
         [3] = {word = "OK", color = GREEN},
         [2] = {word = "LOW", color = YELLOW},
-        [1] = {word = "LOST", color = RED},
+        -- Not on you yet, but nobody has more threat (John, 2026-11-25: "For
+        -- tanks, can't we just siren if someone else is higher than me on the
+        -- threat table?"): no siren. A pack's mobs read this at a pull,
+        -- before they turn to you.
+        [1] = {word = "PULLING", color = YELLOW, wordOnly = true},
         [0] = {word = "LOST", color = RED},
     },
     dps = {
@@ -644,6 +650,8 @@ local role = "dps"
 -- Red by unit token, so the sound plays when a mob turns red, not while it
 -- stays red. A plate's entry goes with the plate.
 local red = {}
+-- Tank PULLING by unit token, for the debug change log only.
+local pulling = {}
 local lastAlarm
 -- A plate's last readable status, for the 3 -> 2 losing sound.
 local lastStatus = {}
@@ -707,17 +715,42 @@ end
 -- sound while not in a group. The labels still change color.
 local function Sound(kind, audible, setting, alarm)
     Count(kind, "seen")
+    local outcome
     if not audible then
-        Count(kind, "calm")
+        outcome = "calm"
     elseif setting == "none" then
-        Count(kind, "none")
+        outcome = "none"
     elseif DTT.db.threatSounds == false then
-        Count(kind, "off")
+        outcome = "off"
     elseif DTT.db.soloSounds ~= true and not Grouped() then
-        Count(kind, "solo")
+        outcome = "solo"
     else
-        Count(kind, alarm())
+        outcome = alarm()
     end
+    Count(kind, outcome)
+    return outcome
+end
+
+-- The last CHANGE_LOG_SIZE red and tank PULLING changes, for /dtt
+-- debug_threat (John, 2026-11-25: the pull siren; does a pack's mob read
+-- status 0 or 1 at a pull?): when, how long after combat started, the label,
+-- the status, the word, and the sound decision.
+local CHANGE_LOG_SIZE = 10
+DTT.threatChanges = {}
+local pullStart
+
+local function LogChange(unit, status, word, outcome)
+    local now = type(GetTime) == "function" and GetTime() or 0
+    local log = DTT.threatChanges
+    log[#log + 1] = {time = now, sincePull = pullStart and now - pullStart or nil, unit = unit, status = status,
+        word = word, sound = outcome}
+    while #log > CHANGE_LOG_SIZE do
+        table.remove(log, 1)
+    end
+end
+
+function DTT.NotePullStart()
+    pullStart = type(GetTime) == "function" and GetTime() or 0
 end
 
 -- The token to read a unit's threat from. On Forever (John's /dtt
@@ -775,15 +808,25 @@ local function Show(label, unit, audible)
     local info = shown and Look(reading, role, plate) or nil
     local isRed = info ~= nil and info.color == RED
     if isRed and red[unit] ~= true then
+        local outcome
         if red[unit] == nil and viewReset[unit] then
+            outcome = "view"
             Count("red", "view")
         elseif SameMob(red, unit) then
+            outcome = "same"
             Count("red", "same")
         else
-            Sound("red", audible, DTT.db.redSound, Alarm)
+            outcome = Sound("red", audible, DTT.db.redSound, Alarm)
         end
+        LogChange(unit, reading.status, info.word, outcome)
     end
     red[unit] = isRed
+    -- Tank PULLING (status 1): logged on a change into it, never a sound.
+    local isPulling = info ~= nil and role == "tank" and info == VIEWS.tank[1]
+    if isPulling and pulling[unit] ~= true then
+        LogChange(unit, reading.status, info.word, "never")
+    end
+    pulling[unit] = isPulling or nil
     -- DPS orange: a change from a known green or yellow (a readable status
     -- before). Yellow plays nothing.
     local isOrange = info ~= nil and role ~= "tank" and info.color == ORANGE
@@ -908,7 +951,7 @@ local function UpdatePlate(unit, alert)
     local holder = UpdatePullBars(unit, bar or nil)
     local anchor = DTT.db.plateThreat and bar
     if not anchor then
-        red[unit], lastStatus[unit], orange[unit] = nil, nil, nil
+        red[unit], lastStatus[unit], orange[unit], pulling[unit] = nil, nil, nil, nil
         if label then
             label:Hide()
         end
@@ -928,7 +971,7 @@ local function UpdateTarget(alert)
     end
     local anchor = DTT.db.targetThreat and DTT.Owns("threat") and Hostile("target") and TargetAnchor()
     if not anchor then
-        red.target, orange.target = nil, nil
+        red.target, orange.target, pulling.target = nil, nil, nil
         target:Hide()
         return
     end
@@ -956,7 +999,7 @@ function DTT.RefreshThreat(audible)
         if role ~= nil and CombatLocked() then
             DTT.tankCounts.viewChanges = DTT.tankCounts.viewChanges + 1
         end
-        red, lastStatus, orange, viewReset = {}, {}, {}, {target = true}
+        red, lastStatus, orange, viewReset, pulling = {}, {}, {}, {target = true}, {}
         for unit in pairs(plates) do
             viewReset[unit] = true
         end
@@ -982,11 +1025,11 @@ local function OnEvent(_, event, unit)
         if IsPlateUnit(unit) then
             -- A token may now show another mob: a first reading (it sounds
             -- when red: a new mob, not a view change).
-            red[unit], lastStatus[unit], orange[unit], viewReset[unit] = nil, nil, nil, nil
+            red[unit], lastStatus[unit], orange[unit], viewReset[unit], pulling[unit] = nil, nil, nil, nil, nil
             UpdatePlate(unit, InCombat())
         end
     elseif event == "NAME_PLATE_UNIT_REMOVED" then
-        red[unit], lastStatus[unit], orange[unit] = nil, nil, nil
+        red[unit], lastStatus[unit], orange[unit], pulling[unit] = nil, nil, nil, nil
         if plates[unit] then
             plates[unit]:Hide()
         end
@@ -1014,10 +1057,11 @@ local function OnEvent(_, event, unit)
     elseif event == "PLAYER_TARGET_CHANGED" then
         -- Another mob: a first reading (it sounds when red, unless its plate
         -- is already red).
-        red.target, viewReset.target = nil, nil
+        red.target, viewReset.target, pulling.target = nil, nil, nil
         DTT.RefreshThreat()
     elseif event == "PLAYER_REGEN_DISABLED" then
         -- Combat starts: a change now is the pull.
+        DTT.NotePullStart()
         DTT.RefreshThreat(true)
     else
         DTT.RefreshThreat()

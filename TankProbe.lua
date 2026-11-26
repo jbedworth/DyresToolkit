@@ -146,6 +146,19 @@ local function ReportEvents()
             Report(kind .. " sound: " .. table.concat(parts, " "))
         end
     end
+    -- The last red and tank PULLING changes (Threat.lua threatChanges), one
+    -- line each: how long ago, seconds after combat started, the label, the
+    -- status, the word, and the sound decision.
+    local changes = DTT.threatChanges or {}
+    if #changes == 0 then
+        Report("changes: none")
+    end
+    local now = type(GetTime) == "function" and GetTime() or 0
+    for _, change in ipairs(changes) do
+        Report(string.format("change %.0fs ago pull+%s %s status=%s %s sound=%s", now - change.time,
+            change.sincePull and string.format("%.1fs", change.sincePull) or "none", tostring(change.unit),
+            tostring(change.status), tostring(change.word), tostring(change.sound)))
+    end
     -- Who tanks in combat (Threat.lua auraReads, auraSecretReads, and
     -- tankCounts): the Righteous Fury reads in and out of combat, what
     -- C_Secrets.ShouldSpellAuraBeSecret said ("aura secret"), the nil reads
