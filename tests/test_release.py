@@ -226,7 +226,7 @@ class ReleaseTests(unittest.TestCase):
             (b"## Interface: 16001", b"## Interface: 16001\n## Interface: 16001"),
             (b"## Version: " + self.version.encode(), b"## Version: "),
             (b"## Version: " + self.version.encode(), b"## Version: 1.2.3;bad"),
-            (b"Core.lua\nLayout.lua", b"Layout.lua\nCore.lua"),
+            (b"Core.lua\nBindings.lua", b"Bindings.lua\nCore.lua"),
             (b"Minimap.lua", b"Minimap.lua\nLICENSE"),
             (b"Minimap.lua", b""),
             (b"Libs\\LibStub\\LibStub.lua\n", b""),
@@ -285,13 +285,10 @@ class ReleaseTests(unittest.TestCase):
                      icon[:16] + bytes((24,)) + icon[17:]):
             with self.subTest(header=data[:18]), self.assertRaises(ValueError):
                 builder._validate_tga("icon.tga", data)
-        self.assertEqual(builder.MEDIA_FILES, ("Textures/Stripes.tga", "Textures/ShieldFill.tga",
-                                               "Textures/ShieldEdge.tga", "Textures/SwordsFill.tga",
-                                               "Textures/SwordsEdge.tga", "Textures/ProcArc.tga",
+        self.assertEqual(builder.MEDIA_FILES, ("Textures/Stripes.tga", "Textures/ProcArc.tga",
                                                "Textures/ProcArcLeft.tga"))
         self.assertEqual(sorted(path.name for path in (ROOT / "Textures").iterdir()),
-                         ["ProcArc.tga", "ProcArcLeft.tga", "ShieldEdge.tga", "ShieldFill.tga", "Stripes.tga",
-                          "SwordsEdge.tga", "SwordsFill.tga"])
+                         ["ProcArc.tga", "ProcArcLeft.tga", "Stripes.tga"])
         for name in builder.MEDIA_FILES:
             builder._validate_tga(name, (ROOT / name).read_bytes())
         path, _ = self.build()
@@ -300,21 +297,32 @@ class ReleaseTests(unittest.TestCase):
                 self.assertIn("DyresToolkit/" + name, archive.namelist())
             self.assertEqual(len(archive.namelist()), len(builder.PACKAGE_FILES))
 
-    def test_package_ships_the_key_bindings_and_the_tank_files(self):
-        # 2.9.0: the client loads Bindings.xml from the folder (the TOC does not
-        # list it); the group warnings and tank tools load after DotPredict.lua,
-        # then the swing timer.
+    def test_package_ships_the_key_bindings_without_the_tank_files(self):
+        # 2.16.0: the threat, tank, and swing code moved to Dyre's Threat and
+        # Combat Tools; the key bindings (Bindings.xml, named in Bindings.lua)
+        # stay here. The client loads Bindings.xml from the folder (the TOC
+        # does not list it).
         self.assertEqual(builder.BINDING_FILES, ("Bindings.xml",))
         self.assertNotIn("Bindings.xml", builder.TOC_LOADS)
-        self.assertEqual(builder.RUNTIME_FILES[-8:], ("Tank.lua", "Threat.lua", "PetTaunt.lua", "TankButtons.lua",
-                                                      "Pull.lua", "TankProbe.lua", "GroupSettings.lua", "Swing.lua"))
-        self.assertIn("DyresToolkit/Swing.lua", zipfile.ZipFile(self.build()[0]).namelist())
+        self.assertEqual(builder.RUNTIME_FILES[:2], ("Core.lua", "Bindings.lua"))
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
             names = archive.namelist()
         self.assertIn("DyresToolkit/Bindings.xml", names)
-        self.assertIn("DyresToolkit/Tank.lua", names)
-        self.assertNotIn("DyresToolkit/tests/tank.lua", names)
+        self.assertIn("DyresToolkit/Bindings.lua", names)
+        for moved in ("Tank.lua", "Threat.lua", "PetTaunt.lua", "TankButtons.lua", "Pull.lua", "TankProbe.lua",
+                      "GroupSettings.lua", "Swing.lua", "Textures/ShieldFill.tga"):
+            self.assertNotIn("DyresToolkit/" + moved, names)
+
+    def test_key_bindings_have_their_own_dyres_addons_section(self):
+        # John, 2026-11-26: ours "should not be" in the shared AddOns
+        # section. The client makes a section per category; a header is
+        # only a blank gap (Blizzard_SettingsDefinitions_Frame/Keybindings.lua).
+        import xml.etree.ElementTree as ElementTree
+        bindings = ElementTree.parse(ROOT / "Bindings.xml").getroot().findall("Binding")
+        self.assertEqual(len(bindings), 8)
+        for binding in bindings:
+            self.assertEqual(binding.get("category"), "Dyre's AddOns", binding.get("name"))
 
     def test_changelog_never_enters_the_package(self):
         path, _ = self.build()

@@ -404,7 +404,25 @@ function DyresToolkit.SanitizeProcIDs(saved, procs)
 end
 
 -- Whether this character knows the proc's talent (any of its IDs); a usable
--- proc with no talents: whether it knows the spell itself.
+-- proc with no talents: whether it knows the spell itself. Then by name in
+-- the spellbook (2.16.0; a CurseForge player, 2026-11-27: Revenge's cue went
+-- away after training a higher rank, since the check asked only for rank 1's
+-- ID and Forever reported only the trained rank as known): any rank, in the
+-- client's own language, with no rank list to keep.
+local function KnowsByName(ids)
+    if type(DyresToolkit.SpellbookIDsByName) ~= "function" or type(DyresToolkit.SpellName) ~= "function" then
+        return false
+    end
+    local _, learned = DyresToolkit.SpellbookIDsByName()
+    for _, id in ipairs(ids) do
+        local name = DyresToolkit.SpellName(id)
+        if name and learned[name] == true then
+            return true
+        end
+    end
+    return false
+end
+
 local function KnowsTalent(proc)
     local ids = proc.talents or {}
     if IsUsableProc(proc) and #ids == 0 then
@@ -422,7 +440,7 @@ local function KnowsTalent(proc)
             return true
         end
     end
-    return false
+    return KnowsByName(ids)
 end
 
 local function HasAuraContainer()

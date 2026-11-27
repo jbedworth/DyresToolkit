@@ -71,7 +71,6 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 ### Commands
 - `/dyre` opens the settings; `/dyre unlock`, `/dyre lock`.
 - `/dyre grid`, `/dyre snap`, `/dyre minimap` switch the grid, snapping, and the minimap button.
-- `/dyre pull [seconds]`, `/dyre tank_reset`, `/dyre tank_debug`, `/dyre debug_threat`, `/dyre debug_taunts`, `/dyre debug_dots`; `/dtt` and `/tanktools` take the short tank words.
 - `/dyretoolkit` works the same, in case another AddOn uses `/dyre`.
 
 ### Compatibility

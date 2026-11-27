@@ -1,8 +1,8 @@
 ## Interface: 16001, 11509
 ## Title: Dyre's Toolkit
-## Notes: Threat warnings and tank tools for every player, and one layout mode, grid, and minimap menu for Dyre's AddOns
+## Notes: One layout mode, grid, minimap menu, settings home, and profiles for Dyre's AddOns
 ## Author: Dyre
-## Version: 2.15.1
+## Version: 2.16.0
 ## IconTexture: Interface\Icons\INV_Misc_Wrench_01
 ## Category: Dyre's AddOns
 ## SavedVariables: DyresToolkitDB
@@ -13,6 +13,7 @@ Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 Core.lua
+Bindings.lua
 Layout.lua
 Widgets.lua
 Settings.lua
@@ -31,11 +32,3 @@ Control.lua
 DotTracker.lua
 PlateDots.lua
 DotPredict.lua
-Tank.lua
-Threat.lua
-PetTaunt.lua
-TankButtons.lua
-Pull.lua
-TankProbe.lua
-GroupSettings.lua
-Swing.lua

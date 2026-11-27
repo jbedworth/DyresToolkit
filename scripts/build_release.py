@@ -28,12 +28,12 @@ LIBRARY_FILES = ("Libs/LibStub/LibStub.lua",
                  "Libs/LibDataBroker-1.1/LibDataBroker-1.1.lua",
                  "Libs/LibDBIcon-1.0/LibDBIcon-1.0.lua")
 LIBRARY_NOTICES = ("Libs/Ace3-LICENSE.txt",)
-RUNTIME_FILES = ("Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua",
+RUNTIME_FILES = ("Core.lua", "Bindings.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua",
                  "Auras.lua", "Units.lua", "Procs.lua", "HealthBars.lua", "Spells.lua", "Macros.lua",
                  "Announce.lua", "ClassData.lua", "Owners.lua", "Control.lua", "DotTracker.lua",
-                 "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",
-                 "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua", "Swing.lua")
-# Key bindings for the tank buttons (2.9.0): the client loads Bindings.xml
+                 "PlateDots.lua", "DotPredict.lua")
+# Key bindings for the tank buttons (2.9.0; since 2.16.0 the buttons are made by
+# Dyre's Threat and Combat Tools, the bindings stay here): the client loads Bindings.xml
 # from the AddOn's folder by itself, so the TOC does not list it.
 BINDING_FILES = ("Bindings.xml",)
 # The TOC names files with backslashes, as the client expects.
@@ -47,9 +47,7 @@ TEXT_FILES = (ADDON + ".toc",) + LIBRARY_FILES + RUNTIME_FILES + BINDING_FILES +
 # crescent for a proc whose AddOn gives no art of its own (Procs.lua, "Art";
 # our own art, made by scripts/make_proc_arcs.py). Each must be an uncompressed 32-bit,
 # square, power-of-two TGA. No sounds.
-MEDIA_FILES = ("Textures/Stripes.tga", "Textures/ShieldFill.tga", "Textures/ShieldEdge.tga",
-               "Textures/SwordsFill.tga", "Textures/SwordsEdge.tga", "Textures/ProcArc.tga",
-               "Textures/ProcArcLeft.tga")
+MEDIA_FILES = ("Textures/Stripes.tga", "Textures/ProcArc.tga", "Textures/ProcArcLeft.tga")
 PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
 TGA_HEADER_SIZE = 18
 TGA_TRUECOLOR = 2

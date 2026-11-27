@@ -4,6 +4,20 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.16.0
+
+### Fixes
+- Proc cues: Revenge, Overpower, Mongoose Bite, and every talent proc now count as known when you have trained a higher rank. Before, the cue went away on Forever after training Revenge rank 2 or later. Thanks to vanquishu on CurseForge.
+- Profiles: import and copy now work when the game gives no realm name (seen on Forever). Before, import said "Your character is not ready yet" every time. Thanks to vanquishu on CurseForge.
+
+### Other changes
+- **What moved:** the threat labels and sounds, the pull bars, the tank button bar (markers, pings, and the PULL button), the pull countdown, the pet taunt warning, and the swing timer are now in their own AddOn, **Dyre's Threat and Combat Tools**. Install it from CurseForge to keep them. Your settings and key bindings come with you. Its command is `/dct`.
+- Dyre's Toolkit is again only the shared part of Dyre's AddOns: one layout mode, the grid and snapping, the minimap button, the settings home, and profiles. Without Dyre's Threat and Combat Tools it shows no threat labels, plays no threat sounds, and shows no swing timer.
+- `/dyre pull` and the other old threat, tank, and swing words now say where these went.
+- The settings page has a link to Dyre's Threat and Combat Tools where its sections were.
+- The key bindings for the tank buttons stay in this AddOn and now have their own section, **Dyre's AddOns**, in Key Bindings (before, they were in the shared AddOns section). Your keys stay bound. They work when that AddOn is installed.
+- One Skull key binding: **Skull mouseover, else target** skulls the mob under your mouse, else your target. The separate "Skull the mob under your mouse" row is gone; a key you bound to it still works and now does the same.
+
 ## 2.15.1
 
 ### Fixes

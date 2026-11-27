@@ -9,10 +9,9 @@ if _VERSION ~= "Lua 5.1" then
 end
 
 local ADDON = "DyresToolkit"
-local RUNTIME = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua", "Auras.lua", "Units.lua",
+local RUNTIME = {"Core.lua", "Bindings.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua", "Auras.lua", "Units.lua",
     "Procs.lua", "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua", "ClassData.lua", "Owners.lua",
-    "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua", "Tank.lua", "Threat.lua", "PetTaunt.lua",
-    "TankButtons.lua", "Pull.lua", "TankProbe.lua", "GroupSettings.lua", "Swing.lua"}
+    "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua"}
 local tests = {}
 
 local function test(name, body)
@@ -156,6 +155,8 @@ local function fixture(options)
     env.MenuUtil = {CreateContextMenu = function(owner, generator) state.menuOwner = owner; state.menu = generator end}
     -- Most tests drop frames without the grid; a fresh install snaps (tested apart).
     env.DyresToolkitDB = options.saved or (not options.fresh and {snapToGrid = false}) or nil
+    -- A suite's own client (tests/profiles.lua): more globals, a richer settings mock.
+    if options.setup then options.setup(env, state) end
     local ns = {}
     for _, path in ipairs(RUNTIME) do
         local chunk = assert(loadfile(path))
@@ -618,6 +619,67 @@ test("/dyre opens the settings, never in combat; without the settings API it exp
     contains(bare.last(), "Use /dyre")
 end)
 
+test("2.16.0: the threat, tank, and swing words point to Dyre's Threat and Combat Tools", function()
+    local state = fixture()
+    for _, word in ipairs({"pull", "pull 10", "tank_reset", "tank_debug", "debug_threat", "debug_taunts",
+            "debug_dots", "threat_debug", "taunt_debug", "swing_reset", "debug_swing", "PULL 5"}) do
+        local count = #state.messages
+        state.slash(word)
+        equal(#state.messages, count + 1, word .. ": one line")
+        contains(state.last(), "Dyre's Threat and Combat Tools", word)
+        contains(state.last(), "/dct", word)
+    end
+    equal(state.env.SlashCmdList.DYRESTOOLKITTANK, nil, "no old tank slash key here")
+    equal(state.env.SLASH_DYRESTOOLKITTANK1, nil)
+    state.slash("bogus")
+    contains(state.last(), "Use /dyre")
+    equal(state.last():find("pull", 1, true), nil, "the usage no longer lists the tank words")
+end)
+
+test("2.16.0: the tank buttons' key bindings stay here, named, under Dyre's Threat and Combat Tools", function()
+    local state = fixture()
+    equal(state.env.BINDING_HEADER_DYRESTOOLKIT, "Dyre's Threat and Combat Tools")
+    local names = {}
+    for line in io.lines("Bindings.xml") do
+        local name = line:match('name="([^"]+)"')
+        if name then names[#names + 1] = name end
+    end
+    equal(#names, 8, "eight bindings: one Skull row")
+    for _, name in ipairs(names) do
+        equal(type(state.env["BINDING_NAME_" .. name]), "string", name .. " has a name")
+    end
+    equal(state.env["BINDING_NAME_CLICK DyresToolkitSkull:LeftButton"], "Skull mouseover, else target")
+    equal(state.env["BINDING_NAME_CLICK DyresToolkitSkullMouseover:LeftButton"], nil, "no second Skull row")
+end)
+
+test("2.16.0: the toolkit page ends with a link to Dyre's Threat and Combat Tools, then the Profile section", function()
+    local state = fixture({noLogin = true})
+    local rows = {}
+    local register = state.env.Settings.RegisterVerticalLayoutCategory
+    state.env.Settings.RegisterVerticalLayoutCategory = function(name)
+        local object, layout = register(name)
+        function layout:AddInitializer(initializer) rows[#rows + 1] = initializer end
+        return object, layout
+    end
+    state.env.CreateSettingsButtonInitializer = function(name, button, click, tooltip)
+        return {name = name, button = button, click = click, tooltip = tooltip}
+    end
+    state.events.scripts.OnEvent(state.events, "PLAYER_LOGIN")
+    local link
+    for _, row in ipairs(rows) do
+        if row.name == "Threat, tank tools, and swing timer" then link = row end
+    end
+    equal(type(link), "table", "the link row")
+    contains(link.tooltip, "install it from CurseForge", "missing: the hint")
+    link.click()
+    contains(state.last(), "Dyre's Threat and Combat Tools")
+    local opened = 0
+    state.toolkit.RegisterAddOn({addon = "DyresCombatTools", title = "Dyre's Threat and Combat Tools",
+        openSettings = function() opened = opened + 1 end})
+    link.click()
+    equal(opened, 1, "opens its page")
+end)
+
 -- Minimap -----------------------------------------------------------------------------
 
 test("the minimap button: left-click locks or unlocks, right-click opens the menu", function()
@@ -1075,10 +1137,9 @@ test("the TOC loads the libraries, then the runtime, in order", function()
     end
     equal(table.concat(files, ","), "Libs\\LibStub\\LibStub.lua,Libs\\CallbackHandler-1.0\\CallbackHandler-1.0.lua,"
         .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
-        .. "Core.lua,Layout.lua,Widgets.lua,Settings.lua,Profiles.lua,Minimap.lua,Auras.lua,Units.lua,Procs.lua,HealthBars.lua,"
+        .. "Core.lua,Bindings.lua,Layout.lua,Widgets.lua,Settings.lua,Profiles.lua,Minimap.lua,Auras.lua,Units.lua,Procs.lua,HealthBars.lua,"
         .. "Spells.lua,Macros.lua,Announce.lua,ClassData.lua,Owners.lua,Control.lua,DotTracker.lua,"
-        .. "PlateDots.lua,DotPredict.lua,Tank.lua,Threat.lua,PetTaunt.lua,TankButtons.lua,Pull.lua,"
-        .. "TankProbe.lua,GroupSettings.lua,Swing.lua")
+        .. "PlateDots.lua,DotPredict.lua")
 end)
 
 -- Shared code for trackers (2.4.0) -------------------------------------------------
@@ -5376,6 +5437,52 @@ test("proc cues: without the spell, a usable proc stays hidden; a buff-only AddO
     equal(procEvents(mage).events.SPELL_UPDATE_USABLE, nil)
 end)
 
+-- 2.16.0, a CurseForge player's report (2026-11-27): Revenge's cue went away
+-- after training a higher rank (only that rank's ID reads as known).
+test("proc cues 2.16.0: a usable proc counts as known by name when only a higher rank is", function()
+    local state = fixture()
+    local env = procWorld(state, {class = "WARRIOR", talents = {}})
+    local names = {[OVERPOWER] = "Overpower", [REVENGE] = "Revenge"}
+    env.C_Spell.GetSpellName = function(id) return names[id] end
+    env.C_Spell.IsSpellUsable = function() return true, false end
+    env.Enum.SpellBookItemType = {Spell = 1, FutureSpell = 2}
+    env.C_SpellBook = {
+        IsSpellKnown = function() return false end,
+        GetNumSpellBookSkillLines = function() return 1 end,
+        GetSpellBookSkillLineInfo = function() return {itemIndexOffset = 0, numSpellBookItems = 2} end,
+        GetSpellBookItemInfo = function(index)
+            if index == 1 then return {spellID = 25288, name = "Revenge", itemType = 1} end
+            return {spellID = 11585, name = "Overpower", itemType = 2}
+        end,
+    }
+    local handle = procAddon(state, {procs = warriorProcs()})
+    equal(handle.Known("revenge"), true, "Revenge rank 6 in the spellbook: known")
+    equal(handle.Known("overpower"), false, "a spell not learned yet (FutureSpell) does not count")
+    equal(handle.Usable("revenge"), "full")
+end)
+
+-- 2.16.0, a CurseForge player's report (2026-11-27): on Forever
+-- GetRealmName() gave "", so the profile had no key and import refused.
+test("profiles 2.16.0: the character key falls back when the realm is blank", function()
+    local state = fixture()
+    local env, key = state.env, state.ns.CharacterKey
+    env.UnitName = function() return "Dyre" end
+    env.GetRealmName = function() return "Forever" end
+    equal(key(), "Dyre - Forever", "a named realm: the same key as before")
+    env.GetRealmName = function() return "" end
+    env.UnitFullName = function() return "Dyre", "Forevermore" end
+    equal(key(), "Dyre - Forevermore", "blank: UnitFullName's realm")
+    env.UnitFullName = function() return "Dyre", nil end
+    env.GetNormalizedRealmName = function() return "ForeverNorm" end
+    equal(key(), "Dyre - ForeverNorm", "then the normalized realm")
+    env.GetNormalizedRealmName = function() return "" end
+    equal(key(), "Dyre", "no realm anywhere: the name alone, never nil")
+    env.GetRealmName, env.UnitFullName, env.GetNormalizedRealmName = nil, nil, nil
+    equal(key(), "Dyre", "without the realm functions too")
+    env.UnitName = function() return "" end
+    equal(key(), nil, "no name yet: not ready")
+end)
+
 test("proc cues: a stacking proc's right arc sits in the game's stack gate, and a stack added plays", function()
     local state = fixture()
     local env = procWorld(state, {talents = {[PROC_TALENT] = true}})
@@ -5826,10 +5933,9 @@ test("proc cues: events only, no polling, and no combat log", function()
     end
 end)
 
--- The group warnings and tank tools (2.9.0): their own harness, the same run.
-local tankFixture = assert(loadfile("tests/tank.lua"))(test, equal, contains)
--- The swing timer and range box: the same harness.
-assert(loadfile("tests/swing.lua"))(test, equal, contains, tankFixture)
+
+-- The profile (Profiles.lua): its own client on this harness, the same run.
+assert(loadfile("tests/profiles.lua"))(test, equal, contains, fixture, newFrame)
 
 local failed = 0
 for index, entry in ipairs(tests) do
