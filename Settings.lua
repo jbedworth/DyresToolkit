@@ -127,8 +127,280 @@ function DyresToolkit.AddSettingsLink(category, layout, opts)
     if type(initializer.AddModifyPredicate) == "function" then
         initializer:AddModifyPredicate(function() return Member(opts.addon) ~= nil end)
     end
+    DyresToolkit.GreyButtonLabel(initializer)
     layout:AddInitializer(initializer)
     return initializer
+end
+
+-- Settings sections (2.17.0; John, 2026-11-26: a class AddOn that bundles
+-- other Dyre's AddOns "should surface every setting in the wrapped addon's
+-- settings, and just pass-through the setting to the wrapped addon"; the
+-- same setting stays on the wrapped AddOn's own page). The AddOn that owns
+-- a feature registers a section, a function that adds its rows to any page;
+-- a host AddOn (Mage Tools Forever, Warlock Tools Forever) draws it on its
+-- own page. Both pages' rows read and write the owner's live settings
+-- through the owner's own get and set, so a change on one page is the
+-- change on the other. CONTRACT stays 2: a host checks that
+-- AddSettingsSection exists, and without it keeps its AddSettingsLink.
+--
+-- RegisterSettingsSection{addon, key, title, build}: addon (folder, a Dyre's
+-- AddOn: `## Group: DyresToolkit`), key ([%w_]+), optional title, build =
+-- function(category, layout, ctx) -> true when it added a row. Register no
+-- later than your ADDON_LOADED (a host builds its page at its PLAYER_LOGIN,
+-- which may come before yours); read your settings only inside get, set,
+-- and predicates, never while building. A second registration of the same
+-- addon and key replaces the first.
+--
+-- ctx: host (the page's AddOn folder), owner, key, class (the player's
+-- class file), filter (the host's opts.filter, passed as is: a list of
+-- keys, a class, anything the owner documents), own (true on the owner's
+-- own page), part (3: "all", the default; "master", only the section's
+-- top switch, for a host's top page; "rest", everything but it, for the
+-- host's sub-page, greyed while the switch is off), and variable(name): the
+-- setting variable to use for name.
+-- Blizzard refuses a variable registered twice (Blizzard_SettingsPanel.lua
+-- RegisterSetting: "Setting variable '%s' was previously registered."), so
+-- on a host page every variable gets the host's prefix; on the owner's own
+-- page (OwnSettingsContext) it stays as named.
+-- 2: AddProcSettings and AddWidgetSettings take opts.variable (map each
+-- variable, ctx.variable on a host page), and AddProcSettings opts.keys (a
+-- list of proc keys to keep).
+-- 3: ctx.part ("all", "master", "rest"; John, 2026-11-27: "the top-level
+-- disable for each section should be on the top-level MTF panel"), and
+-- opts.modify on AddWidgetSettings and AddProcSettings (John: "when the
+-- top-level is off, the settings that are controlling a disabled feature
+-- should be disabled too").
+DyresToolkit.SETTINGS_SECTIONS_VERSION = 3
+local PARTS = {all = true, master = true, rest = true}
+
+local sections = {}
+local KEY_PATTERN = "^[%w_]+$"
+
+local function PlayerClass()
+    if type(UnitClass) ~= "function" then
+        return nil
+    end
+    local ok, _, classFile = pcall(UnitClass, "player")
+    return ok and type(classFile) == "string" and classFile or nil
+end
+
+local function Context(owner, key, host, filter, part)
+    local prefix = host and ("DYRE_" .. host:upper() .. "__") or ""
+    return {
+        host = host or owner, owner = owner, key = key, class = PlayerClass(), filter = filter, own = host == nil,
+        part = PARTS[part] and part or "all",
+        variable = function(name) return prefix .. tostring(name) end,
+    }
+end
+
+function DyresToolkit.RegisterSettingsSection(spec)
+    if type(spec) ~= "table" or type(spec.addon) ~= "string" or type(spec.key) ~= "string"
+            or not spec.key:match(KEY_PATTERN) or type(spec.build) ~= "function" then
+        return false, "addon, key ([%w_]+), and build are required"
+    end
+    if not ns.InFamily(spec.addon) then
+        return false, spec.addon .. " is not a Dyre's AddOn (## Group: DyresToolkit)"
+    end
+    sections[spec.addon] = sections[spec.addon] or {}
+    sections[spec.addon][spec.key] = {title = spec.title, build = spec.build}
+    return true
+end
+
+-- The keys an AddOn has registered, sorted.
+function DyresToolkit.SettingsSections(addon)
+    local keys = {}
+    for key in pairs(sections[addon] or {}) do
+        keys[#keys + 1] = key
+    end
+    table.sort(keys)
+    return keys
+end
+
+-- The section's name (2.17.0; John, 2026-11-27: "let's have the same name
+-- used consistently ... In DBR, we have sections for "Reminders", "Chimes",
+-- and "Procs" - let's use the same name consistently everywhere"): the
+-- owner's `title`, used as the host's page title and the master's label and
+-- the owner's own heading. Nil when the owner has not registered it (the
+-- host then uses its own fallback, the same word).
+function DyresToolkit.SettingsSectionTitle(addon, key)
+    local section = sections[addon] and sections[addon][key]
+    return section and type(section.title) == "string" and section.title ~= "" and section.title or nil
+end
+
+-- The context for the owner's own page: variables as named.
+function DyresToolkit.OwnSettingsContext(addon, key, filter, part)
+    return Context(addon, key, nil, filter, part)
+end
+
+-- The primer box (2.17.0; John, 2026-11-27: when a bundled AddOn is missing,
+-- "there should be a message box on those panels telling people" what they
+-- get if they install it). SettingsTemplates.xml's
+-- DyresToolkitSettingsPrimerTemplate, made through
+-- Settings.CreateElementInitializer, which Blizzard runs securely
+-- (Blizzard_SettingsInbound.lua 224-228); the row's height is the
+-- template's, so no function of ours is put on the initializer. The frames
+-- are the template's own (no Blizzard frame is changed).
+DyresToolkitSettingsPrimerMixin = {}
+
+function DyresToolkitSettingsPrimerMixin:Init(initializer)
+    local data = type(initializer) == "table" and initializer.data
+    self.Text:SetText(type(data) == "table" and type(data.text) == "string" and data.text or "")
+end
+
+DyresToolkit.SETTINGS_PRIMER_TEMPLATE = "DyresToolkitSettingsPrimerTemplate"
+DyresToolkit.SETTINGS_PRIMER_MAX = 400
+
+-- A primer box on any page: text (at most SETTINGS_PRIMER_MAX characters;
+-- longer is cut, since the box does not grow). Gives the initializer, or nil
+-- without the settings API.
+function DyresToolkit.AddSettingsPrimer(category, layout, text)
+    if type(text) ~= "string" or not text:find("%S") or type(layout) ~= "table"
+            or type(layout.AddInitializer) ~= "function" or type(Settings) ~= "table"
+            or type(Settings.CreateElementInitializer) ~= "function" then
+        return nil
+    end
+    if #text > DyresToolkit.SETTINGS_PRIMER_MAX then
+        text = text:sub(1, DyresToolkit.SETTINGS_PRIMER_MAX - 3) .. "..."
+    end
+    local initializer = Settings.CreateElementInitializer(DyresToolkit.SETTINGS_PRIMER_TEMPLATE, {text = text})
+    if initializer then
+        layout:AddInitializer(initializer)
+    end
+    return initializer
+end
+
+-- Whether an AddOn is loaded now (an older owner joins the toolkit only at
+-- its PLAYER_LOGIN, which may come after the host's).
+function ns.AddOnLoaded(addon)
+    local loaded = type(C_AddOns) == "table" and C_AddOns.IsAddOnLoaded or rawget(_G, "IsAddOnLoaded")
+    if type(loaded) ~= "function" then
+        return false
+    end
+    local ok, answer = pcall(loaded, addon)
+    return ok and answer == true
+end
+
+-- Live greying below a switch that is not the row's direct parent (2.17.0;
+-- found by DBR, John's screenshot: grandchildren stayed active). A row
+-- evaluates its modify predicates again only when its DIRECT parent's
+-- setting changes (Blizzard_SettingControls.lua SettingsListElementMixin:Init
+-- 297-302). Its initializer's AddEvaluateStateCVar(name) also makes it
+-- evaluate again when that name changes (313-316): the name is any setting
+-- variable, since it registers Settings.SetOnValueChangedCallback
+-- (Blizzard_Settings.lua 645), not only a CVar. WatchSettings calls it for
+-- each variable (Blizzard's own method: nothing of ours is put on the
+-- initializer). Gives the initializer.
+function DyresToolkit.WatchSettings(initializer, variables)
+    if type(initializer) ~= "table" or type(initializer.AddEvaluateStateCVar) ~= "function" then
+        return initializer
+    end
+    for _, variable in ipairs(type(variables) == "table" and variables or {variables}) do
+        if type(variable) == "string" and variable ~= "" then
+            initializer:AddEvaluateStateCVar(variable)
+        end
+    end
+    return initializer
+end
+
+-- A greyed button row's label greys too (2.17.0; John's screenshot,
+-- 2026-11-27: "the inconsistent label enable/disable": on Forever a button
+-- row greys its button but keeps a gold label, while checkbox and slider
+-- rows grey both; Classic Era's SettingsButtonControlMixin:EvaluateState
+-- calls DisplayEnabled, Blizzard_SettingControls.lua 758-764). Only rows we
+-- mark: hooksecurefunc on the initializer's InitFrame (as AttachRowButton)
+-- and, once per pooled frame, on its EvaluateState, so Blizzard's code runs
+-- first; per-frame state in weak tables; a frame we greyed is set back to the
+-- normal color when it draws someone else's row.
+local greyLabelRows = setmetatable({}, {__mode = "k"})
+local greyHookedFrames = setmetatable({}, {__mode = "k"})
+local greyedFrames = setmetatable({}, {__mode = "k"})
+
+local function ApplyButtonLabel(frame)
+    if type(frame) ~= "table" or type(frame.Text) ~= "table" or type(frame.GetElementData) ~= "function" then
+        return
+    end
+    local ok, data = pcall(frame.GetElementData, frame)
+    if ok and greyLabelRows[data] and type(frame.Button) == "table" and type(frame.Button.IsEnabled) == "function" then
+        local enabled = frame.Button:IsEnabled()
+        local color = enabled and NORMAL_FONT_COLOR or GRAY_FONT_COLOR
+        if type(color) == "table" and type(color.GetRGB) == "function" then
+            frame.Text:SetTextColor(color:GetRGB())
+            greyedFrames[frame] = not enabled or nil
+        end
+    elseif greyedFrames[frame] and type(NORMAL_FONT_COLOR) == "table" then
+        frame.Text:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
+        greyedFrames[frame] = nil
+    end
+end
+
+function DyresToolkit.GreyButtonLabel(initializer)
+    if type(initializer) ~= "table" or type(initializer.InitFrame) ~= "function" or type(hooksecurefunc) ~= "function" then
+        return initializer
+    end
+    if not greyLabelRows[initializer] then
+        greyLabelRows[initializer] = true
+        hooksecurefunc(initializer, "InitFrame", function(_, frame)
+            if type(frame) == "table" and not greyHookedFrames[frame] and type(frame.EvaluateState) == "function" then
+                greyHookedFrames[frame] = true
+                hooksecurefunc(frame, "EvaluateState", ApplyButtonLabel)
+            end
+            ApplyButtonLabel(frame)
+        end)
+    end
+    return initializer
+end
+
+local failures = {}
+
+-- On a host's page: the owner's rows, else (owner not loaded, an older
+-- owner with no such section, a build that fails or adds nothing) the
+-- AddSettingsLink row from opts.link. opts: addon (the owner), key, host
+-- (the caller's folder, required), filter, link (AddSettingsLink's opts;
+-- its addon defaults to opts.addon), primer (text: shown in a primer box
+-- above the link only while the owner is missing, that is, not loaded: no
+-- section registered and not joined). Gives "rows", "link", or nil (nothing
+-- could be drawn). A failing build is said only in debug mode, and its rows
+-- added before the error stay (Blizzard has no way to take them back).
+function DyresToolkit.AddSettingsSection(category, layout, opts)
+    if type(opts) ~= "table" or type(opts.addon) ~= "string" or type(opts.key) ~= "string"
+            or type(opts.host) ~= "string" or not opts.host:match(KEY_PATTERN)
+            or type(layout) ~= "table" then
+        return nil
+    end
+    local section = sections[opts.addon] and sections[opts.addon][opts.key]
+    if section then
+        local ok, added = pcall(section.build, category, layout,
+            Context(opts.addon, opts.key, opts.host, opts.filter, opts.part))
+        if ok and added then
+            return "rows"
+        end
+        if not ok then
+            failures[#failures + 1] = opts.addon .. "." .. opts.key .. " on " .. opts.host .. ": " .. tostring(added)
+            if ns.debug and type(ns.Report) == "function" then
+                ns.Report("Settings section " .. failures[#failures])
+            end
+        end
+    end
+    -- The master switch alone (a host's top page) has no fallback: the
+    -- section's own page shows the link and the primer.
+    if opts.part == "master" then
+        return nil
+    end
+    if opts.primer and not sections[opts.addon] and not Member(opts.addon) and not ns.AddOnLoaded(opts.addon) then
+        DyresToolkit.AddSettingsPrimer(category, layout, opts.primer)
+    end
+    local link = {}
+    for name, value in pairs(type(opts.link) == "table" and opts.link or {}) do
+        link[name] = value
+    end
+    link.addon = link.addon or opts.addon
+    link.name = link.name or section and section.title or opts.key
+    return DyresToolkit.AddSettingsLink(category, layout, link) and "link" or nil
+end
+
+-- For tests and debug: the section builds that failed this session.
+function DyresToolkit.SettingsSectionFailures()
+    return {unpack(failures)}
 end
 
 local function Flag(variable, name, get, set, tooltip)
@@ -142,15 +414,11 @@ function ns.InitializeSettings()
     end
     Flag("DYRE_UNLOCKED", "Unlock frames", function() return not ns.db.locked end,
         function(value) DyresToolkit.SetLocked(value ~= true) end,
-        "Every Dyre's AddOn shows its frames to drag. Shift-drag moves a group of snapped frames. "
-            .. "/dyre unlock and /dyre lock do the same.")
+        "Shows every Dyre's AddOn frame so you can drag it.")
     Flag("DYRE_GRID", "Show the grid", function() return ns.db.grid end, ns.SetGrid,
-        "While frames are unlocked, a grid across the screen with red lines through its center.")
+        "Shows a grid across the screen while frames are unlocked.")
     Flag("DYRE_SNAP_GRID", "Snap to the grid", function() return ns.db.snapToGrid end, ns.SetSnapToGrid,
-        "A frame you drop near a red center line centers on it, or puts its nearer edge on it. Elsewhere, an "
-            .. "edge within a quarter of the grid size of a grey line lines up with it; when both edges are that "
-            .. "close, the one that moves the least wins, so check both corners. Snapping to another Dyre's frame "
-            .. "comes first. Hold Ctrl as you drop to place a frame exactly.")
+        "Frames you drop line up with the grid; hold Ctrl as you drop to place one exactly.")
     local size = Settings.RegisterProxySetting(home, "DYRE_GRID_SIZE", Settings.VarType.Number, "Grid size",
         ns.DEFAULT_GRID, function() return ns.db.gridSize end, ns.SetGridSize)
     local options = Settings.CreateSliderOptions(ns.GRID_MIN, ns.GRID_MAX, ns.GRID_STEP)
@@ -161,8 +429,7 @@ function ns.InitializeSettings()
     ns.AddDefaultTick(Settings.CreateSlider(home, size, options, "The space between grid lines."),
         {min = ns.GRID_MIN, max = ns.GRID_MAX, default = ns.DEFAULT_GRID})
     Flag("DYRE_MINIMAP", "Minimap button", function() return not ns.db.minimap.hide end, ns.SetMinimapShown,
-        "Left-click locks or unlocks frames; right-click opens a menu. /dyre minimap does the same.")
+        "Shows the Dyre's AddOns button on the minimap.")
     Flag("DYRE_WELCOME", "Welcome messages at login", function() return ns.db.welcome end, ns.SetWelcome,
-        "Each Dyre's AddOn says its name and version in chat at login. Turn this off to hide those lines "
-            .. "for every Dyre's AddOn. Errors and problems always show.")
+        "Each Dyre's AddOn says its name and version in chat at login.")
 end

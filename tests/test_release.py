@@ -314,6 +314,23 @@ class ReleaseTests(unittest.TestCase):
                       "GroupSettings.lua", "Swing.lua", "Textures/ShieldFill.tga"):
             self.assertNotIn("DyresToolkit/" + moved, names)
 
+    def test_settings_primer_template_is_shipped_and_named(self):
+        # 2.17.0: the primer box's template; Settings.lua makes rows from it
+        # by name and defines its mixin.
+        import xml.etree.ElementTree as ElementTree
+        self.assertIn("SettingsTemplates.xml", builder.TOC_LOADS)
+        ns = {"ui": "http://www.blizzard.com/wow/ui/"}
+        frames = ElementTree.parse(ROOT / "SettingsTemplates.xml").getroot().findall("ui:Frame", ns)
+        self.assertEqual([f.get("name") for f in frames], ["DyresToolkitSettingsPrimerTemplate"])
+        self.assertEqual(frames[0].get("virtual"), "true")
+        self.assertEqual(frames[0].get("mixin"), "DyresToolkitSettingsPrimerMixin")
+        lua = (ROOT / "Settings.lua").read_text(encoding="utf-8")
+        self.assertIn('"DyresToolkitSettingsPrimerTemplate"', lua)
+        self.assertIn("DyresToolkitSettingsPrimerMixin = {}", lua)
+        path, _ = self.build()
+        with zipfile.ZipFile(path) as archive:
+            self.assertIn("DyresToolkit/SettingsTemplates.xml", archive.namelist())
+
     def test_key_bindings_have_their_own_dyres_addons_section(self):
         # John, 2026-11-26: ours "should not be" in the shared AddOns
         # section. The client makes a section per category; a header is

@@ -93,6 +93,107 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
   (ns.ShortName); other names stay. The in-game AddOn list keeps the full
   TOC titles (author: "for the addon list, this is fine").
 
+### Master switches (2.17.0; John, 2026-11-27)
+
+- Proc cues: "Add the Procs master switch". The proc store has `enabled`
+  (SanitizeProcs: false only when turned off). Every arc and sound goes
+  through `Switch`, which gives false while it is off; each proc's own
+  switches keep their values; claims stay. `handle.Enabled()`.
+  `AddProcMasterSetting(category, layout, handle, {label, tooltip,
+  variable})`: the checkbox, variable `DYRE_<ADDON>_PROCS_ENABLED` (mapped
+  on a host page); AddProcSettings' rows (and the arc size rows) are greyed
+  while it is off and watch its variable.
+- Control bars: "if the polymorph bar/macro master switch is off, disable
+  all the functionality, not just the bar". `store.enabled == false` stops
+  the announcements (AnnounceCast) and deletes our macros (ApplyMacros, as
+  `store.macros == false`); turned on, they are written again (a player
+  puts them on the action bars again). The control, macros, and announce
+  claims stay. Before 2.17.0 a player with the bar off kept the macros and
+  the announcements; updating removes those macros at the next Refresh.
+
+- Proc rows listed, greyed until known (John, 2026-11-27: "I expect to see
+  every setting available for warlocks, but only enabled if I have it. Not
+  a generic banner"): AddProcSettings lists every proc of the player's
+  class, its header, the master, and the arc size rows, always shown; a
+  proc's rows are greyed while its talent is not known, and their tooltip
+  ends " Greyed out: you have not learned <proc> yet."; the size rows are
+  greyed while no proc is known. Before 2.17.0 these rows were hidden until
+  known (and the size rows added only when a talent was known at build).
+
+- Greyed button labels (John, 2026-11-27: "the inconsistent label
+  enable/disable"): on Forever a greyed button row keeps a gold label
+  (Classic Era's EvaluateState calls DisplayEnabled, 758-764; Forever's does
+  not, seen in client). `GreyButtonLabel(initializer)` greys the label with
+  the button: hooksecurefunc on the initializer's InitFrame and, once per
+  pooled frame, on EvaluateState; weak tables; a frame we greyed goes back to
+  NORMAL_FONT_COLOR when it draws another row. Used on Reset size, settings
+  links, and the profile Copy row; every Dyre's AddOn calls it on its own
+  greyed button rows.
+
+### Settings sections (2.17.0; John, 2026-11-26)
+
+John: class AddOns that bundle other Dyre's AddOns "should surface every
+setting in the wrapped addon's settings, and just pass-through the setting
+to the wrapped addon"; the setting stays on the wrapped AddOn's own page
+too. This replaces AddSettingsLink pages in MTF and WTF (the 2026-10-22
+"linked, not mirrored" rule), with the link kept as the fallback.
+Settings.lua; CONTRACT stays 2 (`SETTINGS_SECTIONS_VERSION`, a feature
+test: 1 the sections, 2 also `opts.variable` on AddWidgetSettings and
+AddProcSettings, and AddProcSettings `opts.keys`, a list of proc keys to
+keep; DBR's request, 2026-11-27: those helpers name their own variables, so
+on a host page they must take ctx.variable too). 3 (John, 2026-11-27, fit and finish): ctx.part
+"all" (default), "master" (only the section's top switch: hosts put every
+section's switch on their top page; "the top-level disable for each section
+should be on the top-level MTF panel"), "rest" (everything else, on the
+host's sub-page); `part = "master"` with the owner missing adds nothing (the
+sub-page has the link and primer). AddWidgetSettings and AddProcSettings
+take `opts.modify`: their rows are greyed while it gives false. The owner's
+rule (John: "when the top-level is off, the settings that are controlling a
+disabled feature should be disabled too"; his screenshot: DBR greyed only
+the rows right under Enable): a row is greyed while ANY switch above it is
+off, the section's top switch included, also on a page where that switch
+is not shown. Live: Blizzard checks a row's greying again only when its
+DIRECT parent's setting changes (Blizzard_SettingControls.lua 297-302;
+found by DBR). `WatchSettings(initializer, variables)` calls the
+initializer's own `AddEvaluateStateCVar` for each variable, which registers
+`Settings.SetOnValueChangedCallback` for any setting variable (313-316;
+Blizzard_Settings.lua 645), so a grandchild or a slider checks again when
+the top switch changes on the same page. AddWidgetSettings and
+AddProcSettings take `opts.watch` for it.
+
+- `RegisterSettingsSection{addon, key, title, build}`: a Dyre's AddOn only
+  (`ns.InFamily`), key `[%w_]+`; `build(category, layout, ctx) -> true`
+  when it added a row. Register no later than ADDON_LOADED; read settings
+  only in get, set, and predicates (a host's PLAYER_LOGIN may come first).
+  A second registration replaces the first. `SettingsSections(addon)`.
+- `AddSettingsSection(category, layout, {addon, key, host, filter, link})`
+  on the host's page: the owner's rows ("rows"), else `AddSettingsLink`
+  with `link` ("link"): owner not loaded, older owner, build returned
+  false, or build failed (pcall; said only in debug mode;
+  `SettingsSectionFailures()`).
+- ctx: host, owner, key, class (player class file), filter (the host's, as
+  given), own, `variable(name)`. Blizzard refuses a variable registered
+  twice (Blizzard_SettingsPanel.lua 708-712), so on a host page every
+  variable is `DYRE_<HOST>__<name>`; `OwnSettingsContext(addon, key,
+  filter)` gives the owner's own page with names unchanged, so one builder
+  serves both pages. Both pages' rows use the owner's get and set on its
+  live tables; only one page shows at a time, and a page reads its values as
+  it draws.
+- Primer box (John, 2026-11-27: when a bundled AddOn is missing, "there
+  should be a message box on those panels telling people" what they get if
+  they install it): `AddSettingsSection`'s `primer` text shows in a box above
+  the link only while the owner is missing (no section registered, not
+  joined, and `C_AddOns.IsAddOnLoaded` false; an older owner that is loaded
+  gets the link alone). `AddSettingsPrimer(category, layout, text)` for any
+  page. The row is SettingsTemplates.xml's
+  `DyresToolkitSettingsPrimerTemplate` (mixin
+  `DyresToolkitSettingsPrimerMixin`, a global in Settings.lua), made with
+  `Settings.CreateElementInitializer`, which Blizzard runs securely
+  (Blizzard_SettingsInbound.lua 224-228); the height is the template's (86),
+  so no function of ours goes on the initializer, and text over
+  `SETTINGS_PRIMER_MAX` (400) is cut. The hosts write the text: what the
+  missing AddOn adds to that page, and where to get it.
+
 ### Widgets (contract 2, 2.0.0; author-approved 2026-10-20)
 
 - Author: "all the widget layout, snapping, modifier key move rules, etc.,
@@ -1014,6 +1115,13 @@ keeps:
 
 ### Rules
 
+- Tooltips (John, 2026-11-27: "every one of the tooltips seems to start
+  with a good one sentence description, but then has nonsensical follow-on
+  text that is clearly not meant for users to see"): ONE plain sentence that
+  says what the setting does or what the player sees. No how-to tips,
+  commands, combat timing, defaults, internal ownership, or history. A
+  second short sentence only when a player would be confused or lose
+  something without it. Applied to every toolkit tooltip in 2.17.0.
 - Settings rows are pooled and shared with Blizzard's own settings (a
   player's error, 2026-11-19: Blizzard's Status Text setting failed with
   "attempt to compare a secret number value (execution tainted by
@@ -1052,7 +1160,7 @@ keeps:
   Layout.lua, Widgets.lua, Settings.lua, Profiles.lua, Minimap.lua, Auras.lua, Units.lua,
   Procs.lua, HealthBars.lua, Spells.lua, Macros.lua, Announce.lua, ClassData.lua,
   Owners.lua, Control.lua, DotTracker.lua, PlateDots.lua, DotPredict.lua,
-  loaded in that order, with Bindings.lua right after Core.lua; Bindings.xml
+  loaded in that order (SettingsTemplates.xml right after Settings.lua), with Bindings.lua right after Core.lua; Bindings.xml
   (the client loads it); Textures/Stripes.tga; the fallback proc arcs
   (Textures/ProcArc.tga, ProcArcLeft.tga; scripts/make_proc_arcs.py).
 - tests/run.lua: the Lua 5.1 mock suite; it loads tests/profiles.lua (the

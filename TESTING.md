@@ -41,6 +41,18 @@
 - [ ] After /reload, frames start locked and stay where they were dropped.
 - [ ] In combat, /dyre opens nothing and says so; a drag ends after combat.
 
+### 2.17.0: settings sections
+
+- [ ] With MTF and DBR (both with sections): MTF's Cooldown Chimes page shows
+      the Mage chimes, not a button; a switch turned off there is off on
+      DBR's page and in play, and back on from DBR's page.
+- [ ] Without DBR: MTF's Cooldown Chimes page shows the primer box (gold
+      edge, dark box, the host's text, not cut off) above the greyed "Open
+      Buff Reminders settings" button. No Lua error. A full client restart
+      is needed first (new file SettingsTemplates.xml).
+- [ ] Settings search for a chime name finds it (once per page); no taint
+      error when typing in the search box (the Discord one is Blizzard's).
+
 ### 2.16.0: threat, tank, and swing moved to Dyre's Threat and Combat Tools
 
 Install the 2.16.0 test build. All checked by John on Forever, 2026-11-26, with DCT 1.0.0. The tank, threat, and swing checks moved to

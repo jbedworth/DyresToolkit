@@ -199,6 +199,27 @@ local function Setup(widget)
     end
 end
 
+-- Which AddOn an outline belongs to (2.17.0; John, 2026-11-27, two
+-- "Warning messages" outlines in layout mode: "I can't tell what the top
+-- warning messages are from"): the AddOn's title, "Dyre's " said once, before
+-- the hint. The toolkit's own widgets have none.
+local function OwnerPrefix(widget)
+    local addon = widget.dyre.addon
+    if type(addon) ~= "string" or addon == "DyresToolkit" then
+        return ""
+    end
+    local read = type(C_AddOns) == "table" and C_AddOns.GetAddOnMetadata or rawget(_G, "GetAddOnMetadata")
+    local ok, title = false, nil
+    if type(read) == "function" then
+        ok, title = pcall(read, addon, "Title")
+    end
+    if not ok or type(title) ~= "string" or title == "" then
+        return ""
+    end
+    title = title:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    return ns.ShortName(title) .. ": "
+end
+
 local function CreateMover(widget)
     local mover = CreateFrame("Frame", nil, widget, "BackdropTemplate")
     mover:SetPoint("TOPLEFT", -MOVER_INSET, MOVER_INSET)
@@ -210,7 +231,8 @@ local function CreateMover(widget)
     mover:EnableMouse(false)
     mover.hint = mover:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     mover.hint:SetPoint("BOTTOM", mover, "TOP", 0, 2)
-    mover.hint:SetText(widget.dyre.hint or (widget.dyre.title .. " · drag to move · /dyre lock when done"))
+    mover.hint:SetText(OwnerPrefix(widget) .. (widget.dyre.hint
+        or (widget.dyre.title .. " · drag to move · /dyre lock when done")))
     return mover
 end
 
@@ -488,7 +510,13 @@ local function VariableName(widget, name)
     return ("DYRE_" .. widget.dyre.addon .. "_" .. widget.dyre.widgetKey .. "_" .. name):upper():gsub("[^%w_]", "_")
 end
 
--- opts: labels (name -> text), tooltips (name -> text), resetLabel, resetTooltip.
+-- opts: labels (name -> text), tooltips (name -> text), resetLabel, resetTooltip,
+-- variable (2.17.0: a function that maps each setting variable, such as a
+-- settings section's ctx.variable on a host page, where the owner's page has
+-- registered the plain names already), modify (2.17.0: a function; the rows
+-- are greyed while it gives false, e.g. the feature's switch is off), watch
+-- (2.17.0: a variable or a list; the rows check modify again live when one
+-- of them changes; see WatchSettings).
 function DyresToolkit.AddWidgetSettings(category, layout, widget, opts)
     if type(Settings) ~= "table" or type(category) ~= "table" or type(widget) ~= "table" or not widget.dyre.sizes then
         return false
@@ -500,27 +528,48 @@ function DyresToolkit.AddWidgetSettings(category, layout, widget, opts)
         local range = widget.dyre.sizes[name]
         if range then
             local variable = VariableName(widget, name)
+            if type(opts.variable) == "function" then
+                variable = opts.variable(variable)
+            end
             variables[#variables + 1] = variable
             local label = labels[name] or range.label or LABELS[name] or name
             local setting = Settings.RegisterProxySetting(category, variable, Settings.VarType.Number, label,
                 range.default, function() return widget:GetSetting(name) end,
                 function(value) widget:SetSetting(name, value) end)
             local tooltip = tooltips[name] or (name == "opacity"
-                and "How solid it is. It fades at once, also in combat."
-                or ("Its " .. label:lower():gsub(" %(%%%)", "") .. ". A change in combat applies when combat ends."))
-            ns.AddDefaultTick(Settings.CreateSlider(category, setting, SliderOptions(name, range), tooltip), range)
+                and "How solid it is."
+                or ("Its " .. label:lower():gsub(" %(%%%)", "") .. "."))
+            local slider = Settings.CreateSlider(category, setting, SliderOptions(name, range), tooltip)
+            if type(opts.modify) == "function" and type(slider) == "table"
+                    and type(slider.AddModifyPredicate) == "function" then
+                slider:AddModifyPredicate(opts.modify)
+            end
+            if opts.watch then
+                DyresToolkit.WatchSettings(slider, opts.watch)
+            end
+            ns.AddDefaultTick(slider, range)
         end
     end
     local resizable = #widget.dyre.sizes.order > (widget.dyre.sizes.opacity and 1 or 0)
     if resizable and type(CreateSettingsButtonInitializer) == "function" and type(layout) == "table"
             and type(layout.AddInitializer) == "function" then
-        layout:AddInitializer(CreateSettingsButtonInitializer(widget.dyre.title, opts.resetLabel or "Reset size",
+        local reset = CreateSettingsButtonInitializer(widget.dyre.title, opts.resetLabel or "Reset size",
             function()
                 widget:ResetSize()
                 for _, variable in ipairs(variables) do
                     Settings.NotifyUpdate(variable)
                 end
-            end, opts.resetTooltip or "Back to its own size. Opacity stays as it is.", true))
+            end, opts.resetTooltip or "Puts it back to its normal size.", true)
+        if type(opts.modify) == "function" and type(reset.AddModifyPredicate) == "function" then
+            reset:AddModifyPredicate(opts.modify)
+        end
+        if opts.watch then
+            DyresToolkit.WatchSettings(reset, opts.watch)
+        end
+        if type(DyresToolkit.GreyButtonLabel) == "function" then
+            DyresToolkit.GreyButtonLabel(reset)
+        end
+        layout:AddInitializer(reset)
     end
     return true
 end

@@ -918,6 +918,20 @@ test("an AddOn's own size settings and measure decide the frame's size", functio
     equal(table.concat(names, ","), "Size,Width,Bar height,Text size,Opacity", "in the AddOn's order, opacity last")
 end)
 
+test("widgets 2.17.0: an outline's label names its AddOn", function()
+    local state = fixture()
+    state.env.C_AddOns = {GetAddOnMetadata = function(addon, field)
+        if field == "Title" and addon == "MageToolsForever" then return "|cff69ccf0Mage Tools Forever|r" end
+        if field == "Title" and addon == "DyresBuffReminders" then return "Dyre's Buff Reminders" end
+    end}
+    local a = state.toolkit.CreateWidget(barSpec({}, {hint = "Polymorph bar · drag to move"}))
+    equal(a.dyre.mover.hint.text, "Mage Tools Forever: Polymorph bar · drag to move", "color codes dropped")
+    local b = state.toolkit.CreateWidget({addon = "DyresBuffReminders", key = "warnings", title = "Warning messages",
+        store = {}, width = 100, height = 40})
+    equal(b.dyre.mover.hint.text, "Buff Reminders: Warning messages · drag to move · /dyre lock when done",
+        "\"Dyre's \" said once")
+end)
+
 test("resetSizes picks what Reset size restores; a hint and drag handles are the AddOn's", function()
     local state = fixture()
     local toolkit = state.toolkit
@@ -1137,7 +1151,7 @@ test("the TOC loads the libraries, then the runtime, in order", function()
     end
     equal(table.concat(files, ","), "Libs\\LibStub\\LibStub.lua,Libs\\CallbackHandler-1.0\\CallbackHandler-1.0.lua,"
         .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
-        .. "Core.lua,Bindings.lua,Layout.lua,Widgets.lua,Settings.lua,Profiles.lua,Minimap.lua,Auras.lua,Units.lua,Procs.lua,HealthBars.lua,"
+        .. "Core.lua,Bindings.lua,Layout.lua,Widgets.lua,Settings.lua,SettingsTemplates.xml,Profiles.lua,Minimap.lua,Auras.lua,Units.lua,Procs.lua,HealthBars.lua,"
         .. "Spells.lua,Macros.lua,Announce.lua,ClassData.lua,Owners.lua,Control.lua,DotTracker.lua,"
         .. "PlateDots.lua,DotPredict.lua")
 end)
@@ -2805,6 +2819,169 @@ end)
 -- Engine stage B (2.5.0): one owner per kind, the control tracker ------------------
 
 -- Every AddOn named in these tests is a Dyre's AddOn unless listed here.
+-- Settings sections (2.17.0; John: class AddOns pass every bundled setting
+-- through to the AddOn that owns it).
+local function sectionWorld(state)
+    local made = {}
+    state.env.CreateSettingsButtonInitializer = function(name, button, click, tooltip)
+        local initializer = {name = name, button = button, click = click, tooltip = tooltip, predicates = {}}
+        function initializer:AddModifyPredicate(predicate) self.predicates[#self.predicates + 1] = predicate end
+        made[#made + 1] = initializer
+        return initializer
+    end
+    state.env.UnitClass = function() return "Mage", "MAGE" end
+    family(state.env, {DyresBuffReminders = "DyresToolkit", MageToolsForever = "DyresToolkit"})
+    local layout = {rows = {}}
+    function layout:AddInitializer(initializer) self.rows[#self.rows + 1] = initializer end
+    return layout
+end
+
+test("settings sections 2.17.0: a host draws the owner's rows with prefixed variables; the owner's page keeps its names", function()
+    local state = fixture()
+    local toolkit, layout = state.toolkit, sectionWorld(state)
+    equal(toolkit.SETTINGS_SECTIONS_VERSION, 3)
+    local live = {chimes = {enabled = true}}
+    local seen = {}
+    local ok = toolkit.RegisterSettingsSection({addon = "DyresBuffReminders", key = "chimes", title = "Cooldown chimes",
+        build = function(category, target, ctx)
+            seen[#seen + 1] = ctx
+            target:AddInitializer({variable = ctx.variable("DBR_CHIMES_ENABLED"),
+                get = function() return live.chimes.enabled end,
+                set = function(value) live.chimes.enabled = value end})
+            return true
+        end})
+    equal(ok, true)
+    equal(table.concat(toolkit.SettingsSections("DyresBuffReminders"), ","), "chimes")
+    equal(toolkit.AddSettingsSection(nil, layout, {addon = "DyresBuffReminders", key = "chimes",
+        host = "MageToolsForever", filter = {"blink"}}), "rows")
+    local row = layout.rows[1]
+    equal(row.variable, "DYRE_MAGETOOLSFOREVER__DBR_CHIMES_ENABLED", "the host's prefix: no clash with the owner's page")
+    row.set(false)
+    equal(live.chimes.enabled, false, "the host's row writes the owner's live setting")
+    local ctx = seen[1]
+    equal(ctx.host, "MageToolsForever")
+    equal(ctx.owner, "DyresBuffReminders")
+    equal(ctx.class, "MAGE")
+    equal(ctx.filter[1], "blink", "the host's filter, as given")
+    equal(ctx.own, false)
+    local own = toolkit.OwnSettingsContext("DyresBuffReminders", "chimes")
+    equal(own.variable("DBR_CHIMES_ENABLED"), "DBR_CHIMES_ENABLED", "the owner's own page: names unchanged")
+    equal(own.own, true)
+end)
+
+test("settings sections 2.17.0: no section, nothing added, or a failing build gives the link row", function()
+    local state = fixture()
+    local toolkit, layout = state.toolkit, sectionWorld(state)
+    local link = {name = "Cooldown chimes", button = "Open Buff Reminders settings", missing = "Install it."}
+    equal(toolkit.AddSettingsSection(nil, layout, {addon = "DyresBuffReminders", key = "chimes",
+        host = "MageToolsForever", link = link}), "link", "the owner is not loaded (or older): the link")
+    equal(layout.rows[1].button, "Open Buff Reminders settings")
+    toolkit.RegisterSettingsSection({addon = "DyresBuffReminders", key = "empty", build = function() return false end})
+    equal(toolkit.AddSettingsSection(nil, layout, {addon = "DyresBuffReminders", key = "empty",
+        host = "MageToolsForever", link = link}), "link", "nothing for this class: the link")
+    toolkit.RegisterSettingsSection({addon = "DyresBuffReminders", key = "broken", build = function() error("boom") end})
+    equal(toolkit.AddSettingsSection(nil, layout, {addon = "DyresBuffReminders", key = "broken",
+        host = "MageToolsForever", link = link}), "link", "a failing build: the link, no error")
+    contains(toolkit.SettingsSectionFailures()[1], "DyresBuffReminders.broken on MageToolsForever")
+    equal(#layout.rows, 3)
+    toolkit.RegisterSettingsSection({addon = "DyresBuffReminders", key = "chimes", title = "Chimes",
+        build = function() return false end})
+    toolkit.AddSettingsSection(nil, layout, {addon = "DyresBuffReminders", key = "chimes", host = "MageToolsForever"})
+    equal(layout.rows[4].name, "Chimes", "no link opts: the section's title names the link")
+end)
+
+test("settings sections 2.17.0: only Dyre's AddOns register; bad specs are refused", function()
+    local state = fixture()
+    local toolkit, layout = state.toolkit, sectionWorld(state)
+    local build = function() return true end
+    local ok, why = toolkit.RegisterSettingsSection({addon = "SomeoneElse", key = "x", build = build})
+    equal(ok, false)
+    contains(why, "not a Dyre's AddOn")
+    equal(toolkit.RegisterSettingsSection({addon = "DyresBuffReminders", key = "bad key", build = build}), false)
+    equal(toolkit.RegisterSettingsSection({addon = "DyresBuffReminders", key = "x"}), false, "no build")
+    equal(toolkit.AddSettingsSection(nil, layout, {addon = "DyresBuffReminders", key = "x"}), nil, "no host")
+    equal(toolkit.AddSettingsSection(nil, layout, {addon = "DyresBuffReminders", key = "x", host = "Bad Host"}), nil)
+    equal(#layout.rows, 0)
+end)
+
+test("settings sections 2.17.0: a primer box shows above the link only while the owner is missing", function()
+    local state = fixture()
+    local toolkit, layout = state.toolkit, sectionWorld(state)
+    local made = {}
+    state.env.Settings.CreateElementInitializer = function(template, data)
+        local initializer = {template = template, data = data}
+        made[#made + 1] = initializer
+        return initializer
+    end
+    local loaded = {}
+    state.env.C_AddOns.IsAddOnLoaded = function(addon) return loaded[addon] == true, loaded[addon] == true end
+    local primer = "Install Dyre's Buff Reminders for a sound just before Blink and Frost Nova are ready."
+    local opts = {addon = "DyresBuffReminders", key = "chimes", host = "MageToolsForever", primer = primer,
+        link = {name = "Cooldown chimes", button = "Open Buff Reminders settings"}}
+    equal(toolkit.AddSettingsSection(nil, layout, opts), "link")
+    equal(layout.rows[1].template, "DyresToolkitSettingsPrimerTemplate", "missing: the primer box first")
+    equal(layout.rows[1].data.text, primer)
+    equal(layout.rows[2].button, "Open Buff Reminders settings", "then the greyed link")
+    -- The box's mixin fills the template's text.
+    local frame = {Text = {SetText = function(self, text) self.text = text end}}
+    state.env.DyresToolkitSettingsPrimerMixin.Init(frame, layout.rows[1])
+    equal(frame.Text.text, primer)
+    -- An older owner that is loaded (no section, not joined yet): no primer.
+    loaded.DyresBuffReminders = true
+    toolkit.AddSettingsSection(nil, layout, opts)
+    equal(layout.rows[3].button, "Open Buff Reminders settings", "loaded: the link only")
+    equal(#made, 1)
+    -- Long text is cut to the box.
+    local long = toolkit.AddSettingsPrimer(nil, layout, string.rep("a", 500))
+    equal(#long.data.text, toolkit.SETTINGS_PRIMER_MAX)
+    equal(toolkit.AddSettingsPrimer(nil, layout, "  "), nil, "blank: nothing")
+    state.env.Settings.CreateElementInitializer = nil
+    equal(toolkit.AddSettingsPrimer(nil, layout, "x"), nil, "no settings API: nothing")
+end)
+
+test("settings sections 2.17.0: one name per section, read by the host", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    sectionWorld(state)
+    equal(toolkit.SettingsSectionTitle("DyresBuffReminders", "procs"), nil, "not registered: nil (host fallback)")
+    toolkit.RegisterSettingsSection({addon = "DyresBuffReminders", key = "procs", title = "Procs",
+        build = function() return true end})
+    equal(toolkit.SettingsSectionTitle("DyresBuffReminders", "procs"), "Procs")
+    toolkit.RegisterSettingsSection({addon = "DyresBuffReminders", key = "chimes", title = "",
+        build = function() return true end})
+    equal(toolkit.SettingsSectionTitle("DyresBuffReminders", "chimes"), nil, "empty: nil")
+end)
+
+test("settings 2.17.0: a greyed button row's label greys too, only on our rows", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local hooks = {}
+    state.env.hooksecurefunc = function(object, name, hook)
+        local original = object[name]
+        object[name] = function(...) original(...) hook(...) end
+    end
+    state.env.NORMAL_FONT_COLOR = {GetRGB = function() return 1, 0.82, 0 end}
+    state.env.GRAY_FONT_COLOR = {GetRGB = function() return 0.5, 0.5, 0.5 end}
+    local ours = {InitFrame = function(self, frame) frame.data = self end}
+    local theirs = {InitFrame = function(self, frame) frame.data = self end}
+    toolkit.GreyButtonLabel(ours)
+    local enabled = false
+    local frame = {Text = {SetTextColor = function(self, r) self.r = r end}, Button = {IsEnabled = function() return enabled end}}
+    function frame:GetElementData() return self.data end
+    function frame:EvaluateState() end
+    ours:InitFrame(frame)
+    equal(frame.Text.r, 0.5, "greyed button: grey label")
+    enabled = true
+    frame:EvaluateState()
+    equal(frame.Text.r, 1, "enabled again: normal label")
+    enabled = false
+    frame:EvaluateState()
+    theirs:InitFrame(frame)
+    frame:EvaluateState()
+    equal(frame.Text.r, 1, "the pooled frame drawing someone else's row: back to normal")
+    equal(toolkit.GreyButtonLabel(nil), nil)
+end)
+
 local function familyAll(env, outsiders)
     outsiders = outsiders or {}
     family(env, setmetatable({}, {__index = function(_, addon)
@@ -3269,6 +3446,27 @@ test("a class Tools AddOn owns its class over Dyre's Debuff Tracker: bars, macro
     wtf:Refresh()
     equal(ddt:IsOwner("control"), true, "WTF's bar off: the Debuff Tracker's shows")
     equal(wtf.rows[1].shown, false)
+end)
+
+test("control 2.17.0: the master switch off stops the announcements and removes the macros too", function()
+    local state = fixture()
+    controlWorld(state, {target = mob("Creature-1", "Grunt")})
+    state.focusWorks(true)
+    state.group = true
+    local tracker, store = warlockTracker(state)
+    equal(#state.macros > 0, true, "on: the macros are kept")
+    cast(state, "Grunt", 5782, "c1")
+    equal(#state.sent, 1, "on: announced")
+    store.enabled = false
+    tracker:Refresh()
+    equal(#state.macros, 0, "off: our macros are removed")
+    state.now = (state.now or 0) + 10
+    cast(state, "Grunt", 5782, "c2")
+    equal(#state.sent, 1, "off: no announcement")
+    equal(tracker:Owner("announce"), "WarlockToolsForever", "the claims stay: off means off")
+    store.enabled = true
+    tracker:Refresh()
+    equal(#state.macros > 0, true, "on again: written again")
 end)
 
 local function mageTracker(state, extra)
@@ -5200,6 +5398,82 @@ local function procAddon(state, options)
     return handle, db, rows, layout
 end
 
+test("settings sections 2.17.0: AddProcSettings and AddWidgetSettings map variables and filter proc keys", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local handle = procAddon(state)
+    local own = "DYRE_DYRESSHIELDSUP_PROC_MISSILEBARRAGE_ARC"
+    equal(state.settings[own] ~= nil, true, "the owner's page: the plain name")
+    local category, layout = {initializers = {}}, {rows = {}}
+    function layout:AddInitializer(object) self.rows[#self.rows + 1] = object end
+    local function host(name) return "DYRE_MAGETOOLSFOREVER__" .. name end
+    local rows = state.toolkit.AddProcSettings(category, layout, handle, {variable = host, keys = {"missilebarrage"}})
+    equal(rows.missilebarrage ~= nil, true, "the kept key has rows")
+    equal(state.settings[host(own)] ~= nil, true, "the host's page: the mapped name")
+    equal(state.settings[host("DYRE_DYRESSHIELDSUP_PROCARCS_SCALE")] ~= nil, true, "the arc size slider is mapped too")
+    equal(state.toolkit.AddProcSettings(category, layout, handle, {variable = host, keys = {"nightfall"}}), nil,
+        "no kept key: no rows")
+end)
+
+test("settings sections 2.17.0: a host asks for the master switch or the rest; the master alone has no fallback", function()
+    local state = fixture()
+    local toolkit, layout = state.toolkit, sectionWorld(state)
+    equal(toolkit.SETTINGS_SECTIONS_VERSION, 3)
+    local parts = {}
+    toolkit.RegisterSettingsSection({addon = "DyresBuffReminders", key = "chimes", build = function(_, target, ctx)
+        parts[#parts + 1] = ctx.part
+        target:AddInitializer({part = ctx.part})
+        return true
+    end})
+    for _, part in ipairs({"master", "rest", "bogus"}) do
+        toolkit.AddSettingsSection(nil, layout, {addon = "DyresBuffReminders", key = "chimes",
+            host = "MageToolsForever", part = part})
+    end
+    toolkit.AddSettingsSection(nil, layout, {addon = "DyresBuffReminders", key = "chimes", host = "MageToolsForever"})
+    equal(table.concat(parts, ","), "master,rest,all,all", "unknown or none: all")
+    equal(toolkit.OwnSettingsContext("DyresBuffReminders", "chimes", nil, "rest").part, "rest")
+    local before = #layout.rows
+    equal(toolkit.AddSettingsSection(nil, layout, {addon = "DyresShieldsUp", key = "shield", host = "MageToolsForever",
+        part = "master", primer = "Install it.", link = {name = "Shield"}}), nil, "owner missing: nothing on the top page")
+    equal(#layout.rows, before)
+end)
+
+test("settings sections 2.17.0: AddProcSettings and AddWidgetSettings grey their rows with opts.modify", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local handle = procAddon(state)
+    local on = true
+    local category, layout = {initializers = {}}, {rows = {}}
+    function layout:AddInitializer(object) self.rows[#self.rows + 1] = object end
+    local predicates = {}
+    local create = state.env.Settings.CreateCheckbox
+    state.env.Settings.CreateCheckbox = function(object, setting, tooltip)
+        create(object, setting, tooltip)
+        local initializer = {setting = setting}
+        function initializer:AddShownPredicate() end
+        function initializer:AddModifyPredicate(predicate) predicates[#predicates + 1] = predicate end
+        return initializer
+    end
+    state.toolkit.AddProcSettings(category, layout, handle,
+        {variable = function(name) return "HOST__" .. name end, modify = function() return on end})
+    equal(#predicates > 0, true, "the proc rows have a modify predicate")
+    equal(predicates[1](), true, "on: usable")
+    on = false
+    equal(predicates[1](), false, "the master off: greyed")
+end)
+
+test("settings sections 2.17.0: WatchSettings makes a row check its greying when any named setting changes", function()
+    local state = fixture()
+    local watched = {}
+    local initializer = {AddEvaluateStateCVar = function(self, name) watched[#watched + 1] = name end}
+    equal(state.toolkit.WatchSettings(initializer, {"DBR_ENABLED", "", 5, "DYRE_MAGETOOLSFOREVER__DBR_ENABLED"}),
+        initializer)
+    equal(table.concat(watched, ","), "DBR_ENABLED,DYRE_MAGETOOLSFOREVER__DBR_ENABLED", "only names")
+    state.toolkit.WatchSettings(initializer, "DSU_SHIELD_ENABLED")
+    equal(watched[3], "DSU_SHIELD_ENABLED", "one name works too")
+    equal(state.toolkit.WatchSettings({}, {"X"}).x, nil, "no such method: nothing, no error")
+end)
+
 -- Live aura sound registrations for one spell ID.
 local function procSounds(state, id)
     local list = {}
@@ -5210,6 +5484,53 @@ local function procSounds(state, id)
     end
     return list
 end
+
+test("proc cues 2.17.0: the master switch turns every arc and sound off; each proc keeps its switches", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local handle, db = procAddon(state)
+    equal(db.procs.enabled, true, "on by default")
+    equal(state.toolkit.SanitizeProcs({enabled = false}, mageProcs()).enabled, false)
+    equal(state.toolkit.SanitizeProcs({enabled = "x"}, mageProcs()).enabled, true, "junk: on")
+    equal(#procSounds(state, PROC_BUFF), 1, "on: its sound")
+    local category, layout = {initializers = {}}, {rows = {}}
+    function layout:AddInitializer(object) self.rows[#self.rows + 1] = object end
+    state.toolkit.AddProcMasterSetting(category, layout, handle,
+        {variable = function(name) return "HOST__" .. name end, label = "Proc arcs and sounds"})
+    local master = state.settings["HOST__DYRE_DYRESSHIELDSUP_PROCS_ENABLED"]
+    equal(master.name, "Proc arcs and sounds")
+    master.set(false)
+    equal(db.procs.enabled, false)
+    equal(handle.Enabled(), false)
+    equal(#procSounds(state, PROC_BUFF), 0, "off: no sound")
+    equal(db.procs.arc.missilebarrage, true, "the proc's own switch keeps its value")
+    master.set(true)
+    equal(#procSounds(state, PROC_BUFF), 1, "on again")
+end)
+
+test("proc cues 2.17.0: AddProcSettings can skip its header, or put the master switch right under it", function()
+    local state = fixture()
+    procWorld(state, {talents = {[PROC_TALENT] = true}})
+    local handle = procAddon(state)
+    local headers = 0
+    state.env.CreateSettingsListSectionHeaderInitializer = function(text)
+        headers = headers + 1
+        return {name = "## " .. text, AddShownPredicate = function() end}
+    end
+    local category, layout = {initializers = {}}, {rows = {}}
+    function layout:AddInitializer(object) self.rows[#self.rows + 1] = object end
+    local rows = state.toolkit.AddProcSettings(category, layout, handle,
+        {header = false, variable = function(name) return "A__" .. name end})
+    equal(headers, 0, "header false: none")
+    equal(rows.master, nil)
+    local category2, layout2 = {initializers = {}}, {rows = {}}
+    function layout2:AddInitializer(object) self.rows[#self.rows + 1] = object end
+    rows = state.toolkit.AddProcSettings(category2, layout2, handle,
+        {master = {label = "Enable"}, variable = function(name) return "B__" .. name end})
+    equal(headers, 1)
+    equal(category2.initializers[1].setting.variable, "B__DYRE_DYRESSHIELDSUP_PROCS_ENABLED", "the master first after the header")
+    equal(category2.initializers[1].setting.name, "Enable")
+end)
 
 local function procEvents(state)
     for _, frame in ipairs(state.uiFrames) do
@@ -5526,7 +5847,7 @@ test("proc cues: without the stack gate or stacks, both arcs show as before, one
     equal(#procSounds(plain, PROC_BUFF), 1, "no stacks: Added only")
 end)
 
-test("proc cues: without the talent, no arcs, no sound, no aura read, and the rows hidden", function()
+test("proc cues: without the talent, no arcs, no sound, no aura read, and the rows listed but greyed", function()
     local state = fixture()
     procWorld(state)
     local handle, db, rows, layout = procAddon(state)
@@ -5536,11 +5857,15 @@ test("proc cues: without the talent, no arcs, no sound, no aura read, and the ro
     equal(next(state.auraSounds), nil)
     equal(layout.rows[1], rows.header, "the section header comes first")
     equal(rows.header.header, "Procs")
-    equal(rows.header:IsShown(), false)
+    -- 2.17.0 (John: "I expect to see every setting available ... but only
+    -- enabled if I have it. Not a generic banner").
+    equal(rows.header:IsShown(), true, "listed")
     for _, part in ipairs({"arc", "sound", "choice"}) do
-        equal(rows.missilebarrage[part]:IsShown(), false, part)
+        equal(rows.missilebarrage[part]:IsShown(), true, part .. " listed")
+        equal(rows.missilebarrage[part].modify(), false, part .. " greyed")
     end
-    equal(state.settings.DYRE_DYRESSHIELDSUP_PROCARCS_SCALE, nil, "no size slider")
+    contains(rows.missilebarrage.arc.tooltip(), "Greyed out: you have not learned Missile Barrage yet.")
+    equal(state.settings.DYRE_DYRESSHIELDSUP_PROCARCS_SCALE ~= nil, true, "the size slider is listed too")
     state.buffs["Missile Barrage"] = {spellId = PROC_NEW}
     emit(state, "UNIT_AURA", "player")
     equal(db.procIDs.missilebarrage, nil)
@@ -5552,6 +5877,8 @@ test("proc cues: without the talent, no arcs, no sound, no aura read, and the ro
     equal(handle.Known("missilebarrage"), true, "the second talent ID counts too")
     equal(rows.header:IsShown(), true)
     equal(rows.missilebarrage.arc:IsShown(), true)
+    equal(rows.missilebarrage.arc.modify(), true, "known: no longer greyed")
+    equal(rows.missilebarrage.arc.tooltip():find("Greyed out", 1, true), nil)
     equal(handle.Container("missilebarrage", "right") ~= nil, true)
     equal(#procSounds(state, PROC_BUFF), 1)
     state.talents[PROC_TALENT_TWO] = nil

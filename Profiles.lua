@@ -869,8 +869,7 @@ function ns.AddProfileSettings(category, layout)
             return container:GetData()
         end
         rows.source = Settings.CreateDropdown(category, setting, Options,
-            "Pick another character's profile, or Defaults for a clean slate, then press Copy. It covers "
-            .. "every Dyre's AddOn.\n\nA character shows here after it logs in once with this version.")
+            "Pick another character's settings, or Defaults, then press Copy.")
         local function CopyChoice()
             if not CanCopy() then
                 ns.Report("Pick another character's profile, or Defaults, to copy.")
@@ -894,6 +893,7 @@ function ns.AddProfileSettings(category, layout)
             if type(rows.copy) == "table" and type(rows.copy.AddModifyPredicate) == "function" then
                 rows.copy:AddModifyPredicate(CanCopy)
             end
+            DyresToolkit.GreyButtonLabel(rows.copy)
             layout:AddInitializer(rows.copy)
         end
     end

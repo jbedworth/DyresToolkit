@@ -4,6 +4,20 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.17.0
+
+### Features
+- Settings in one place: Mage Tools Forever and Warlock Tools Forever can now show the real settings of the Dyre's AddOns they work with (Shields Up, Buff Reminders, Debuff Tracker) on their own pages, instead of an "Open settings" button. Each setting still lives in the AddOn that owns it, so a change on either page is the same change.
+- Each feature's on/off switch sits on the class AddOn's main page; its other settings are on its own page and are greyed out while the feature is off, at once when you click.
+- When one of those AddOns is not installed, its page says in a short note what it would add and where to get it.
+- Proc arcs and sounds have one master switch. Every proc of your class is listed, greyed out until you learn it.
+- Crowd-control bars (Polymorph, Fear, Banish, Seduction): switching the bar off now also stops its group messages and removes its "!" macros. Switched on again, the macros come back; put them on your action bars again.
+
+### Fixes
+- Greyed-out buttons in the settings now grey their label too, like the other rows.
+- Setting tooltips are now one short, plain sentence each.
+- In layout mode, each frame's label starts with the name of the AddOn it belongs to.
+
 ## 2.16.0
 
 ### Fixes
