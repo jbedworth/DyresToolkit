@@ -41,6 +41,15 @@
 - [ ] After /reload, frames start locked and stay where they were dropped.
 - [ ] In combat, /dyre opens nothing and says so; a drag ends after combat.
 
+### 2.18.0: button bars
+
+- [ ] MTF Conjure and Portals: Layout Vertical stacks the buttons top to
+      bottom; the bar stays in place; Horizontal brings the row back.
+- [ ] Changed in combat: applies when combat ends; no "blocked" error.
+- [ ] /reload and a relog keep the choice; a profile copy brings it.
+- [ ] /dyre unlock: a rotate arrow on each bar's outline (top-right); a click
+      flips it; the arrow texture shows (not green); the Layout row agrees.
+
 ### 2.17.0: settings sections
 
 - [ ] With MTF and DBR (both with sections): MTF's Cooldown Chimes page shows

@@ -4,6 +4,12 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.18.0
+
+### Features
+- Button bars can now be horizontal or vertical. Mage Tools Forever's Conjure and Portal bars get the option first; other Dyre's AddOns' bars follow in their own updates. Thanks to a player on CurseForge for the idea.
+- While frames are unlocked, a bar's outline has a small rotate button: click it to switch the bar between a row and a column.
+
 ## 2.17.0
 
 ### Features

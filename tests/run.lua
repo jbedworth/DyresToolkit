@@ -932,6 +932,85 @@ test("widgets 2.17.0: an outline's label names its AddOn", function()
         "\"Dyre's \" said once")
 end)
 
+test("button bars 2.18.0: a row or a column, saved in the store, moved only out of combat", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    equal(toolkit.BAR_LAYOUT_VERSION, 1)
+    local store = {}
+    local widget = toolkit.CreateWidget({addon = "MageToolsForever", key = "portals", title = "Portal bar",
+        store = store, width = 48, height = 48})
+    local buttons = {newFrame(state, 0, 0), newFrame(state, 0, 0), newFrame(state, 0, 0)}
+    equal(widget:LayoutButtons(buttons, {size = 36, gap = 4, padding = 6}), "horizontal", "a row by default")
+    equal(buttons[3].anchor[4], 6 + 2 * 40, "third button: x")
+    equal(buttons[3].anchor[5], -6)
+    equal(widget.dyre.contentWidth, 6 * 2 + 3 * 36 + 2 * 4)
+    equal(widget.dyre.contentHeight, 6 * 2 + 36)
+    widget:SetOrientation("vertical")
+    equal(store.orientation, "vertical", "saved in the AddOn's store")
+    equal(buttons[3].anchor[4], 6, "a column: x stays")
+    equal(buttons[3].anchor[5], -(6 + 2 * 40), "y steps down")
+    equal(widget.dyre.contentWidth, 6 * 2 + 36)
+    equal(widget.dyre.contentHeight, 6 * 2 + 3 * 36 + 2 * 4)
+    -- Secure buttons move only out of combat.
+    state.combat = true
+    widget:SetOrientation("horizontal")
+    equal(store.orientation, nil, "horizontal is the default: nothing saved")
+    equal(buttons[3].anchor[4], 6, "in combat: not moved yet")
+    state.combat = false
+    for _, frame in ipairs(state.frames) do
+        if frame.events.PLAYER_REGEN_ENABLED and frame.scripts.OnEvent then
+            frame.scripts.OnEvent(frame, "PLAYER_REGEN_ENABLED")
+        end
+    end
+    equal(buttons[3].anchor[4], 6 + 2 * 40, "after combat: a row again")
+    widget:SetOrientation("diagonal")
+    equal(store.orientation, nil, "a bad value changes nothing")
+    store.orientation = "junk"
+    equal(widget:GetOrientation(), "horizontal", "a bad saved value reads as horizontal")
+end)
+
+test("button bars 2.18.0: the Layout row reads and writes the bar, mapped and greyed like the others", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store = {}
+    local widget = toolkit.CreateWidget({addon = "MageToolsForever", key = "conjure", title = "Conjure bar",
+        store = store, width = 48, height = 48})
+    widget:LayoutButtons({newFrame(state, 0, 0)}, {size = 36})
+    local category = {initializers = {}}
+    local predicate
+    state.env.Settings.CreateCheckbox = function(object, setting)
+        object.initializers[#object.initializers + 1] = setting
+        return {AddModifyPredicate = function(_, fn) predicate = fn end}
+    end
+    toolkit.AddBarLayoutSetting(category, nil, widget,
+        {variable = function(name) return "HOST__" .. name end, modify = function() return false end})
+    local setting = state.settings["HOST__DYRE_MAGETOOLSFOREVER_CONJURE_ORIENTATION"]
+    equal(setting ~= nil, true, "mapped variable (the checkbox fallback in this mock)")
+    setting.set(true)
+    equal(store.orientation, "vertical")
+    equal(setting.get(), true)
+    equal(predicate(), false, "greyed with the bar's switch")
+end)
+
+test("button bars 2.18.0: the outline's flip button switches a laid-out bar between a row and a column", function()
+    local state = fixture()
+    local store = {}
+    local widget = state.toolkit.CreateWidget({addon = "MageToolsForever", key = "portals", title = "Portal bar",
+        store = store, width = 48, height = 48})
+    local flip = widget.dyre.mover.flip
+    equal(flip ~= nil, true)
+    equal(flip.shown, false, "hidden on a widget that lays out no buttons")
+    local buttons = {newFrame(state, 0, 0), newFrame(state, 0, 0)}
+    widget:LayoutButtons(buttons, {size = 36, gap = 4})
+    equal(flip.shown, true, "shown once the bar lays out its buttons")
+    flip.scripts.OnClick(flip)
+    equal(store.orientation, "vertical", "one click: a column")
+    equal(buttons[2].anchor[5], -40)
+    flip.scripts.OnClick(flip)
+    equal(store.orientation, nil, "again: a row")
+    equal(buttons[2].anchor[4], 40)
+end)
+
 test("resetSizes picks what Reset size restores; a hint and drag handles are the AddOn's", function()
     local state = fixture()
     local toolkit = state.toolkit

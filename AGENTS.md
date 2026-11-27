@@ -130,6 +130,38 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
   links, and the profile Copy row; every Dyre's AddOn calls it on its own
   greyed button rows.
 
+### Button bars, horizontal or vertical (2.18.0; John, 2026-11-27)
+
+A CurseForge player on MTF: "Is it possible to add an option to change the
+portal and conjure bars from horizontal to vertical?"; John: a Toolkit
+feature for every button bar (MTF Conjure and Portals, WTF Stones, DBR
+Aspect bar, DCT tank bar). Widgets.lua; CONTRACT stays 2
+(`BAR_LAYOUT_VERSION` 1, a feature test).
+
+- `widget:LayoutButtons(buttons, {size, gap, padding, anchor})`: places the
+  buttons in order from the widget's top-left, a row or a column, and sets
+  the content size (`SetContentSize`, `anchor` as there; default the center,
+  so a switch keeps the bar in place). Secure buttons move only out of
+  combat (`OutOfCombat("dyreBar:<addon>:<key>")`). The last call is kept.
+- `widget:GetOrientation()` ("horizontal"/"vertical"), `widget:SetOrientation
+  (value)`: saved as `store.orientation` ("vertical", else nil), so it is in
+  the AddOn's own settings and profile part; a bad saved value reads as
+  horizontal. Setting it lays the last buttons out again.
+- `AddBarLayoutSetting(category, layout, widget, {label, tooltip, variable,
+  modify, watch})`: a "Layout" dropdown (Horizontal, Vertical), variable
+  `DYRE_<ADDON>_<KEY>_ORIENTATION` (mapped on a host page), else a "Vertical"
+  checkbox where the client has no dropdown.
+- An AddOn with an older toolkit keeps its own horizontal layout.
+- The flip button (John, 2026-11-27: users "are going to want a way to flip
+  the bar ... in unlocked mode"; "A button with an arrow going around"):
+  `mover.flip`, a 24 px button at the outline's top-right corner, shown
+  only after LayoutButtons, with the model rotate arrow
+  (Interface\Buttons\UI-RotationRight-Button-Up/-Down, ButtonHilight-Round;
+  used by Blizzard's Vanilla PaperDollFrame.xml). A click calls
+  SetOrientation (combat: applies after); Settings.NotifyUpdate for every
+  Layout row registered for that widget. On the outline, never on the bar's
+  own (secure) buttons, whose clicks cast spells. Look not yet seen in game.
+
 ### Settings sections (2.17.0; John, 2026-11-26)
 
 John: class AddOns that bundle other Dyre's AddOns "should surface every

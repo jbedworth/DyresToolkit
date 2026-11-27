@@ -2,7 +2,7 @@
 ## Title: Dyre's Toolkit
 ## Notes: One layout mode, grid, minimap menu, settings home, and profiles for Dyre's AddOns
 ## Author: Dyre
-## Version: 2.17.0
+## Version: 2.18.0
 ## IconTexture: Interface\Icons\INV_Misc_Wrench_01
 ## Category: Dyre's AddOns
 ## SavedVariables: DyresToolkitDB

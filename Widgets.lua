@@ -220,6 +220,8 @@ local function OwnerPrefix(widget)
     return ns.ShortName(title) .. ": "
 end
 
+local FLIP_SIZE = 24
+
 local function CreateMover(widget)
     local mover = CreateFrame("Frame", nil, widget, "BackdropTemplate")
     mover:SetPoint("TOPLEFT", -MOVER_INSET, MOVER_INSET)
@@ -233,6 +235,36 @@ local function CreateMover(widget)
     mover.hint:SetPoint("BOTTOM", mover, "TOP", 0, 2)
     mover.hint:SetText(OwnerPrefix(widget) .. (widget.dyre.hint
         or (widget.dyre.title .. " · drag to move · /dyre lock when done")))
+    -- The flip button (2.18.0; John, 2026-11-27: users "are going to want a
+    -- way to flip the bar from vertical to horizontal in unlocked mode";
+    -- "A button with an arrow going around"): on the outline's top-right
+    -- corner, shown only on a bar laid out by LayoutButtons. The outline is
+    -- ours, so no Blizzard or secure frame is touched; a right-click on the
+    -- bar's own buttons would cast their spells. The texture is the model
+    -- rotate arrow, UI-RotationRight-Button-Up (Blizzard's Vanilla
+    -- PaperDollFrame.xml and shared ModelSceneTemplates use it).
+    local flip = CreateFrame("Button", nil, mover)
+    flip:SetSize(FLIP_SIZE, FLIP_SIZE)
+    flip:SetPoint("CENTER", mover, "TOPRIGHT", -FLIP_SIZE / 2, -FLIP_SIZE / 2)
+    if flip.SetNormalTexture then
+        flip:SetNormalTexture("Interface\\Buttons\\UI-RotationRight-Button-Up")
+        flip:SetPushedTexture("Interface\\Buttons\\UI-RotationRight-Button-Down")
+        flip:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Round", "ADD")
+    end
+    flip:EnableMouse(true)
+    flip:SetScript("OnClick", function()
+        widget:SetOrientation(widget:GetOrientation() == "vertical" and "horizontal" or "vertical")
+    end)
+    flip:SetScript("OnEnter", function(self)
+        if GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Switch between a row and a column.")
+            GameTooltip:Show()
+        end
+    end)
+    flip:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    flip:Hide()
+    mover.flip = flip
     return mover
 end
 
@@ -284,6 +316,123 @@ function WidgetMethods.SetContentSize(widget, width, height, anchor)
         widget.dyre.lastAnchor = anchor
     end
     Apply(widget)
+end
+
+-- Button bars, horizontal or vertical (2.18.0; a CurseForge player asked for
+-- MTF's portal and conjure bars: "Is it possible to add an option to change
+-- the portal and conjure bars from horizontal to vertical?"; John,
+-- 2026-11-27: a Toolkit feature for every button bar). The orientation is
+-- saved in the widget's store (`orientation`: "vertical", else horizontal),
+-- so it is in the AddOn's own settings and profile part.
+-- widget:LayoutButtons(buttons, opts) places the buttons in order, from the
+-- top-left: a row, or a column; opts.size (each button's size, default 36),
+-- opts.gap (default 4), opts.padding (default 0), opts.anchor (the edge kept
+-- in place as the size changes, as SetContentSize; default the center, so a
+-- switch keeps the bar where it was). The buttons may be secure: they move
+-- only out of combat (DyresToolkit.OutOfCombat; a change in combat applies
+-- when combat ends). The last call is kept, so a change of orientation lays
+-- the same buttons out again.
+DyresToolkit.BAR_LAYOUT_VERSION = 1
+local ORIENTATIONS = {horizontal = true, vertical = true}
+
+function WidgetMethods.GetOrientation(widget)
+    return widget.dyre.store.orientation == "vertical" and "vertical" or "horizontal"
+end
+
+function WidgetMethods.LayoutButtons(widget, buttons, opts)
+    opts = type(opts) == "table" and opts or {}
+    widget.dyre.bar = {buttons = buttons, opts = opts}
+    if widget.dyre.mover and widget.dyre.mover.flip then
+        widget.dyre.mover.flip:Show()
+    end
+    local size, gap, padding = opts.size or 36, opts.gap or 4, opts.padding or 0
+    local vertical = widget:GetOrientation() == "vertical"
+    local count = math.max(type(buttons) == "table" and #buttons or 0, 1)
+    local long = padding * 2 + count * size + (count - 1) * gap
+    local short = padding * 2 + size
+    DyresToolkit.OutOfCombat("dyreBar:" .. tostring(widget.dyre.addon) .. ":" .. tostring(widget.dyre.widgetKey),
+        function()
+            for index, button in ipairs(type(buttons) == "table" and buttons or {}) do
+                local step = padding + (index - 1) * (size + gap)
+                button:ClearAllPoints()
+                if vertical then
+                    button:SetPoint("TOPLEFT", widget, "TOPLEFT", padding, -step)
+                else
+                    button:SetPoint("TOPLEFT", widget, "TOPLEFT", step, -padding)
+                end
+            end
+        end)
+    if vertical then
+        widget:SetContentSize(short, long, opts.anchor)
+    else
+        widget:SetContentSize(long, short, opts.anchor)
+    end
+    return vertical and "vertical" or "horizontal"
+end
+
+-- Saves the orientation and lays the last buttons out again.
+function WidgetMethods.SetOrientation(widget, value)
+    if not ORIENTATIONS[value] then
+        return
+    end
+    widget.dyre.store.orientation = value == "vertical" and "vertical" or nil
+    if widget.dyre.bar then
+        widget:LayoutButtons(widget.dyre.bar.buttons, widget.dyre.bar.opts)
+    end
+    -- An open settings page shows the new value (a flip from the outline).
+    for _, variable in ipairs(widget.dyre.layoutVariables or {}) do
+        if type(Settings) == "table" and type(Settings.NotifyUpdate) == "function" then
+            pcall(Settings.NotifyUpdate, variable)
+        end
+    end
+end
+
+-- The "Layout" row: Horizontal or Vertical. opts: label (default "Layout"),
+-- tooltip, variable (a settings section's ctx.variable), modify and watch
+-- (greyed while the bar is off, as AddWidgetSettings). Gives the initializer,
+-- or nil without the settings API (a dropdown, else a "Vertical" checkbox).
+function DyresToolkit.AddBarLayoutSetting(category, layout, widget, opts)
+    if type(Settings) ~= "table" or type(Settings.RegisterProxySetting) ~= "function" or type(category) ~= "table"
+            or type(widget) ~= "table" or type(widget.dyre) ~= "table" then
+        return nil
+    end
+    opts = type(opts) == "table" and opts or {}
+    local name = ("DYRE_" .. widget.dyre.addon .. "_" .. widget.dyre.widgetKey .. "_ORIENTATION"):upper()
+        :gsub("[^%w_]", "_")
+    if type(opts.variable) == "function" then
+        name = opts.variable(name)
+    end
+    local tooltip = opts.tooltip or "Lay the buttons out in a row or a column."
+    widget.dyre.layoutVariables = widget.dyre.layoutVariables or {}
+    table.insert(widget.dyre.layoutVariables, name)
+    local initializer
+    if type(Settings.CreateDropdown) == "function" and type(Settings.CreateControlTextContainer) == "function"
+            and Settings.VarType.String then
+        local setting = Settings.RegisterProxySetting(category, name, Settings.VarType.String, opts.label or "Layout",
+            "horizontal", function() return widget:GetOrientation() end,
+            function(value) widget:SetOrientation(value) end)
+        local function Options()
+            local container = Settings.CreateControlTextContainer()
+            container:Add("horizontal", "Horizontal")
+            container:Add("vertical", "Vertical")
+            return container:GetData()
+        end
+        initializer = Settings.CreateDropdown(category, setting, Options, tooltip)
+    elseif type(Settings.CreateCheckbox) == "function" then
+        local setting = Settings.RegisterProxySetting(category, name, Settings.VarType.Boolean, "Vertical", false,
+            function() return widget:GetOrientation() == "vertical" end,
+            function(value) widget:SetOrientation(value and "vertical" or "horizontal") end)
+        initializer = Settings.CreateCheckbox(category, setting, tooltip)
+    end
+    if type(initializer) == "table" then
+        if type(opts.modify) == "function" and type(initializer.AddModifyPredicate) == "function" then
+            initializer:AddModifyPredicate(opts.modify)
+        end
+        if opts.watch and type(DyresToolkit.WatchSettings) == "function" then
+            DyresToolkit.WatchSettings(initializer, opts.watch)
+        end
+    end
+    return initializer
 end
 
 -- One of scale, width, height, opacity: clamped, saved, and applied.
