@@ -41,12 +41,14 @@
 - [ ] After /reload, frames start locked and stay where they were dropped.
 - [ ] In combat, /dyre opens nothing and says so; a drag ends after combat.
 
-### Swing timer and range box (unreleased; Forever first)
+### Swing timer and range box (2.15.0; Off by default since 2.15.1)
 
 Settings: Dyre's AddOns → Dyre's Toolkit → "Swing Timer". `/dyre debug_swing`
 prints the checks and the state; `/dyre swing_reset` puts the frame back.
 
-- [ ] Show "In combat" (the default): hidden out of combat, shown when a fight
+- [ ] A character that had 2.15.0: Show is "Off" after 2.15.1, and no frame
+      shows in combat. Choose "In combat" for the checks below.
+- [ ] Show "In combat": hidden out of combat, shown when a fight
       starts, hidden when it ends. "Always": shown all the time. "Off": never,
       also while unlocked. `/dyre unlock`: a sample (three bars, RANGE) to move.
 - [ ] Melee: the main-hand bar fills once per swing, in step with your swings;

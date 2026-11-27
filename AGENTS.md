@@ -1530,7 +1530,7 @@ PLAYER_LOGIN calls `ns.InitializeTank` after the toolkit's own settings.
   `OnUpdate`. Unknown events register only where `C_EventUtils.IsEventValid`
   says they exist (Era lacks some).
 
-### Swing timer and range box (unreleased; John, 2026-11-24)
+### Swing timer and range box (2.15.0; John, 2026-11-24)
 
 John asked for a Hunter range finder and swing timer, then chose the toolkit
 for it, every class ("for the same reason we didn't put the tanking stuff in
@@ -1542,7 +1542,12 @@ right after the saved settings load, so it works without the threat API.
 
 - Settings: `DyresToolkitCharDB.swing` (in the toolkit's profile part),
   repaired in place by `ns.SanitizeSwing` (called from Tank.lua's
-  SanitizeDB): `show` "combat" (default), "always", or "off" (John: "Off
+  SanitizeDB): `show` "off" (default since 2.15.1), "combat", or "always".
+  2.15.1 (John, 2026-11-26, after CurseForge comments about noise: "turn the
+  Toolkit's swing timer off by default first"): a saved "combat" without
+  `defaultsVersion = 2` turns "off" once, since 2.15.0 saved "combat" for
+  every character. The swing timer moves to Dyre's Threat and Combat Tools
+  (DCT), where it is on by default. Before: "combat", "always", or "off" (John: "Off
   (never show), On In-Combat, Always show"; Off also hides it while
   unlocked, and turns every range check off), `range` (the range box, true),
   `hold` (Auto Shot's hold-still zone, true), `theme` "gold" or "tactical"

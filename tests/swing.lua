@@ -13,7 +13,10 @@ local NAMES = {[75] = "Auto Shot", [2974] = "Wing Clip", [14267] = "Wing Clip", 
 -- lacks), db (saved DyresToolkitCharDB), near (CheckInteractDistance index 3).
 local function SwingFixture(options)
     options = options or {}
-    local state = fixture({noLogin = true, class = options.class or "HUNTER", db = options.db,
+    -- Show is Off by default since 2.15.1; the behavior tests run with it on
+    -- (In combat, chosen), unless a test gives its own saved data.
+    local db = options.db or {swing = {show = "combat", defaultsVersion = 2}}
+    local state = fixture({noLogin = true, class = options.class or "HUNTER", db = db,
         globals = options.globals})
     local env = state.env
     local missing = options.missing or {}
@@ -113,14 +116,20 @@ test("swing: saved settings are repaired in place, with defaults", function()
     local state = SwingFixture({db = {swing = {show = "sometimes", range = "yes", hold = false, theme = "pink",
         frame = 5}}})
     local db = state.env.DyresToolkitCharDB.swing
-    equal(db.show, "combat", "not a choice: In combat")
+    equal(db.show, "off", "not a choice: Off")
     equal(db.range, true)
     equal(db.hold, false, "a saved choice stays")
     equal(db.theme, "gold")
     equal(type(db.frame), "table")
     local saved = {show = "always"}
     equal(state.core.SanitizeSwing(saved), saved, "the same table")
-    equal(SwingFixture({db = {}}).env.DyresToolkitCharDB.swing.show, "combat", "a fresh character")
+    equal(SwingFixture({db = {}}).env.DyresToolkitCharDB.swing.show, "off", "a fresh character: Off")
+    equal(SwingFixture({db = {swing = {show = "combat"}}}).env.DyresToolkitCharDB.swing.show, "off",
+        "2.15.0's saved default In combat turns Off once")
+    equal(SwingFixture({db = {swing = {show = "always"}}}).env.DyresToolkitCharDB.swing.show, "always",
+        "a saved Always stays")
+    local chosen = {show = "combat", defaultsVersion = 2}
+    equal(state.core.SanitizeSwing(chosen).show, "combat", "In combat chosen after 2.15.1 stays")
 end)
 
 test("swing: a Hunter with Wing Clip gets RANGE, DEAD ZONE, MELEE, and TOO FAR from the range events", function()
@@ -360,7 +369,13 @@ test("swing: no hold-still zone without Auto Shot (a wand's Shoot)", function()
     equal(row.label.text, "Ranged")
 end)
 
-test("swing: Show is In combat by default, Always, or Off; unlocked shows it to move, unless Off", function()
+test("swing: Show is Off by default, In combat, or Always; unlocked shows it to move, unless Off", function()
+    local fresh = SwingFixture({known = {75}, subclass = 2, db = {}})
+    fresh.enterCombat()
+    equal(fresh.widget.shown, false, "a fresh character: Off, also in combat")
+    equal(fresh.env.DyresToolkitCharDB.swing.showChosen, nil, "the default is not a choice")
+    fresh.settings.DYRE_SWING_SHOW:SetValue("off")
+    equal(fresh.env.DyresToolkitCharDB.swing.showChosen, true, "a chosen Off is marked")
     local state = SwingFixture({known = {75}, subclass = 2})
     local widget = state.widget
     equal(widget.shown, false, "In combat: hidden out of combat")
@@ -430,7 +445,7 @@ end)
 
 test("swing: settings rows, sliders, and the debug and reset commands", function()
     local state = SwingFixture({known = {75, 2974}, subclass = 2})
-    equal(state.settings.DYRE_SWING_SHOW.default, "combat")
+    equal(state.settings.DYRE_SWING_SHOW.default, "off")
     equal(state.settings.DYRE_SWING_SHOW.name, "Show")
     equal(state.settings.DYRE_SWING_RANGE.default, true)
     equal(state.settings.DYRE_SWING_HOLD.default, true)

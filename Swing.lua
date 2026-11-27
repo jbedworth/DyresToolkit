@@ -55,6 +55,9 @@ ns.swing = Swing
 
 Swing.SHOW_MODES = {"combat", "always", "off"}
 Swing.SHOW_LABELS = {combat = "In combat", always = "Always", off = "Off (never show)"}
+-- Off by default since 2.15.1 (John, 2026-11-26: "turn the Toolkit's swing
+-- timer off by default first"; it moves to Dyre's Threat and Combat Tools).
+Swing.DEFAULT_SHOW = "off"
 Swing.THEME_KEYS = {"gold", "tactical"}
 Swing.THEME_LABELS = {gold = "Gold and black", tactical = "Tactical black and red"}
 
@@ -158,7 +161,15 @@ Swing.LINGER = 2
 -- same table.
 function ns.SanitizeSwing(db)
     db = type(db) == "table" and db or {}
-    db.show = OneOf(db.show, Swing.SHOW_MODES, "combat")
+    -- 2.15.0 saved "combat" for every character as its default. Once, a saved
+    -- "combat" from before 2.15.1 turns Off; a choice made after that stays.
+    if db.defaultsVersion ~= 2 then
+        if db.show == "combat" then
+            db.show = Swing.DEFAULT_SHOW
+        end
+        db.defaultsVersion = 2
+    end
+    db.show = OneOf(db.show, Swing.SHOW_MODES, Swing.DEFAULT_SHOW)
     db.range = Flag(db.range, true)
     db.hold = Flag(db.hold, true)
     db.theme = OneOf(db.theme, Swing.THEME_KEYS, "gold")
@@ -1162,6 +1173,11 @@ local function Dropdown(variable, name, key, choices, labels, default, tooltip)
         function() return DB()[key] end,
         function(value)
             DB()[key] = OneOf(value, choices, DB()[key])
+            -- A Show the player chose, so Dyre's Threat and Combat Tools can
+            -- tell a chosen Off from 2.15.1's default Off when it copies it.
+            if key == "show" then
+                DB().showChosen = true
+            end
             ns.RefreshSwing()
         end)
     local function Options()
@@ -1195,7 +1211,7 @@ end
 function ns.AddSwingSettings(pageCategory, pageLayout)
     category, layout = pageCategory, pageLayout
     Section("Swing Timer")
-    Dropdown("DYRE_SWING_SHOW", "Show", "show", Swing.SHOW_MODES, Swing.SHOW_LABELS, "combat",
+    Dropdown("DYRE_SWING_SHOW", "Show", "show", Swing.SHOW_MODES, Swing.SHOW_LABELS, Swing.DEFAULT_SHOW,
         "A bar for each swing: main hand, off hand (once it swings), and ranged (with a ranged weapon), in a "
         .. "box that turns green or red by your target's range.\n\nIn combat: shown in combat. Always: shown "
         .. "all the time. Off: never shown, also while frames are unlocked.\n\nThe bars need WoW: Forever's "

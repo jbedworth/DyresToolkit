@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.15.1
+
+### Fixes
+- Swing timer: off by default. 2.15.0 turned it on for every character, also for classes that do not need it. If you want it, turn it on again under Swing Timer > Show. The swing timer, the threat labels, and the tank tools move to a new AddOn, Dyre's Threat and Combat Tools, in a later update.
+
 ## 2.15.0
 
 ### Features
