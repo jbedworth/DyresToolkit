@@ -3330,8 +3330,8 @@ test("a Fear locks its mob as it starts and binds the row by GUID, never by name
     equal(state.sent[1], "PARTY:Fearing Grunt", "told as it starts")
     equal(row.holder.attributes.type1, nil, "a Fear row has no click")
     contains(tracker:DebugLines()[3], "lastSent spell=5782 target=Grunt unit=target locked=true")
-    -- Gone after the longest Fear plus 5 s.
-    advance(state, 24)
+    -- Gone 1 s after its rank's time (2.18.2: Fear rank 1, 10 s).
+    advance(state, 10)
     equal(row.guid, "Creature-1")
     advance(state, 1)
     equal(row.guid, nil)
@@ -3430,6 +3430,115 @@ test("the Focus box: Fear on your focus shows there, not twice; its click fears 
     state.focusWorks(false)
     tracker:Refresh()
     equal(state.drivers[box], "hide", "no box until focus works")
+end)
+
+-- 2.18.2 (John, DDT 1.8.1 on Forever: "no matter how many different mobs I
+-- fear, the timer says the same number, even if I delay 2-3 seconds between
+-- them"). Fear is on several mobs at once on Forever (John: "It's always
+-- multi-cast"), so each mob keeps its own row, read from its own unit.
+test("two Fears 3 s apart on two mobs: a row each, on its own mob, gone after its own rank's time", function()
+    local state = fixture()
+    local coast, raider = mob("Creature-C", "Greymist Coastrunner"), mob("Creature-R", "Greymist Raider")
+    controlWorld(state, {focus = coast, nameplate1 = coast, nameplate2 = raider})
+    state.focusWorks(true)
+    local tracker = warlockTracker(state)
+    -- "! Fear" on the mob under the mouse: it becomes your focus, then the cast.
+    cast(state, "Greymist Coastrunner", 5782, "c1")
+    equal(tracker.rows[1].guid, "Creature-C")
+    equal(tracker.rows[1].boundUnit, "focus")
+    advance(state, 3)
+    state.units.focus = raider
+    emit(state, "PLAYER_FOCUS_CHANGED")
+    equal(tracker.rows[1].boundUnit, "nameplate1", "off your focus: its own plate, never the new focus")
+    cast(state, "Greymist Raider", 5782, "c2")
+    equal(tracker.rows[2].guid, "Creature-R", "a second row for the second mob")
+    equal(tracker.rows[1].guid, "Creature-C", "the first keeps its row")
+    equal(tracker.rows[1].shown, true)
+    equal(tracker.rows[2].shown, false, "your focus's Fear shows in the Focus box")
+    -- Rank 1 is 10 s: each row goes 1 s after its own Fear's time.
+    advance(state, 8)
+    equal(tracker.rows[1].guid, nil, "the first Fear's time is over")
+    equal(tracker.rows[2].guid, "Creature-R")
+    advance(state, 3)
+    equal(tracker.rows[2].guid, nil)
+end)
+
+-- John's screenshot (DDT 1.8.1): one Pygmy Tide Crawler in the Focus box and
+-- again on a row, both "Fear 7 s". A mob locked by its plate key while your
+-- focus reads by GUID is still your focus: the row hides behind the box.
+test("a Fear row on your focus's plate hides behind the Focus box, whatever its key", function()
+    local state = fixture()
+    local crawler = mob(SECRET, "Pygmy Tide Crawler")
+    controlWorld(state, {mouseover = crawler, nameplate4 = crawler})
+    state.focusWorks(true)
+    local tracker = warlockTracker(state)
+    cast(state, "Pygmy Tide Crawler", 5782, "c1")
+    local row = tracker.rows[1]
+    equal(row.guid, "plate:nameplate4", "a secret GUID: locked by its plate")
+    equal(row.shown, true, "not your focus yet")
+    -- It becomes your focus, read by a GUID.
+    state.units.focus = mob("Creature-7", "Pygmy Tide Crawler", {same = "nameplate4"})
+    state.units.nameplate4.same = "focus"
+    emit(state, "PLAYER_FOCUS_CHANGED")
+    equal(row.boundUnit, "nameplate4")
+    equal(row.shown, false, "the box shows it; never twice")
+end)
+
+-- Where auras can be read (Classic Era, no focus): a Fear seen and then gone
+-- broke early, so its row goes at once.
+test("without focus, a row goes as soon as its read aura is gone", function()
+    local state = fixture()
+    local coast = mob("Creature-C", "Greymist Coastrunner")
+    controlWorld(state, {target = coast})
+    state.focusWorks(false)
+    local tracker = warlockTracker(state, {countdown = true})
+    cast(state, "Greymist Coastrunner", 5782, "c1")
+    local row = tracker.rows[1]
+    equal(row.guid, "Creature-C", "not on yet as the cast lands: the row stays")
+    state.auras.target = {{spellId = 5782, expirationTime = state.now + 10}}
+    emit(state, "UNIT_AURA", "target")
+    equal(row.guid, "Creature-C")
+    advance(state, 2)
+    state.auras.target = {}
+    emit(state, "UNIT_AURA", "target")
+    equal(row.guid, nil, "broke early: gone")
+end)
+
+-- 2.18.2 (John: "when the mob runs out of range (inevitable), it just shows
+-- the mobs name, loses all info about the mob"): the time left counts down
+-- from the cast, also where focus works and auras cannot be read.
+test("a feared mob that leaves range counts down from the cast", function()
+    local state = fixture()
+    local coast = mob("Creature-C", "Greymist Coastrunner")
+    controlWorld(state, {target = coast, nameplate1 = coast})
+    state.focusWorks(true)
+    local tracker = warlockTracker(state, {countdown = true})
+    cast(state, "Greymist Coastrunner", 5782, "c1")
+    local row = tracker.rows[1]
+    equal(row.boundUnit, "target")
+    equal(row.name.text, "Greymist Coastrunner", "a unit shows it: the bar has the time")
+    advance(state, 2)
+    state.units.target = nil
+    emit(state, "PLAYER_TARGET_CHANGED")
+    state.units.nameplate1 = nil
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    equal(row.guid, "Creature-C", "the row stays")
+    equal(row.boundUnit, "none")
+    equal(row.name.text, "Greymist Coastrunner  |cff999999" .. "~8 s|r",
+        "Fear rank 1 is 10 s, cast 2 s ago; ~ as it may have broken early")
+    advance(state, 1)
+    advance(state, 1)
+    equal(row.name.text, "Greymist Coastrunner  |cff999999" .. "~6 s|r", "it counts down")
+    -- Back in plate range: the engine's bar has it again.
+    state.units.nameplate1 = coast
+    emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(row.boundUnit, "nameplate1")
+    equal(row.name.text, "Greymist Coastrunner")
+    -- Out of range until it ends: no time text once it is over.
+    state.units.nameplate1 = nil
+    emit(state, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    for _ = 1, 7 do advance(state, 1) end
+    equal(row.guid, nil, "its time is over: the row goes")
 end)
 
 test("while unlocked, samples show; turned off, nothing shows and nothing is tracked", function()
@@ -3710,6 +3819,8 @@ test("a counted-down mob whose nameplate comes into view drops its countdown tex
     emit(state, "PLAYER_TARGET_CHANGED")
     equal(row.name.text, "Boar  |cff999999" .. "50 s|r")
     state.units.nameplate1 = mob("Creature-5", "Boar")
+    -- The mock keys auras by token: the sheep's own aura, seen on its plate.
+    state.auras.nameplate1 = state.auras.target
     emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate1")
     equal(row.boundUnit, "nameplate1")
     equal(row.name.text, "Boar", "no countdown once a unit shows the mob, before the next tick")

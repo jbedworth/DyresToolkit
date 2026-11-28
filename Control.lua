@@ -28,7 +28,13 @@ local DyresToolkit = ns.toolkit
 -- migrations. Frame names are passed in. Markers come only from the macros'
 -- /tm (Macros.lua); nothing here calls SetRaidTarget.
 
+-- 2.18.2: `countdown` counts from the cast by a spell's `durations` (a flag
+-- owners check before they rely on it).
+DyresToolkit.CONTROL_CAST_COUNTDOWN = true
+
 local FORGET_SLACK = 5
+-- A spell with `durations` is forgotten this long after its rank's time.
+local DURATION_SLACK = 1
 local AURA_FILTER = "HARMFUL|PLAYER"
 local MAX_NAMEPLATE_UNITS = 40
 local MAX_AURAS = 40
@@ -109,8 +115,12 @@ end
 --   focusLock  LockCast options for a focus-only cast (default WTF's)
 --   focusBox   {key = "fear", color = {r, g, b}}: a box above the rows with
 --              that spell on your focus, its click casting it there again
---   countdown  true: while focus does not work and no unit shows a row's
---              mob, its name shows the time left as text (MTF's)
+--   countdown  true: while no unit shows a row's mob, its name shows the
+--              time left as text (MTF's). It counts from the cast, by the
+--              spell's `durations` (2.18.2; before, only from an aura read,
+--              which happens only where focus does not work, so on Forever
+--              a mob out of range kept only its name); where auras can be
+--              read (no focus), a read aura's time wins.
 --   clickThrough true: a slot is always there while the bar is, taking the
 --              mouse only with a click to make or while unlocked (MTF's)
 --   fixedClick "polymorph": the slot's click is set once, out of combat,
@@ -267,7 +277,9 @@ function DyresToolkit.CreateControlTracker(spec)
         if remaining <= 0 then
             return nil
         end
-        return "  |cff999999" .. math.ceil(remaining) .. " s|r"
+        -- "~": counted from the cast, so a spell broken early (damage breaks
+        -- Fear) is not seen until a unit shows the mob again.
+        return "  |cff999999" .. (row.estimate and "~" or "") .. math.ceil(remaining) .. " s|r"
     end
 
     -- A fixedClick slot shows while you have a live hostile focus (its state
@@ -279,6 +291,22 @@ function DyresToolkit.CreateControlTracker(spec)
         end
         local canAttack = UnitCanAttack("player", "focus")
         return DyresToolkit.IsSecret(canAttack) or canAttack == true
+    end
+
+    -- The row's unit shows your focus's mob, whatever kind of key each has
+    -- (a mob locked by its plate key, and your focus read by its GUID, is one
+    -- mob; 2.18.2, John's screenshot: one Pygmy Tide Crawler in the Focus box
+    -- and again on a row, both "Fear 7 s"). A secret answer is no.
+    local function ShowsFocus(row)
+        local unit = row.boundUnit
+        if not unit or unit == "none" then
+            return false
+        end
+        if unit == "focus" then
+            return true
+        end
+        local same = UnitIsUnit(unit, "focus")
+        return not DyresToolkit.IsSecret(same) and same == true
     end
 
     local function Layout()
@@ -299,7 +327,8 @@ function DyresToolkit.CreateControlTracker(spec)
             row:SetAlpha((spent and SPENT_ALPHA or 1) * look.alpha)
             if not enabled and not spent then
                 row:Hide()
-            elseif row.guid and not row.focusOnly and focusGUID and row.key == focusBox.key and row.guid == focusGUID then
+            elseif row.guid and not row.focusOnly and focusBox and DyresToolkit.FocusWorks()
+                and row.key == focusBox.key and ((focusGUID and row.guid == focusGUID) or ShowsFocus(row)) then
                 row:Hide()
             elseif row.guid then
                 row.name:SetText(row.mobName .. (spec.countdown and TimeText(row) or ""))
@@ -390,7 +419,7 @@ function DyresToolkit.CreateControlTracker(spec)
 
     local function Forget(row)
         row.guid, row.mobName, row.clickName, row.clickSpell, row.token = nil, nil, nil, nil, nil
-        row.focusOnly, row.key, row.expires = nil, nil, nil
+        row.focusOnly, row.key, row.expires, row.estimate, row.auraSeen = nil, nil, nil, nil, nil
         Bind(row, nil)
         Layout()
         ApplyClicks()
@@ -436,10 +465,16 @@ function DyresToolkit.CreateControlTracker(spec)
             if not DyresToolkit.IsSecret(id) and set[id] and not DyresToolkit.IsSecret(expires)
                 and type(expires) == "number" then
                 row.expires = expires > 0 and expires or nil
+                row.estimate, row.auraSeen = nil, true
                 return
             end
         end
         row.expires = nil
+        -- Seen once, gone now: it broke or ended (2.18.2; John: Fear "seems
+        -- to break early a lot"). Before the first read it may not be on yet.
+        if row.auraSeen then
+            return "gone"
+        end
     end
 
     -- While no unit shows a counted-down mob, its text redraws; it stops on its own.
@@ -478,12 +513,9 @@ function DyresToolkit.CreateControlTracker(spec)
                 end
             elseif row.guid then
                 local unit = FindUnit(row.guid)
-                if unit and DyresToolkit.IsDead(unit) then
+                if unit and (DyresToolkit.IsDead(unit) or ReadAura(row, unit) == "gone") then
                     Forget(row)
                 else
-                    if unit then
-                        ReadAura(row, unit)
-                    end
                     Bind(row, unit)
                     if not unit and spec.countdown and row.expires then
                         TickText()
@@ -493,8 +525,19 @@ function DyresToolkit.CreateControlTracker(spec)
         end
     end
 
-    local function Track(row, guid, mobName, spell, spellName)
-        row.guid, row.mobName, row.key, row.expires = guid, mobName, spell.key, nil
+    -- The time the spell ends, counted from its cast: its rank's duration,
+    -- else nil (no countdown for a spell without durations).
+    local function CastExpires(spell, spellID)
+        local seconds = type(spell.durations) == "table" and spell.durations[spellID]
+        if type(seconds) ~= "number" or seconds <= 0 then
+            return nil
+        end
+        return GetTime() + seconds
+    end
+
+    local function Track(row, guid, mobName, spell, spellID)
+        row.guid, row.mobName, row.key, row.expires = guid, mobName, spell.key, CastExpires(spell, spellID)
+        row.estimate, row.auraSeen = row.expires ~= nil or nil, nil
         row.focusOnly = nil
         if spell.click and DyresToolkit.FocusWorks() then
             row.clickName, row.clickSpell, row.clickKey = mobName, ClickSpell(spell), spell.key
@@ -514,7 +557,12 @@ function DyresToolkit.CreateControlTracker(spec)
         end
         Layout()
         ApplyClicks()
-        C_Timer.After((spell.longest or 0) + FORGET_SLACK, function()
+        -- A spell with durations goes just after its rank's time (Fear rank 1:
+        -- 11 s, not the longest rank's 25); others after the longest + 5 s.
+        local seconds = type(spell.durations) == "table" and spell.durations[spellID]
+        local wait = type(seconds) == "number" and seconds > 0 and seconds + DURATION_SLACK
+            or (spell.longest or 0) + FORGET_SLACK
+        C_Timer.After(wait, function()
             if row.token == token then
                 Forget(row)
             end
@@ -924,7 +972,7 @@ function DyresToolkit.CreateControlTracker(spec)
         end
         local row = RowFor(guid, cast.target, spell)
         if row then
-            Track(row, guid, cast.target, spell, DyresToolkit.SpellName(cast.spellID))
+            Track(row, guid, cast.target, spell, cast.spellID)
             for index, each in ipairs(tracker.rows) do
                 if each == row then
                     tracker.lastLanded = "row " .. index .. " bound to " .. tostring(row.boundUnit)
@@ -1068,8 +1116,8 @@ function DyresToolkit.CreateControlTracker(spec)
         elseif event == "UNIT_AURA" then
             if not DyresToolkit.IsSecret(unit) then
                 for _, row in ipairs(tracker.rows) do
-                    if row.guid and row.boundUnit == unit then
-                        ReadAura(row, unit)
+                    if row.guid and row.boundUnit == unit and ReadAura(row, unit) == "gone" then
+                        Forget(row)
                     end
                 end
             end
@@ -1183,8 +1231,13 @@ function DyresToolkit.CreateControlTracker(spec)
         end
         lines[#lines + 1] = "lastLanded " .. tostring(self.lastLanded or "nothing yet")
         for index, row in ipairs(self.rows) do
-            lines[#lines + 1] = string.format("row %d mob=%s unit=%s click=%s macro=%s", index,
-                tostring(row.mobName), tostring(row.boundUnit), tostring(row.holder:IsShown()),
+            -- key, the kind of mob key (never the GUID itself), shown, and the
+            -- countdown's seconds left, for a player's debug report.
+            local kind = not row.guid and "none" or DyresToolkit.KeyPlate(row.guid) and "plate" or "guid"
+            local left = row.expires and math.ceil(row.expires - GetTime()) or nil
+            lines[#lines + 1] = string.format("row %d mob=%s key=%s by=%s unit=%s shown=%s left=%s click=%s macro=%s",
+                index, tostring(row.mobName), tostring(row.key), kind, tostring(row.boundUnit),
+                tostring(row:IsShown()), tostring(left), tostring(row.holder:IsShown()),
                 (tostring(row.holder:GetAttribute("macrotext1")):gsub("\n", " | ")))
         end
         local attached = 0

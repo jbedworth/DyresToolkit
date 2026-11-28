@@ -817,7 +817,11 @@ rules are data; CONTRACT stays 2; WTF 1.4.1 and MTF 1.2.3 keep working.
   every ID from WTF 1.4.1 and MTF 1.2.3. Agony's ramp is `weights`
   (`TickWeight(family, tick)`), Fear's plate timer `plateTimer`, Seduction's
   pet check `pet`. Polymorph has `single` (one up at a time: a new cast
-  replaces the row).
+  replaces the row). Fear is NOT single (John, 2026-11-27: "Fear never
+  worked on one mob at a time. It's always multi-cast", although Wowhead's
+  Forever data flags "The aura can only affect one target"); it has
+  `durations` by rank (LCD: 10, 15, 20 s) for the countdown and the row's
+  end.
 - Every class (the DDT class gate; lead, 2026-11-14, John: "go with your
   recommendations"; the audit is the shared notes'
   ddt-class-spells-audit.md): DRUID, HUNTER, PRIEST, ROGUE, SHAMAN,
@@ -871,9 +875,27 @@ rules are data; CONTRACT stays 2; WTF 1.4.1 and MTF 1.2.3 keep working.
   - A `click` spell cast while focus works is focus-only (its row binds to
     "focus", goes with it, and clicks `FocusRecastMacro`); otherwise rows
     start from the cast and take no click. `single` spells reuse their row.
-  - `countdown` (MTF): without focus, a row no unit shows has its name
-    count the time down from the last aura read (C_UnitAuras, readable on
-    those clients), a 1 s C_Timer only while one shows. `clickThrough`
+  - `countdown` (MTF; DDT for every class after its 1.8.1): a row no unit
+    shows has its name count the time down, a 1 s C_Timer only while one
+    shows. 2.18.2 (John, DDT 1.8.1 on Forever: a feared mob out of range
+    "just shows the mobs name"): the time starts from the cast, by the
+    spell's `durations` (`CastExpires`); before, it came only from an aura
+    read, which runs only without focus, so on Forever it never showed.
+    Without focus a read aura's time still wins. `CONTROL_CAST_COUNTDOWN`
+    is the flag. A spell with no `durations` counts only from aura reads.
+    A time counted from the cast shows "~N s" (`row.estimate`): damage
+    breaks Fear early (John: it "seems to break early a lot"), and on
+    Forever AddOn code cannot see that in combat. A row with `durations`
+    goes 1 s after its rank's time (`DURATION_SLACK`; else the longest + 5
+    s). Where auras can be read (no focus), a row whose aura was read and
+    is then gone goes at once ("gone" from ReadAura). On Forever, while a
+    unit shows the mob, the engine's bar empties when the spell breaks and
+    the row stays, dimmed line, until its time is over: AddOn code cannot
+    read the engine's slot in combat.
+  - The Focus box hides a row of its spell when the row's key is your
+    focus's (MobKey) OR the row's unit is your focus (`ShowsFocus`:
+    UnitIsUnit, a secret is no; 2.18.2): a mob locked by its plate key
+    while your focus reads by GUID showed twice before. `clickThrough`
     (MTF): the slot stays while the bar does, with the mouse only for a click
     or while unlocked.
   - `fixedClick = key` (2.9.3; John, 2026-11-15, MTF player report:

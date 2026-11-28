@@ -4,6 +4,13 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.18.2
+
+### Fixes
+- A feared mob that runs out of range keeps its time left on its bar's name line, like "~6 s", instead of showing only its name. The "~" means it's counted from your cast, since damage can break Fear early.
+- A Fear bar now goes when that Fear's time is up (10 seconds for rank 1), instead of staying for 25 seconds.
+- Your focus's Fear no longer shows twice, once in the Focus box and again on a bar.
+
 ## 2.18.1
 
 ### Fixes

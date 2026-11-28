@@ -52,7 +52,10 @@ local DyresToolkit = ns.toolkit
 --   (tracked on the control bar), marker (default raid marker), click (a
 --   row click recasts on your focus), plateTimer (a timer under the mob's
 --   nameplate), untargeted (no single target: announced only), single (only
---   one of yours can be up at a time: a new cast replaces the old mob's row).
+--   one of yours can be up at a time: a new cast replaces the old mob's row),
+--   durations ({[spellID] = seconds}: the control bar counts the time left
+--   down from the cast while no unit shows the mob, and drops the row once
+--   that rank's time is over).
 -- macros: name (exact; adopted by name, never a second copy), spell (the ID
 --   whose name is cast), known (the control key whose spells you must know),
 --   pet (the spell is your pet's: Spells.PetKnows), petFamily (the cast
@@ -194,8 +197,15 @@ DyresToolkit.ClassData = {
         -- WTF 1.4.1, Control.lua. Enslave Demon and Howl of Terror only
         -- announce: an enslaved demon is your pet, and Howl of Terror has no
         -- single target.
+        -- Fear is NOT single (John, 2026-11-27: "Fear never worked on one mob
+        -- at a time. It's always multi-cast"; Wowhead's Forever data flags it
+        -- "The aura can only affect one target", which the game does not
+        -- follow): one row per feared mob. Its durations by rank are LCD's
+        -- (classAbilities.lua, Fear: 10, 15, 20 s; John: rank 1 "is only 10
+        -- sec, and seems to break early a lot").
         control = {
-            {key = "fear", label = "Fear", ids = {5782, 6213, 6215}, longest = 20, bar = true, plateTimer = true},
+            {key = "fear", label = "Fear", ids = {5782, 6213, 6215}, longest = 20, bar = true, plateTimer = true,
+                durations = {[5782] = 10, [6213] = 15, [6215] = 20}},
             {key = "banish", label = "Banish", ids = {710, 18647}, longest = 30, bar = true, marker = 5,
                 click = true},
             {key = "enslave", label = "Enslave Demon", ids = {1098, 11725, 11726}},
