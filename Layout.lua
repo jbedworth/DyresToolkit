@@ -48,6 +48,7 @@ local function Center(frame)
     end
     return frame:GetCenter()
 end
+ns.FrameCenter = Center
 
 -- A frame's center and half size in UIParent units.
 local function Box(frame)

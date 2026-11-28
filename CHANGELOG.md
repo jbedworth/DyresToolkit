@@ -4,6 +4,12 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.20.0
+
+### Fixes
+- While frames are unlocked, each outline's label is now short, like "DBR: Aspect bar" or "DDT: Target", so labels of frames that sit close together no longer pile on top of each other. Point at a frame to see how to move it. A label near the edge of the screen stays on screen.
+- The DoT tracker's Target, Focus, and Others panels now have labels while frames are unlocked, so you can tell them apart.
+
 ## 2.19.0
 
 ### Features

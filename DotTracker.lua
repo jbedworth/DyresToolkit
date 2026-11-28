@@ -108,6 +108,10 @@ local AURA_FILTER = "HARMFUL|PLAYER"
 local BROWN = {0.28, 0.16, 0.07, 0.85}
 local PLACEHOLDER_ALPHA = 0.3
 local DEFAULT_POINT = {"CENTER", "CENTER", -260, 120}
+-- The panels' labels while frames are unlocked (2.20.0; John, 2026-11-28:
+-- "A lot of the WTF widgets (DoT trackers, CC Bars) do not have any label at
+-- all"): the owner's short form and the panel's name, as its settings say.
+local SECTION_LABELS = {target = "Target", focus = "Focus", list = "Others"}
 local SAMPLE_NAMES = {target = "Target (sample)", focus = "Focus (sample)",
     list = {"Another mob (sample)", "One more mob (sample)"}}
 local PINNED = {
@@ -1195,6 +1199,14 @@ function DyresToolkit.CreateDotTracker(spec)
             for _, key in ipairs({"target", "focus"}) do
                 tracker.sections[key]:SetShown(Enabled() and PanelShown(key))
             end
+            for key, label in pairs(tracker.sectionLabels or {}) do
+                if type(label.text.SetShown) == "function" then
+                    label.text:SetShown(samples)
+                end
+                if samples and label.place then
+                    label.place()
+                end
+            end
         end)
     end
 
@@ -2097,6 +2109,15 @@ function DyresToolkit.CreateDotTracker(spec)
         frame:SetClampedToScreen(true)
         frame:EnableMouse(false)
         tracker.sections[key] = frame
+        if type(frame.CreateFontString) == "function" and type(DyresToolkit.SetOutlineLabel) == "function" then
+            local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            tracker.sectionLabels = tracker.sectionLabels or {}
+            tracker.sectionLabels[key] = {text = text, place = DyresToolkit.SetOutlineLabel(frame, frame, text,
+                {addon = spec.addon, name = SECTION_LABELS[key], locked = Locked, gap = 4})}
+            if type(text.SetShown) == "function" then
+                text:SetShown(not Locked())
+            end
+        end
         if movable.register then
             movable.register(frame, function(position)
                 if type(store.sections) ~= "table" then

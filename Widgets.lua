@@ -262,10 +262,32 @@ end
 -- "Warning messages" outlines in layout mode: "I can't tell what the top
 -- warning messages are from"): the AddOn's title, "Dyre's " said once, before
 -- the hint. The toolkit's own widgets have none.
-local function OwnerPrefix(widget)
-    local addon = widget.dyre.addon
+-- 2.20.0 (John, 2026-11-28: "It's still way too crowded, try the acronym
+-- (e.g. DBR)"): the AddOn's short form, the capitals of its folder name
+-- (DyresBuffReminders: DBR; WarlockToolsForever: WTF), except where the
+-- family's own short form differs (Weapon Skills Forever is WSK, since WSF
+-- is Weapon Sets Forever). Else the title, "Dyre's " said once.
+local ACRONYMS = {WeaponSkillsForever = "WSK"}
+
+local function Acronym(addon)
+    if ACRONYMS[addon] then
+        return ACRONYMS[addon]
+    end
+    local capitals = addon:gsub("[^A-Z]", "")
+    if #capitals >= 2 and #capitals <= 5 then
+        return capitals
+    end
+    return nil
+end
+ns.AddOnAcronym = Acronym
+
+local function OwnerPrefixFor(addon)
     if type(addon) ~= "string" or addon == "DyresToolkit" then
         return ""
+    end
+    local short = Acronym(addon)
+    if short then
+        return short .. ": "
     end
     local read = type(C_AddOns) == "table" and C_AddOns.GetAddOnMetadata or rawget(_G, "GetAddOnMetadata")
     local ok, title = false, nil
@@ -279,7 +301,197 @@ local function OwnerPrefix(widget)
     return ns.ShortName(title) .. ": "
 end
 
+local function OwnerPrefix(widget)
+    return OwnerPrefixFor(widget.dyre.addon)
+end
+
 local FLIP_SIZE = 24
+
+-- Short outline labels (2.20.0; John's layout-mode shot, 2026-11-27: two
+-- labels drawn on top of each other read "Buff Dragtolmove...", and one ran
+-- off the screen; John: "Yes, build it"). The label is the AddOn and the
+-- frame's name only: the hint's first part (before " · "), else the title.
+-- The instructions, the hint's other parts and the default ones, are a
+-- tooltip while frames are unlocked. A label near a screen edge is anchored
+-- to the outline's inner corner, so it stays on screen.
+local DEFAULT_TIPS = {"Drag to move.", "Type /dyre lock when done."}
+
+local function Trim(text)
+    return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- The label's name, and the tooltip's lines.
+local function LabelParts(widget)
+    local text = widget.dyre.hint or widget.dyre.title or ""
+    local parts = {}
+    for part in (text .. " · "):gmatch("(.-) · ") do
+        part = Trim(part)
+        if part ~= "" then
+            parts[#parts + 1] = part
+        end
+    end
+    local name = table.remove(parts, 1) or Trim(text)
+    local tips, seen = {}, {}
+    for _, part in ipairs(parts) do
+        local line = part:sub(1, 1):upper() .. part:sub(2)
+        if not line:find("[%.!?]$") then
+            line = line .. "."
+        end
+        local key = line:lower()
+        if key ~= "drag to move." and key ~= "/dyre lock when done." and not seen[key] then
+            seen[key] = true
+            tips[#tips + 1] = line
+        end
+    end
+    table.insert(tips, 1, DEFAULT_TIPS[1])
+    tips[#tips + 1] = DEFAULT_TIPS[2]
+    return name, tips
+end
+ns.WidgetLabelParts = LabelParts
+
+-- The label over the outline's center, or from an inner corner near an edge.
+local function PlaceLabelOn(widget, mover, label, gap)
+    if not mover or not label or type(label.GetStringWidth) ~= "function" or type(ns.FrameCenter) ~= "function" then
+        return
+    end
+    gap = gap or 2
+    local anchor = "center"
+    local ok, x = pcall(ns.FrameCenter, widget)
+    local width = label:GetStringWidth()
+    local screen = UIParent and type(UIParent.GetWidth) == "function" and UIParent:GetWidth()
+    if ok and type(x) == "number" and type(width) == "number" and type(screen) == "number" then
+        local ratio = 1
+        if type(widget.GetEffectiveScale) == "function" and type(UIParent.GetEffectiveScale) == "function" then
+            local mine, parent = widget:GetEffectiveScale(), UIParent:GetEffectiveScale()
+            if type(mine) == "number" and type(parent) == "number" and parent > 0 then
+                ratio = mine / parent
+            end
+        end
+        local center, half = x * ratio, width * ratio / 2
+        if center - half < 0 then
+            anchor = "left"
+        elseif center + half > screen then
+            anchor = "right"
+        end
+    end
+    if label.dyreAnchor == anchor then
+        return
+    end
+    label.dyreAnchor = anchor
+    label:ClearAllPoints()
+    if anchor == "left" then
+        label:SetPoint("BOTTOMLEFT", mover, "TOPLEFT", 0, gap)
+    elseif anchor == "right" then
+        label:SetPoint("BOTTOMRIGHT", mover, "TOPRIGHT", 0, gap)
+    else
+        label:SetPoint("BOTTOM", mover, "TOP", 0, gap)
+    end
+end
+
+local function PlaceLabel(widget)
+    local mover = widget.dyre.mover
+    PlaceLabelOn(widget, mover, mover and mover.hint, 2)
+end
+ns.PlaceWidgetLabel = PlaceLabel
+
+-- While unlocked, the mouse on the widget shows its name and the instructions.
+local function HookLabelTooltip(widget)
+    if type(widget.HookScript) ~= "function" then
+        return
+    end
+    widget:HookScript("OnEnter", function(self)
+        if ns.db.locked or not GameTooltip then
+            return
+        end
+        local name, tips = LabelParts(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(name, GOLD[1], GOLD[2], GOLD[3])
+        for _, line in ipairs(tips) do
+            GameTooltip:AddLine(line, 1, 1, 1, true)
+        end
+        GameTooltip:Show()
+        self.dyre.tooltipShown = true
+    end)
+    widget:HookScript("OnLeave", function(self)
+        if self.dyre.tooltipShown and GameTooltip then
+            GameTooltip:Hide()
+        end
+        self.dyre.tooltipShown = nil
+    end)
+    widget:HookScript("OnDragStop", function(self)
+        PlaceLabel(self)
+    end)
+end
+
+-- The same label for an AddOn's own outline, one that is not a toolkit
+-- widget (2.20.0; John: "you missed the soul shard widget": Warlock Tools
+-- Forever's shard counter and Dyre's Shields Up's ring draw their own).
+-- DyresToolkit.SetOutlineLabel(frame, mover, label, opts): frame is the
+-- moved frame, mover its outline, label the outline's FontString. opts.addon
+-- (folder, for the "Short name: " prefix), opts.name (the frame's name),
+-- opts.tips (more tooltip lines), opts.locked (a function; default the
+-- toolkit's lock), opts.gap (the label's gap above the outline, default 2).
+-- Sets the label to the name only, shows the instructions as a tooltip on
+-- the frame while unlocked (HookScript, once per frame), and keeps the label
+-- on screen now and after a drag. Returns a function that places the label
+-- again (call it as frames unlock), or nil for bad arguments.
+DyresToolkit.OUTLINE_LABEL_VERSION = 1
+local outlineHooked = setmetatable({}, {__mode = "k"})
+
+function DyresToolkit.SetOutlineLabel(frame, mover, label, opts)
+    if type(frame) ~= "table" or type(mover) ~= "table" or type(label) ~= "table" or type(opts) ~= "table"
+            or type(opts.name) ~= "string" or opts.name == "" or type(label.SetText) ~= "function" then
+        return nil
+    end
+    label:SetText(OwnerPrefixFor(opts.addon) .. opts.name)
+    local tips = {DEFAULT_TIPS[1]}
+    for _, line in ipairs(type(opts.tips) == "table" and opts.tips or {}) do
+        if type(line) == "string" and line ~= "" then
+            tips[#tips + 1] = line
+        end
+    end
+    tips[#tips + 1] = DEFAULT_TIPS[2]
+    local function Locked()
+        if type(opts.locked) == "function" then
+            return opts.locked() and true or false
+        end
+        return ns.db.locked and true or false
+    end
+    local function Place()
+        PlaceLabelOn(frame, mover, label, type(opts.gap) == "number" and opts.gap or 2)
+    end
+    local state = outlineHooked[frame]
+    if not state and type(frame.HookScript) == "function" then
+        state = {}
+        outlineHooked[frame] = state
+        frame:HookScript("OnEnter", function(self)
+            if state.locked() or not GameTooltip then
+                return
+            end
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(state.name, GOLD[1], GOLD[2], GOLD[3])
+            for _, line in ipairs(state.tips) do
+                GameTooltip:AddLine(line, 1, 1, 1, true)
+            end
+            GameTooltip:Show()
+            state.shown = true
+        end)
+        frame:HookScript("OnLeave", function()
+            if state.shown and GameTooltip then
+                GameTooltip:Hide()
+            end
+            state.shown = nil
+        end)
+        frame:HookScript("OnDragStop", function()
+            state.place()
+        end)
+    end
+    if state then
+        state.name, state.tips, state.locked, state.place = opts.name, tips, Locked, Place
+    end
+    Place()
+    return Place
+end
 
 local function CreateMover(widget)
     local mover = CreateFrame("Frame", nil, widget, "BackdropTemplate")
@@ -292,8 +504,7 @@ local function CreateMover(widget)
     mover:EnableMouse(false)
     mover.hint = mover:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     mover.hint:SetPoint("BOTTOM", mover, "TOP", 0, 2)
-    mover.hint:SetText(OwnerPrefix(widget) .. (widget.dyre.hint
-        or (widget.dyre.title .. " · drag to move · /dyre lock when done")))
+    mover.hint:SetText(OwnerPrefix(widget) .. (LabelParts(widget)))
     -- The flip button (2.18.0; John, 2026-11-27: users "are going to want a
     -- way to flip the bar from vertical to horizontal in unlocked mode";
     -- "A button with an arrow going around"): on the outline's top-right
@@ -332,6 +543,9 @@ function ns.RefreshWidgets()
     local unlocked = not ns.db.locked
     for _, widget in ipairs(widgets) do
         widget.dyre.mover:SetShown(unlocked)
+        if unlocked then
+            PlaceLabel(widget)
+        end
         if widget.dyre.bar then
             ApplyOpacity(widget)
         end
@@ -678,6 +892,7 @@ function DyresToolkit.CreateWidget(spec)
     end)
     widget.dyre.mover = CreateMover(widget)
     widget.dyre.mover:SetShown(not ns.db.locked)
+    HookLabelTooltip(widget)
     widgets[#widgets + 1] = widget
     byAddOn[spec.addon] = byAddOn[spec.addon] or {}
     byAddOn[spec.addon][#byAddOn[spec.addon] + 1] = widget

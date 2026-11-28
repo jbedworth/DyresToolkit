@@ -68,6 +68,28 @@ and `/dyretoolkit`; chat prefix `Dyre:`. ("DTF" was dropped: crude slang.)
   size (GRID_EDGE_REACH; 8 at 32) of a grey line goes onto it; else the box
   stays where it was dropped. A neighbor in reach (magnetic snapping) comes
   before the grid. A Shift-dragged group snaps to the grid by its outer box.
+- Outline labels (2.20.0; John's layout-mode shot, 2026-11-27:
+  the Buff Reminders and Warlock Tools Forever labels drew on top of each
+  other, "Buff Dragtolmove...", and Crowd Control's ran off the screen;
+  John: "Yes, build it"; then 2026-11-28, "try the acronym (e.g. DBR)"):
+  the prefix is the AddOn's short form (`ns.AddOnAcronym`: the folder
+  name's capitals, WSK for WeaponSkillsForever; else the title as before),
+  and the DoT tracker's panels get labels too (DotTracker.lua
+  `SECTION_LABELS`, through SetOutlineLabel; "WTF widgets (DoT trackers, CC
+  Bars) do not have any label at all"). The label is the prefix plus the name only, the
+  hint's first part before " · ", else the title (`ns.WidgetLabelParts`).
+  The hint's other parts, plus "Drag to move." and "Type /dyre lock when
+  done." (not repeated), are a tooltip on the widget while unlocked
+  (HookScript OnEnter/OnLeave, never replaced). `ns.PlaceWidgetLabel`
+  anchors the label BOTTOM over the outline, or from its inner corner
+  (BOTTOMLEFT/BOTTOMRIGHT) when centered text would cross a screen edge:
+  the center from `ns.FrameCenter` (Layout.lua's anchor read, no GetCenter
+  on a placed frame) and `GetStringWidth`; at unlock and after a drag.
+  `DyresToolkit.SetOutlineLabel(frame, mover, label, {addon, name, tips,
+  locked, gap})` (`OUTLINE_LABEL_VERSION` 1; John: "you missed the soul
+  shard widget") gives an AddOn's own outline (WTF's shard counter, DSU's
+  ring) the same short label, tooltip, and edge rule; it returns a function
+  to place the label again at unlock.
 - Ctrl held at the drop skips all snapping, neighbors and grid (author:
   "for people trying to do pixel-perfect aligns"). A drop that waited out
   combat snaps as usual.

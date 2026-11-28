@@ -925,11 +925,127 @@ test("widgets 2.17.0: an outline's label names its AddOn", function()
         if field == "Title" and addon == "DyresBuffReminders" then return "Dyre's Buff Reminders" end
     end}
     local a = state.toolkit.CreateWidget(barSpec({}, {hint = "Polymorph bar · drag to move"}))
-    equal(a.dyre.mover.hint.text, "Mage Tools Forever: Polymorph bar · drag to move", "color codes dropped")
+    equal(a.dyre.mover.hint.text, "MTF: Polymorph bar", "the short form, then the name only")
     local b = state.toolkit.CreateWidget({addon = "DyresBuffReminders", key = "warnings", title = "Warning messages",
         store = {}, width = 100, height = 40})
-    equal(b.dyre.mover.hint.text, "Buff Reminders: Warning messages · drag to move · /dyre lock when done",
-        "\"Dyre's \" said once")
+    equal(b.dyre.mover.hint.text, "DBR: Warning messages", "the short form")
+    local short = state.ns.AddOnAcronym
+    equal(short("WeaponSkillsForever"), "WSK", "the family's own short form")
+    equal(short("WeaponSetsForever"), "WSF")
+    equal(short("DyresCombatTools"), "DCT")
+    equal(short("DyresShieldsUp"), "DSU")
+    equal(short("Questie"), nil, "no short form: the title, as before")
+end)
+
+test("widgets 2.20.0: short labels; the instructions are a tooltip while unlocked", function()
+    local state = fixture()
+    local toolkit, ns = state.toolkit, state.ns
+    local name, tips = ns.WidgetLabelParts({dyre = {hint = "Polymorph bar · drag to move · scroll to resize"}})
+    equal(name, "Polymorph bar")
+    equal(table.concat(tips, "|"), "Drag to move.|Scroll to resize.|Type /dyre lock when done.")
+    name, tips = ns.WidgetLabelParts({dyre = {title = "Warning messages"}})
+    equal(name, "Warning messages")
+    equal(table.concat(tips, "|"), "Drag to move.|Type /dyre lock when done.")
+    name, tips = ns.WidgetLabelParts({dyre = {hint = "Swing timer · drag to move · /dyre lock when done"}})
+    equal(name, "Swing timer")
+    equal(#tips, 2, "the owner's copies of the defaults are not repeated")
+    -- The tooltip: only while unlocked.
+    local shown = {}
+    state.env.GameTooltip = {
+        SetOwner = function() end,
+        SetText = function(_, text) shown = {text} end,
+        AddLine = function(_, text) shown[#shown + 1] = text end,
+        Show = function() shown.visible = true end,
+        Hide = function() shown.visible = false end,
+    }
+    local widget = toolkit.CreateWidget({addon = "DyresBuffReminders", key = "warnings", title = "Warning messages",
+        store = {}, width = 100, height = 40})
+    local hooks = {}
+    -- The mock's widget took its hooks at creation if it could; make one that records them.
+    local function hooked(frame)
+        local list = {}
+        function frame:HookScript(script, fn) list[script] = fn end
+        return list
+    end
+    local other = state.env.CreateFrame("Frame")
+    hooks = hooked(other)
+    local made = toolkit.CreateWidget({addon = "DyresBuffReminders", key = "other", title = "Pet",
+        store = {}, width = 100, height = 40, frame = other})
+    assert(hooks.OnEnter, "the widget's OnEnter is hooked, not replaced")
+    hooks.OnEnter(made)
+    equal(shown.visible, nil, "locked: no tooltip")
+    toolkit.Unlock()
+    hooks.OnEnter(made)
+    equal(shown[1], "Pet")
+    equal(shown[#shown], "Type /dyre lock when done.")
+    equal(shown.visible, true)
+    hooks.OnLeave(made)
+    equal(shown.visible, false)
+    toolkit.Lock()
+    equal(widget ~= nil, true)
+end)
+
+test("widgets 2.20.0: SetOutlineLabel gives an AddOn's own outline the same short label", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    state.env.C_AddOns = {GetAddOnMetadata = function(addon, field)
+        if field == "Title" and addon == "WarlockToolsForever" then return "Warlock Tools Forever" end
+    end}
+    equal(toolkit.OUTLINE_LABEL_VERSION, 1)
+    local frame = state.env.CreateFrame("Frame")
+    frame.position = {}
+    local hooks = {}
+    function frame:HookScript(script, fn) hooks[script] = fn end
+    local mover = state.env.CreateFrame("Frame")
+    local label = {}
+    function label:SetText(text) self.text = text end
+    function label:GetStringWidth() return 300 end
+    function label:ClearAllPoints() self.point = nil end
+    function label:SetPoint(point) self.point = point end
+    frame.anchor = {"CENTER", state.env.UIParent, "BOTTOMLEFT", 20, 500}
+    local locked = true
+    local place = toolkit.SetOutlineLabel(frame, mover, label, {addon = "WarlockToolsForever", name = "Soul Shards",
+        tips = {"Right-click deletes extra shards."}, locked = function() return locked end})
+    equal(type(place), "function")
+    equal(label.text, "WTF: Soul Shards")
+    equal(label.point, "BOTTOMLEFT", "near the left edge: on screen")
+    local shown = {}
+    state.env.GameTooltip = {SetOwner = function() end, SetText = function(_, text) shown = {text} end,
+        AddLine = function(_, text) shown[#shown + 1] = text end, Show = function() shown.visible = true end,
+        Hide = function() shown.visible = false end}
+    hooks.OnEnter(frame)
+    equal(shown.visible, nil, "locked: no tooltip")
+    locked = false
+    hooks.OnEnter(frame)
+    equal(table.concat(shown, "|"),
+        "Soul Shards|Drag to move.|Right-click deletes extra shards.|Type /dyre lock when done.")
+    hooks.OnLeave(frame)
+    equal(shown.visible, false)
+    equal(toolkit.SetOutlineLabel(frame, mover, label, {}), nil, "no name: refused")
+end)
+
+test("widgets 2.20.0: a label near a screen edge stays on screen", function()
+    local state = fixture()
+    local toolkit, ns = state.toolkit, state.ns
+    local function make(x)
+        local widget = toolkit.CreateWidget({addon = "DyresBuffReminders", key = "w" .. x, title = "Warning messages",
+            store = {position = {point = "CENTER", relativePoint = "BOTTOMLEFT", x = x, y = 500}},
+            width = 40, height = 40})
+        local label = widget.dyre.mover.hint
+        function label:GetStringWidth() return 300 end
+        function label:ClearAllPoints() self.point = nil end
+        function label:SetPoint(point) self.point = point end
+        return widget, label
+    end
+    local left, leftLabel = make(30)
+    local middle, middleLabel = make(960)
+    local right, rightLabel = make(1900)
+    toolkit.Unlock()
+    equal(leftLabel.point, "BOTTOMLEFT", "near the left edge: from the outline's left corner")
+    equal(middleLabel.point, "BOTTOM", "centered")
+    equal(rightLabel.point, "BOTTOMRIGHT", "near the right edge")
+    toolkit.Lock()
+    equal(left ~= nil and middle ~= nil and right ~= nil, true)
 end)
 
 test("button bars 2.18.0: a row or a column, saved in the store, moved only out of combat", function()
@@ -1166,7 +1282,7 @@ test("resetSizes picks what Reset size restores; a hint and drag handles are the
     equal(store.width, 200, "listed: reset")
     equal(store.scale, 120, "not listed: Bar size (%) stays")
     equal(store.opacity, 50)
-    equal(widget.dyre.mover.hint.text, "Polymorph bar · drag to move · scroll to resize")
+    equal(widget.dyre.mover.hint.text, "MTF: Polymorph bar")
     local button = newFrame(state, 0, 0)
     widget:AddDragHandle(button)
     toolkit.Unlock()
@@ -4807,6 +4923,17 @@ test("with a secret health a row keeps its numbers, and DIES goes just left of t
     equal(places.secret[1], "RIGHT")
     equal(places.secret[2], row.healthPercent, "secret: left of the first text")
     equal(places.secret[3], "LEFT")
+end)
+
+test("DoT tracker 2.20.0: each panel has a short label while frames are unlocked", function()
+    local state = fixture()
+    dotWorld(state, {})
+    local tracker = dotTracker(state)
+    local labels = tracker.sectionLabels
+    equal(labels ~= nil, true, "the panels have labels")
+    equal(labels.target.text.text, "WTF: Target", "the owner's short form and the panel's name")
+    equal(labels.focus.text.text, "WTF: Focus")
+    equal(labels.list.text.text, "WTF: Others")
 end)
 
 test("plate frames go only on a mob's plate: never the player's own or the settings preview plate", function()
