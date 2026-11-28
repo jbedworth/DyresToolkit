@@ -41,6 +41,14 @@
 - [ ] After /reload, frames start locked and stay where they were dropped.
 - [ ] In combat, /dyre opens nothing and says so; a drag ends after combat.
 
+### Unreleased (2.21.0): main-hand weapon enchants
+
+- With no enchant, `/dyre weapon` says "main hand false" and "read as off".
+- Put on a Firestone or Spellstone (Warlock), a weapon oil, a sharpening stone, or a Rogue poison. `/dyre weapon` says "main hand true", the milliseconds left, and an enchant ID, "read as on". Write down the ID for each item.
+- With a stone and an oil on at once (Forever stacks them), say which ID it reports.
+- Run it in combat (a macro): note whether any value says "secret".
+- Let an enchant run out, or swap weapons: a listener (Warlock Tools Forever's stone glow) updates with no `/reload`.
+
 ### 2.18.0: button bars
 
 - [ ] MTF Conjure and Portals: Layout Vertical stacks the buttons top to

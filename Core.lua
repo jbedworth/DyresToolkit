@@ -216,6 +216,8 @@ function ns.HandleCommand(message)
         ns.Report(ns.db.snapToGrid and "Frames snap to the grid." or "Frames no longer snap to the grid.")
     elseif command == "minimap" then
         ns.SetMinimapShown(ns.db.minimap.hide == true)
+    elseif command == "weapon" and ns.ReportWeaponEnchant then
+        ns.ReportWeaponEnchant()
     elseif command == "debug" then
         -- Until reload: failing hooks of other AddOns are said in chat
         -- (HealthBars.lua), the ones so far first.

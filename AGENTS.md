@@ -202,6 +202,30 @@ Aspect bar, DCT tank bar). Widgets.lua; CONTRACT stays 2
   Layout row registered for that widget. On the outline, never on the bar's
   own (secure) buttons, whose clicks cast spells. Look not yet seen in game.
 
+### Main-hand weapon enchants (unreleased, 2.21.0; John, 2026-11-28)
+
+For Warlock Tools Forever's Spellstone and Firestone, which on Forever are
+main-hand imbues (60 min), not Classic's off-hand items. John: left-click
+applies, right-click creates (as the other stone buttons), and "Once
+created and one is in your bag and it's not applied, we show the 'glow'
+reminder around the icon in the bar". The reader is here so Dyre's Buff
+Reminders can use it later for Rogue poisons and Shaman weapon enchants.
+Weapons.lua; `WEAPON_ENCHANT_VERSION` 1 is the feature test.
+
+- `MainHandEnchant()` -> "on", enchant ID, seconds left; "off"; or
+  "unknown" (no `GetWeaponEnchantInfo`, or a secret value, never compared).
+- `OnWeaponEnchantChanged(callback(state, id, seconds))`: called at once
+  with the known state, then when the state or the ID changes; never for
+  "unknown". Events registered only after the first listener:
+  UNIT_INVENTORY_CHANGED (player), PLAYER_EQUIPMENT_CHANGED,
+  PLAYER_ENTERING_WORLD, PLAYER_REGEN_ENABLED. One `C_Timer.After` at the
+  enchant's end + 0.5 s reads again (an expiry may fire no event); each read
+  replaces it. No polling. A failing listener is off until reload.
+- `/dyre weapon` prints the raw read (both hands, combat flag) for the
+  probe. Not checked in client yet (TESTING.md): whether the call exists,
+  is secret in combat, which events fire, and what it reports with a stone
+  and an oil stacked.
+
 ### Settings sections (2.17.0; John, 2026-11-26)
 
 John: class AddOns that bundle other Dyre's AddOns "should surface every
@@ -1301,7 +1325,7 @@ keeps:
   LibDataBroker-1.1, LibDBIcon-1.0, and Ace3-LICENSE.txt), Core.lua,
   Layout.lua, Widgets.lua, Settings.lua, Profiles.lua, Minimap.lua, Auras.lua, Units.lua,
   Procs.lua, HealthBars.lua, Spells.lua, Macros.lua, Announce.lua, ClassData.lua,
-  Owners.lua, Control.lua, DotTracker.lua, PlateDots.lua, DotPredict.lua,
+  Owners.lua, Control.lua, DotTracker.lua, PlateDots.lua, DotPredict.lua, Weapons.lua,
   loaded in that order (SettingsTemplates.xml right after Settings.lua), with Bindings.lua right after Core.lua; Bindings.xml
   (the client loads it); Textures/Stripes.tga; the fallback proc arcs
   (Textures/ProcArc.tga, ProcArcLeft.tga; scripts/make_proc_arcs.py).
@@ -1310,7 +1334,7 @@ keeps:
   2.16.0, when tests/tank.lua, which held them, moved to Dyre's Threat and
   Combat Tools) into the same run. tests/test_*.py: the release helpers.
 - Package only the TOC, Libs/ files listed in scripts/build_release.py, the
-  twenty-seven runtime files, Bindings.xml, the seven textures in
+  twenty-eight runtime files, Bindings.xml, the seven textures in
   `MEDIA_FILES` (Stripes, the four icon layers, and the two proc arcs), and
   LICENSE, under `DyresToolkit/`, named
   `DyresToolkit-<version>-forever.zip`, with `release.json` for WowUp.

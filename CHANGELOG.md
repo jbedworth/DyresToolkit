@@ -4,6 +4,11 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.21.0
+
+### Other changes
+- Dyre's AddOns can now tell when your main-hand weapon has an enchant, such as a Spellstone or Firestone, so they can remind you to put one on.
+
 ## 2.20.0
 
 ### Fixes

@@ -11,7 +11,7 @@ end
 local ADDON = "DyresToolkit"
 local RUNTIME = {"Core.lua", "Bindings.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Minimap.lua", "Auras.lua", "Units.lua",
     "Procs.lua", "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua", "ClassData.lua", "Owners.lua",
-    "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua"}
+    "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua", "Weapons.lua"}
 local tests = {}
 
 local function test(name, body)
@@ -1514,7 +1514,7 @@ test("the TOC loads the libraries, then the runtime, in order", function()
         .. "Libs\\LibDataBroker-1.1\\LibDataBroker-1.1.lua,Libs\\LibDBIcon-1.0\\LibDBIcon-1.0.lua,"
         .. "Core.lua,Bindings.lua,Layout.lua,Widgets.lua,Settings.lua,SettingsTemplates.xml,Profiles.lua,Minimap.lua,Auras.lua,Units.lua,Procs.lua,HealthBars.lua,"
         .. "Spells.lua,Macros.lua,Announce.lua,ClassData.lua,Owners.lua,Control.lua,DotTracker.lua,"
-        .. "PlateDots.lua,DotPredict.lua")
+        .. "PlateDots.lua,DotPredict.lua,Weapons.lua")
 end)
 
 -- Shared code for trackers (2.4.0) -------------------------------------------------
@@ -6835,6 +6835,116 @@ test("proc cues: events only, no polling, and no combat log", function()
         if not line:match("^%s*%-%-") then
             for _, word in ipairs({"OnUpdate", "C_Timer", "COMBAT_LOG_EVENT", "SetRaidTarget"}) do
                 equal(line:find(word, 1, true), nil, "Procs.lua: " .. word)
+            end
+        end
+    end
+end)
+
+-- Main-hand weapon enchants (Weapons.lua, 2.21.0) ---------------------------------
+
+local function weaponFixture()
+    local state = fixture()
+    local env = state.env
+    state.weapon = {has = false}
+    env.GetWeaponEnchantInfo = function()
+        local w = state.weapon
+        return w.has, w.ms, w.charges, w.id
+    end
+    state.timers = {}
+    env.C_Timer = {After = function(delay, fn) state.timers[#state.timers + 1] = {delay = delay, fn = fn} end}
+    return state
+end
+
+local function weaponFrame(state)
+    for _, frame in ipairs(state.frames) do
+        if frame.events.PLAYER_EQUIPMENT_CHANGED then return frame end
+    end
+end
+
+test("weapon enchant 2.21.0: reads on, off, and unknown; a secret is never compared", function()
+    local state = weaponFixture()
+    local toolkit = state.toolkit
+    equal(toolkit.WEAPON_ENCHANT_VERSION, 1)
+    equal(toolkit.MainHandEnchant(), "off")
+    state.weapon = {has = true, ms = 90000, id = 1803}
+    local s, id, seconds = toolkit.MainHandEnchant()
+    equal(s, "on"); equal(id, 1803); equal(seconds, 90)
+    local secret = setmetatable({}, {__eq = function() error("compared a secret") end})
+    state.env.issecretvalue = function(value) return value == nil and false or rawequal(value, secret) end
+    state.weapon = {has = secret, ms = 1, id = 1803}
+    equal(toolkit.MainHandEnchant(), "unknown")
+    state.weapon = {has = true, ms = secret, id = 1803}
+    equal(toolkit.MainHandEnchant(), "unknown")
+    state.env.GetWeaponEnchantInfo = nil
+    equal(toolkit.MainHandEnchant(), "unknown")
+end)
+
+test("weapon enchant 2.21.0: listeners hear changes from events and a one-shot timer at the end", function()
+    local state = weaponFixture()
+    local toolkit = state.toolkit
+    equal(weaponFrame(state), nil, "no events before a listener")
+    local heard = {}
+    equal(toolkit.OnWeaponEnchantChanged(function(s, id, seconds) heard[#heard + 1] = {s, id, seconds} end), true)
+    equal(#heard, 1, "the state at once")
+    equal(heard[1][1], "off")
+    local frame = weaponFrame(state)
+    assert(frame, "events registered after the first listener")
+    equal(frame.events.PLAYER_REGEN_ENABLED, true)
+    equal(frame.events.PLAYER_ENTERING_WORLD, true)
+    -- Applied: UNIT_INVENTORY_CHANGED for the player.
+    state.weapon = {has = true, ms = 3600000, id = 8059}
+    frame.scripts.OnEvent(frame, "UNIT_INVENTORY_CHANGED", "party1")
+    equal(#heard, 1, "another unit is ignored")
+    frame.scripts.OnEvent(frame, "UNIT_INVENTORY_CHANGED", "player")
+    equal(#heard, 2)
+    equal(heard[2][1], "on"); equal(heard[2][2], 8059); equal(heard[2][3], 3600)
+    equal(#state.timers, 1)
+    equal(state.timers[1].delay, 3600.5, "one timer at the end")
+    -- The same again: no call.
+    frame.scripts.OnEvent(frame, "PLAYER_EQUIPMENT_CHANGED")
+    equal(#heard, 2, "nothing changed")
+    -- The first timer is stale now; it does nothing.
+    state.weapon = {has = false}
+    state.timers[1].fn()
+    equal(#heard, 2, "a replaced timer does not read")
+    -- The latest timer reads and finds it gone.
+    state.timers[#state.timers].fn()
+    equal(#heard, 3)
+    equal(heard[3][1], "off")
+    -- A secret read in combat keeps the last state.
+    local secret = {}
+    state.env.issecretvalue = function(value) return rawequal(value, secret) end
+    state.weapon = {has = secret}
+    frame.scripts.OnEvent(frame, "UNIT_INVENTORY_CHANGED", "player")
+    equal(#heard, 3, "unknown is not a change")
+    -- A second listener hears the current state at once, and a failing one is off.
+    local second = {}
+    toolkit.OnWeaponEnchantChanged(function(s) second[#second + 1] = s end)
+    equal(second[1], "off")
+    local fails = 0
+    toolkit.OnWeaponEnchantChanged(function() fails = fails + 1; error("boom") end)
+    state.env.issecretvalue = nil
+    state.weapon = {has = true, ms = 1000, id = 1803}
+    frame.scripts.OnEvent(frame, "PLAYER_REGEN_ENABLED")
+    equal(fails, 1, "failed once at registration, then off")
+    equal(second[2], "on")
+    equal(toolkit.OnWeaponEnchantChanged("nope"), false)
+end)
+
+test("weapon enchant 2.21.0: /dyre weapon prints the raw read; no polling in the file", function()
+    local state = weaponFixture()
+    state.weapon = {has = true, ms = 61000, charges = 0, id = 1803}
+    state.slash("weapon")
+    assert(state.said("main hand true, ms left 61000"), state.last())
+    assert(state.said("read as on, ID 1803, 61 s left"), state.last())
+    state.env.GetWeaponEnchantInfo = nil
+    state.slash("weapon")
+    assert(state.said("GetWeaponEnchantInfo is missing"))
+    local text = assert(io.open("Weapons.lua")):read("*a")
+    for line in text:gmatch("[^\n]+") do
+        if not line:match("^%s*%-%-") then
+            for _, word in ipairs({"OnUpdate", "NewTicker", "COMBAT_LOG_EVENT"}) do
+                equal(line:find(word, 1, true), nil, "Weapons.lua: " .. word)
             end
         end
     end

@@ -31,7 +31,7 @@ LIBRARY_NOTICES = ("Libs/Ace3-LICENSE.txt",)
 RUNTIME_FILES = ("Core.lua", "Bindings.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "SettingsTemplates.xml", "Profiles.lua", "Minimap.lua",
                  "Auras.lua", "Units.lua", "Procs.lua", "HealthBars.lua", "Spells.lua", "Macros.lua",
                  "Announce.lua", "ClassData.lua", "Owners.lua", "Control.lua", "DotTracker.lua",
-                 "PlateDots.lua", "DotPredict.lua")
+                 "PlateDots.lua", "DotPredict.lua", "Weapons.lua")
 # Key bindings for the tank buttons (2.9.0; since 2.16.0 the buttons are made by
 # Dyre's Threat and Combat Tools, the bindings stay here): the client loads Bindings.xml
 # from the AddOn's folder by itself, so the TOC does not list it.
