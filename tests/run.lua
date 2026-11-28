@@ -992,6 +992,151 @@ test("button bars 2.18.0: the Layout row reads and writes the bar, mapped and gr
     equal(predicate(), false, "greyed with the bar's switch")
 end)
 
+-- A frame whose HookScript adds to its scripts, and whose mouse-over is set.
+local function hoverFrame(state)
+    local frame = newFrame(state, 0, 0)
+    frame.hooked = {}
+    function frame:HookScript(script, callback) self.hooked[script] = callback end
+    function frame:IsMouseOver() return self.mouseOver == true end
+    return frame
+end
+
+local function fireRegen(state, event)
+    for _, frame in ipairs(state.frames) do
+        if frame.events[event] and frame.scripts.OnEvent then
+            frame.scripts.OnEvent(frame, event)
+        end
+    end
+end
+
+test("button bars 2.19.0: opacity in and out of combat, at least 80% on mouseover", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    equal(toolkit.BAR_OPACITY_VERSION, 1)
+    local store = {}
+    local widget = toolkit.CreateWidget({addon = "MageToolsForever", key = "portals", title = "Portal bar",
+        store = store, width = 48, height = 48})
+    local alpha = 1
+    local setAlpha = widget.SetAlpha
+    function widget:SetAlpha(value) alpha = value; if setAlpha then setAlpha(self, value) end end
+    function widget:HookScript(script, callback) self.hooked = self.hooked or {}; self.hooked[script] = callback end
+    function widget:IsMouseOver() return self.mouseOver == true end
+    local buttons = {hoverFrame(state), hoverFrame(state)}
+    widget:LayoutButtons(buttons, {size = 36})
+    -- Both start at the bar's current opacity (100% for a bar with no Opacity setting).
+    equal(widget:GetBarOpacity("out"), 100)
+    equal(widget:GetBarOpacity("in"), 100)
+    equal(store.opacityIn, 100, "the in-combat value is set to it")
+    widget:SetBarOpacity("in", 0)
+    widget:SetBarOpacity("out", 40)
+    equal(alpha, 0.4, "out of combat")
+    fireRegen(state, "PLAYER_REGEN_DISABLED")
+    equal(alpha, 0, "in combat")
+    -- The mouse on a button: at least 80%, or the out-of-combat value if higher.
+    buttons[1].hooked.OnEnter(buttons[1])
+    equal(alpha, 0.8, "mouseover in combat")
+    -- Over to the next button: still shown.
+    widget.mouseOver = true
+    buttons[1].hooked.OnLeave(buttons[1])
+    buttons[2].hooked.OnEnter(buttons[2])
+    equal(alpha, 0.8)
+    widget.mouseOver = false
+    buttons[2].hooked.OnLeave(buttons[2])
+    equal(alpha, 0, "the mouse left the bar")
+    widget:SetBarOpacity("out", 90)
+    buttons[1].hooked.OnEnter(buttons[1])
+    equal(alpha, 0.9, "the out-of-combat value when higher than 80%")
+    buttons[1].hooked.OnLeave(buttons[1])
+    fireRegen(state, "PLAYER_REGEN_ENABLED")
+    equal(alpha, 0.9, "after combat")
+    -- While frames are unlocked a bar shows fully.
+    widget:SetBarOpacity("out", 0)
+    toolkit.Unlock()
+    equal(alpha, 1, "unlocked: full")
+    toolkit.Lock()
+    equal(alpha, 0)
+    -- Junk is ignored and clamped.
+    widget:SetBarOpacity("in", "x")
+    equal(store.opacityIn, 0)
+    widget:SetBarOpacity("in", 250)
+    equal(store.opacityIn, 100)
+end)
+
+test("button bars 2.19.0: a bar with its own Opacity setting starts both sliders at it", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store = {opacity = 60}
+    local widget = toolkit.CreateWidget({addon = "DyresBuffReminders", key = "aspect", title = "Aspect bar",
+        store = store, width = 48, height = 48, sizes = {opacity = true}})
+    widget:LayoutButtons({hoverFrame(state)}, {size = 36})
+    equal(widget:GetBarOpacity("out"), 60, "the Opacity setting is the out-of-combat value")
+    equal(widget:GetBarOpacity("in"), 60)
+    widget:SetBarOpacity("out", 30)
+    equal(store.opacity, 30, "one value, not two")
+    equal(store.opacityIn, 60, "in combat keeps its own")
+end)
+
+test("button bars 2.19.0: the Layout row brings the two opacity sliders, mapped and greyed", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local store = {}
+    local widget = toolkit.CreateWidget({addon = "WarlockToolsForever", key = "stones", title = "Stones bar",
+        store = store, width = 48, height = 48})
+    widget:LayoutButtons({hoverFrame(state)}, {size = 36})
+    local category = {initializers = {}}
+    local predicates = {}
+    state.env.Settings.CreateSlider = function(object, setting, _, tooltip)
+        object.initializers[#object.initializers + 1] = setting
+        setting.tooltip = tooltip
+        local initializer = {setting = setting}
+        function initializer:AddModifyPredicate(fn) predicates[#predicates + 1] = fn end
+        return initializer
+    end
+    toolkit.AddBarLayoutSetting(category, nil, widget,
+        {variable = function(name) return "HOST__" .. name end, modify = function() return false end})
+    local out = state.settings["HOST__DYRE_WARLOCKTOOLSFOREVER_STONES_OPACITY_OUT"]
+    local inside = state.settings["HOST__DYRE_WARLOCKTOOLSFOREVER_STONES_OPACITY_IN"]
+    equal(out.name, "Opacity out of combat")
+    equal(inside.name, "Opacity in combat")
+    equal(out.tooltip, "How solid the bar is out of combat.")
+    contains(inside.tooltip, "80% or more while your mouse is over it")
+    inside.set(25)
+    equal(store.opacityIn, 25)
+    equal(inside.get(), 25)
+    out.set(70)
+    equal(store.opacityOut, 70)
+    equal(#predicates, 2, "both greyed with the bar's switch")
+    equal(predicates[1](), false)
+    -- AddWidgetSettings can leave the plain Opacity slider out (skip).
+    local faded = toolkit.CreateWidget({addon = "WarlockToolsForever", key = "faded", title = "Faded bar",
+        store = {}, width = 48, height = 48, sizes = {scale = true, opacity = true}})
+    toolkit.AddWidgetSettings(category, nil, faded, {skip = {"opacity"}})
+    equal(state.settings.DYRE_WARLOCKTOOLSFOREVER_FADED_OPACITY, nil, "skipped")
+    equal(state.settings.DYRE_WARLOCKTOOLSFOREVER_FADED_SCALE ~= nil, true, "the others stay")
+    -- opacity = false leaves them out.
+    local other = toolkit.CreateWidget({addon = "WarlockToolsForever", key = "other", title = "Other bar",
+        store = {}, width = 48, height = 48})
+    toolkit.AddBarLayoutSetting(category, nil, other, {opacity = false})
+    equal(state.settings.DYRE_WARLOCKTOOLSFOREVER_OTHER_OPACITY_IN, nil)
+end)
+
+test("settings: no row has a shown predicate (greyed, never hidden)", function()
+    -- The family rule "greyed, never hidden": a row that does not apply is
+    -- greyed, not hidden. (The Options search error of 2026-11-27 is a
+    -- Blizzard bug any vertical-layout AddOn page triggers; see AGENTS.md.)
+    for _, file in ipairs({"Core.lua", "Settings.lua", "Widgets.lua", "Profiles.lua", "Procs.lua",
+            "HealthBars.lua", "Control.lua", "DotTracker.lua", "PlateDots.lua", "DotPredict.lua"}) do
+        local source = assert(io.open(file)):read("*a")
+        equal(source:find("AddShownPredicate", 1, true), nil, file .. ": no AddShownPredicate")
+    end
+end)
+
+test("button bars 2.19.0: events only, and a hook, never a replaced script, on the buttons", function()
+    local source = assert(io.open("Widgets.lua")):read("*a")
+    equal(source:find("OnUpdate", 1, true), nil, "no OnUpdate")
+    equal(source:find('SetScript("OnEnter", function() SetHovered', 1, true), nil, "HookScript, not SetScript")
+end)
+
 test("button bars 2.18.0: the outline's flip button switches a laid-out bar between a row and a column", function()
     local state = fixture()
     local store = {}
@@ -6036,24 +6181,80 @@ end)
 
 -- 2.16.0, a CurseForge player's report (2026-11-27): on Forever
 -- GetRealmName() gave "", so the profile had no key and import refused.
-test("profiles 2.16.0: the character key falls back when the realm is blank", function()
+-- 2.19.0, John's client: UnitFullName's second value is the surname on
+-- Forever, so it is never the realm ("Why does Locus have 2 profiles?").
+test("profiles 2.19.0: the character key never uses the surname and never changes once kept", function()
     local state = fixture()
     local env, key = state.env, state.ns.CharacterKey
+    env.DyresToolkitCharDB = nil
     env.UnitName = function() return "Dyre" end
+    env.UnitClass = function() return "Paladin", "PALADIN" end
     env.GetRealmName = function() return "Forever" end
     equal(key(), "Dyre - Forever", "a named realm: the same key as before")
     env.GetRealmName = function() return "" end
-    env.UnitFullName = function() return "Dyre", "Forevermore" end
-    equal(key(), "Dyre - Forevermore", "blank: UnitFullName's realm")
-    env.UnitFullName = function() return "Dyre", nil end
+    env.UnitFullName = function() return "Dyre", "Straytes" end
+    equal(key(), "Dyre", "blank realm: never the surname")
     env.GetNormalizedRealmName = function() return "ForeverNorm" end
     equal(key(), "Dyre - ForeverNorm", "then the normalized realm")
     env.GetNormalizedRealmName = function() return "" end
-    equal(key(), "Dyre", "no realm anywhere: the name alone, never nil")
     env.GetRealmName, env.UnitFullName, env.GetNormalizedRealmName = nil, nil, nil
     equal(key(), "Dyre", "without the realm functions too")
     env.UnitName = function() return "" end
     equal(key(), nil, "no name yet: not ready")
+    -- Kept in the character's own table: it never changes after that.
+    env.UnitName = function() return "Dyre" end
+    env.GetRealmName = function() return "CAMWOW" end
+    env.DyresToolkitCharDB = {}
+    equal(key(), "Dyre - CAMWOW")
+    equal(env.DyresToolkitCharDB.profileKey, "Dyre - CAMWOW")
+    env.GetRealmName = function() return "" end
+    equal(key(), "Dyre - CAMWOW", "the kept key, though the realm is blank now")
+end)
+
+test("profiles 2.19.0: with no realm, the saved profile of this name and class is found, the surname one folded in", function()
+    local state = fixture()
+    local env, key = state.env, state.ns.CharacterKey
+    env.UnitName = function() return "Locus" end
+    env.UnitClass = function() return "Warlock", "WARLOCK" end
+    env.GetRealmName = function() return "" end
+    env.GetNormalizedRealmName = nil
+    env.UnitFullName = function() return "Locus", "Stormshadow" end
+    local profiles = {
+        ["Locus - CAMWOW"] = {class = "Warlock", seen = 10, parts = {DyresToolkit = {old = true}}},
+        ["Locus - Stormshadow"] = {class = "Warlock", seen = 20, parts = {DyresToolkit = {new = true}}},
+        ["Locus - Elsewhere"] = {class = "Mage", seen = 5, parts = {}},
+    }
+    state.ns.db.profiles = profiles
+    env.DyresToolkitCharDB = {}
+    equal(key(), "Locus - CAMWOW", "the realm key, not the surname one, not another class")
+    equal(profiles["Locus - Stormshadow"], nil, "the surname entry is folded in")
+    equal(profiles["Locus - CAMWOW"].parts.DyresToolkit.new, true, "the newer settings win")
+    equal(env.DyresToolkitCharDB.profileKey, "Locus - CAMWOW")
+    -- The older surname entry loses to a newer kept one.
+    local state2 = fixture()
+    local env2 = state2.env
+    env2.UnitName = function() return "Drow" end
+    env2.UnitClass = function() return "Mage", "MAGE" end
+    env2.GetRealmName = function() return "CAMWOW" end
+    env2.UnitFullName = function() return "Drow", "Hatefyre" end
+    local profiles2 = {
+        ["Drow - CAMWOW"] = {class = "Mage", seen = 30, parts = {DyresToolkit = {keep = true}}},
+        ["Drow - Hatefyre"] = {class = "Mage", seen = 20, parts = {DyresToolkit = {old = true}}},
+    }
+    state2.ns.db.profiles = profiles2
+    env2.DyresToolkitCharDB = {}
+    equal(state2.ns.CharacterKey(), "Drow - CAMWOW")
+    equal(profiles2["Drow - Hatefyre"], nil)
+    equal(profiles2["Drow - CAMWOW"].parts.DyresToolkit.keep, true, "the newer one stays")
+    -- Two saved profiles of this name and class: the name alone, no guess.
+    local state3 = fixture()
+    local env3 = state3.env
+    env3.UnitName = function() return "Ayre" end
+    env3.UnitClass = function() return "Hunter", "HUNTER" end
+    env3.GetRealmName, env3.GetNormalizedRealmName, env3.UnitFullName = nil, nil, nil
+    state3.ns.db.profiles = {["Ayre - A"] = {class = "Hunter"}, ["Ayre - B"] = {class = "Hunter"}}
+    env3.DyresToolkitCharDB = {}
+    equal(state3.ns.CharacterKey(), "Ayre")
 end)
 
 test("proc cues: a stacking proc's right arc sits in the game's stack gate, and a stack added plays", function()

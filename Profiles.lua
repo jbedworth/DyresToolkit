@@ -45,6 +45,25 @@ local DyresToolkit = ns.toolkit
 -- in combat. The account-wide settings (lock, grid, snap, minimap) are not in
 -- a profile (John: "they are user-centric, not per character").
 --
+-- Named profiles (2.19.0; John, 2026-11-27: "most of the Dyre's settings
+-- are applicable across characters, especially the positioning of
+-- everything", then "let users create a new profile they can name, and
+-- select which profile they use"). This changes the 2.10.0 rule "no
+-- switching and no shared profile". Account-wide, DyresToolkitDB.named =
+-- {[name] = {parts, seen, by}}. A character's entry.use names the profile it
+-- uses; nil (or a deleted name) means its own profile, entry.parts. The
+-- active profile gets every Snapshot (registration, copy, import, logout),
+-- so on a named profile the last character to log out wins; the character's
+-- own parts are left as they were and come back when it selects its own
+-- profile again. As each AddOn registers, a character on a named profile
+-- loads that profile's part (it wins over a waiting pending part). New
+-- makes a named profile from the settings in use now and selects it (no
+-- settings change). Selecting a profile applies it live (Apply: all or
+-- nothing, refresh, reload popup only where needed). Delete removes a named
+-- profile; this character goes back to its own, the others at their next
+-- login. A 2.19.0 test build's DyresToolkitDB.shared becomes the profile
+-- "Shared".
+--
 -- Export format: DYRE2:profile:<data>:<checksum>, one line of printable
 -- ASCII with no "|" (an edit box reads "|" as an escape code) and no ":"
 -- inside the data. Data: "{" key value ... "}" for a table, "S<text>;" for a
@@ -71,34 +90,73 @@ local function Readable(value)
     return type(value) == "string" and not IsSecret(value) and value ~= ""
 end
 
--- "Name - Realm", or nil while the client cannot say the name. The realm:
--- GetRealmName(), else UnitFullName's, else GetNormalizedRealmName(); with no
--- realm at all, the name alone (2.16.0; a CurseForge player, 2026-11-27: on
--- Forever GetRealmName() gave "", so import said "Your character is not ready
--- yet" for good). A client that names the realm keeps the same key as before.
+-- "Name - Realm", or nil while the client cannot say the name.
+--
+-- The key is made once and kept in this character's own saved table
+-- (DyresToolkitCharDB.profileKey), so it never changes between sessions or
+-- builds (2.19.0; John's client, 2026-11-27: "Why does Locus have 2
+-- profiles?"). 2.16.0 fell back to UnitFullName's second value when
+-- GetRealmName() was blank (a CurseForge player's report), but on Forever
+-- that value is the character's surname ("Locus Stormshadow"), so a
+-- character saved as "Locus - <realm>" in one session became "Locus -
+-- Stormshadow" in another. Now: GetRealmName(), else GetNormalizedRealmName();
+-- with neither, the one saved profile of this name and class (not the
+-- surname one), else the name alone. The surname entry is folded into the
+-- kept key: the newer of the two wins.
 local function RealmName()
-    if type(GetRealmName) == "function" then
-        local realm = GetRealmName()
-        if Readable(realm) then
-            return realm
-        end
-    end
-    if type(UnitFullName) == "function" then
-        local _, realm = UnitFullName("player")
-        if Readable(realm) then
-            return realm
-        end
-    end
-    if type(GetNormalizedRealmName) == "function" then
-        local realm = GetNormalizedRealmName()
-        if Readable(realm) then
-            return realm
+    for _, read in ipairs({rawget(_G, "GetRealmName"), rawget(_G, "GetNormalizedRealmName")}) do
+        if type(read) == "function" then
+            local realm = read()
+            if Readable(realm) then
+                return realm
+            end
         end
     end
     return nil
 end
 
+-- The character's surname on Forever (UnitFullName's second value), only to
+-- find the keys that 2.16.0 made from it.
+local function Surname()
+    if type(UnitFullName) ~= "function" then
+        return nil
+    end
+    local _, second = UnitFullName("player")
+    return Readable(second) and second or nil
+end
+
+local function PlayerClass()
+    if type(UnitClass) ~= "function" then
+        return nil
+    end
+    local class = UnitClass("player")
+    return Readable(class) and class or nil
+end
+
+local function CharDB()
+    local db = rawget(_G, "DyresToolkitCharDB")
+    return type(db) == "table" and db or nil
+end
+
+-- The surname entry's settings go to the kept key when they are newer.
+local function FoldSurname(name, key, profiles)
+    local surname = Surname()
+    local old = surname and (name .. " - " .. surname)
+    if not old or old == key or type(profiles) ~= "table" or type(profiles[old]) ~= "table" then
+        return
+    end
+    local kept = profiles[key]
+    if type(kept) ~= "table" or (tonumber(profiles[old].seen) or 0) > (tonumber(kept.seen) or 0) then
+        profiles[key] = profiles[old]
+    end
+    profiles[old] = nil
+end
+
 function ns.CharacterKey()
+    local char = CharDB()
+    if char and type(char.profileKey) == "string" and char.profileKey ~= "" then
+        return char.profileKey
+    end
     if type(UnitName) ~= "function" then
         return nil
     end
@@ -106,8 +164,33 @@ function ns.CharacterKey()
     if not Readable(name) then
         return nil
     end
+    local profiles = type(ns.db) == "table" and type(ns.db.profiles) == "table" and ns.db.profiles or nil
     local realm = RealmName()
-    return realm and (name .. " - " .. realm) or name
+    local key
+    if realm then
+        key = name .. " - " .. realm
+    else
+        -- With no realm: the one saved profile of this name and class.
+        local surname = Surname()
+        local skip = surname and (name .. " - " .. surname)
+        local class, found = PlayerClass(), nil
+        for other, entry in pairs(profiles or {}) do
+            if type(other) == "string" and type(entry) == "table" and other ~= skip
+                    and other:sub(1, #name + 3) == name .. " - " and (class == nil or entry.class == class) then
+                if found then
+                    found = nil
+                    break
+                end
+                found = other
+            end
+        end
+        key = found or name
+    end
+    if char then
+        char.profileKey = key
+        FoldSurname(name, key, profiles)
+    end
+    return key
 end
 
 local function Copy(value, skip, depth)
@@ -303,6 +386,33 @@ local function SkipSet(list)
     return set
 end
 
+local NAME_MAX = 32
+local SHARED_NAME = "Shared"
+
+-- The account-wide named profiles, repaired; a 2.19.0 test build's single
+-- shared profile becomes "Shared".
+local function Named()
+    if type(ns.db.named) ~= "table" then
+        ns.db.named = {}
+    end
+    local named = ns.db.named
+    local old = ns.db.shared
+    if type(old) == "table" then
+        if type(named[SHARED_NAME]) ~= "table" and type(old.parts) == "table" then
+            named[SHARED_NAME] = {parts = old.parts, seen = old.seen, by = old.by}
+        end
+        ns.db.shared = nil
+    end
+    for name, profile in pairs(named) do
+        if type(name) ~= "string" or type(profile) ~= "table" then
+            named[name] = nil
+        elseif type(profile.parts) ~= "table" then
+            profile.parts = {}
+        end
+    end
+    return named
+end
+
 local function Store()
     if type(ns.db.profiles) ~= "table" then
         ns.db.profiles = {}
@@ -409,17 +519,64 @@ function Profile:Key()
     return ns.CharacterKey()
 end
 
--- Copies every loaded part (and keeps the others) into this character's entry.
+-- The named profile an entry uses, or nil for its own (a 2.19.0 test
+-- build's shared = true means "Shared"; a deleted name is dropped).
+local function ActiveName(entry)
+    if type(entry) ~= "table" then
+        return nil
+    end
+    local named = Named()
+    if entry.shared == true then
+        entry.shared = nil
+        if type(named[SHARED_NAME]) == "table" and entry.use == nil then
+            entry.use = SHARED_NAME
+        end
+    end
+    if type(entry.use) ~= "string" or type(named[entry.use]) ~= "table" then
+        entry.use = nil
+        return nil
+    end
+    return entry.use
+end
+
+-- Where the settings in use are kept: the named profile, else the entry's own.
+local function ActiveParts(entry)
+    local name = ActiveName(entry)
+    return name and Named()[name].parts or entry.parts
+end
+
+-- Copies every loaded part (and keeps the others) into the profile in use.
 function Profile:Snapshot()
-    local entry = Entry(ns.CharacterKey(), true)
+    local key = ns.CharacterKey()
+    local entry = Entry(key, true)
     if not entry then
         return
     end
+    local target = ActiveParts(entry)
     for _, part in ipairs(order) do
-        entry.parts[part.spec.addon] = PartSettings(part)
+        target[part.spec.addon] = PartSettings(part)
     end
     entry.class = ClassName() or entry.class
     entry.seen = Now()
+    local name = ActiveName(entry)
+    if name then
+        Named()[name].seen, Named()[name].by = entry.seen, key
+    end
+end
+
+-- The named profile this character uses, or nil for its own.
+function Profile:Active()
+    return ActiveName(Entry(ns.CharacterKey()))
+end
+
+-- The named profiles, by name.
+function Profile:Names()
+    local list = {}
+    for name in pairs(Named()) do
+        list[#list + 1] = name
+    end
+    table.sort(list)
+    return list
 end
 
 -- The other characters with a saved profile, by name.
@@ -438,6 +595,9 @@ end
 function Profile:Label(key)
     if key == DEFAULTS then
         return "Defaults (a clean slate)"
+    end
+    if type(key) == "string" and key:sub(1, 1) == "\2" then
+        return key:sub(2) .. " (profile)"
     end
     local entry = Store()[key]
     if type(entry) == "table" and Readable(entry.class) then
@@ -493,17 +653,18 @@ function Profile:Apply(sources)
         WriteInPlace(item.part.spec.current(), item.settings, item.part.skip)
     end
     -- AddOns not loaded on this character: their parts wait for their next load.
+    local target = ActiveParts(entry)
     if defaults then
-        for addon in pairs(entry.parts) do
+        for addon in pairs(target) do
             if not parts[addon] then
-                entry.parts[addon] = nil
+                target[addon] = nil
                 entry.pending[addon] = {}
             end
         end
     else
         for addon, settings in pairs(sources) do
             if not parts[addon] then
-                entry.parts[addon] = Copy(settings)
+                target[addon] = Copy(settings)
                 entry.pending[addon] = Copy(settings)
             end
         end
@@ -520,9 +681,20 @@ function Profile:Apply(sources)
     return true, reload
 end
 
+-- A named profile's key in the "Copy settings from" list.
+local NAMED_KEY = "\2"
+ns.PROFILE_NAMED_KEY = NAMED_KEY
+
 function Profile:CopyFrom(key)
     if key == DEFAULTS then
         return self:Apply(DEFAULTS)
+    end
+    if type(key) == "string" and key:sub(1, 1) == NAMED_KEY then
+        local profile = Named()[key:sub(2)]
+        if type(profile) ~= "table" or next(profile.parts) == nil then
+            return nil, "That profile is empty or gone."
+        end
+        return self:Apply(Copy(profile.parts))
     end
     local entry = key ~= ns.CharacterKey() and Entry(key) or nil
     if not entry or next(entry.parts) == nil then
@@ -531,10 +703,94 @@ function Profile:CopyFrom(key)
     return self:Apply(Copy(entry.parts))
 end
 
+-- A trimmed name for a new profile, or nil and why.
+function Profile:CheckName(name)
+    if type(name) ~= "string" then
+        return nil, "Type a name for the profile."
+    end
+    name = name:gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" then
+        return nil, "Type a name for the profile."
+    end
+    if #name > NAME_MAX or not name:match("^[%w%s'%-_%.]+$") then
+        return nil, "Use up to " .. NAME_MAX .. " letters, numbers, spaces, or ' - _ ."
+    end
+    if type(Named()[name]) == "table" then
+        return nil, "A profile named " .. name .. " already exists."
+    end
+    return name
+end
+
+-- This character uses a named profile (name), or its own (nil): the settings
+-- in use now are saved where they belong, then the chosen ones are applied
+-- live. Gives true and the titles that need a reload, or nil and why.
+function Profile:Use(name)
+    if InCombat() then
+        return nil, "Settings change out of combat."
+    end
+    local entry = Entry(ns.CharacterKey(), true)
+    if not entry then
+        return nil, "Your character is not ready yet. Try again in a moment."
+    end
+    if name ~= nil and type(Named()[name]) ~= "table" then
+        return nil, "That profile is gone."
+    end
+    local before = ActiveName(entry)
+    if before == name then
+        return true, {}
+    end
+    self:Snapshot()
+    entry.use = name
+    local sources = name and Named()[name].parts or entry.parts
+    local ok, why = self:Apply(Copy(sources))
+    if not ok then
+        entry.use = before
+        return nil, why
+    end
+    return true, why
+end
+
+-- A new named profile from the settings in use now; this character uses it.
+function Profile:Create(name)
+    local checked, why = self:CheckName(name)
+    if not checked then
+        return nil, why
+    end
+    local entry = Entry(ns.CharacterKey(), true)
+    if not entry then
+        return nil, "Your character is not ready yet. Try again in a moment."
+    end
+    self:Snapshot()
+    Named()[checked] = {parts = Copy(ActiveParts(entry))}
+    entry.use = checked
+    self:Snapshot()
+    return checked
+end
+
+-- Deletes a named profile; this character goes back to its own profile.
+function Profile:Delete(name)
+    if InCombat() then
+        return nil, "Settings change out of combat."
+    end
+    if type(name) ~= "string" or type(Named()[name]) ~= "table" then
+        return nil, "That profile is gone."
+    end
+    local reload = {}
+    if self:Active() == name then
+        local ok, why = self:Use(nil)
+        if not ok then
+            return nil, why
+        end
+        reload = why
+    end
+    Named()[name] = nil
+    return true, reload
+end
+
 function Profile:Export()
     local data = {}
     local entry = Entry(ns.CharacterKey())
-    for addon, settings in pairs(entry and entry.parts or {}) do
+    for addon, settings in pairs(entry and ActiveParts(entry) or {}) do
         if ValidAddOn(addon) and type(settings) == "table" then
             data[addon] = settings
         end
@@ -576,8 +832,19 @@ function DyresToolkit.RegisterProfilePart(spec)
         order[#order + 1] = part
     end
     parts[spec.addon] = part
-    -- A part copied or imported while this AddOn was not loaded here.
+    -- A character on a named profile loads this AddOn's part of it (it
+    -- supersedes a waiting one); else a part copied or imported while this
+    -- AddOn was not loaded here.
     local entry = Entry(ns.CharacterKey())
+    local name = entry and ActiveName(entry)
+    local sharedPart = name and Named()[name].parts[spec.addon]
+    if type(sharedPart) == "table" then
+        entry.pending[spec.addon] = nil
+        local fresh = Prepare(part, sharedPart)
+        if fresh then
+            WriteInPlace(spec.current(), fresh, part.skip)
+        end
+    end
     local waiting = entry and entry.pending[spec.addon]
     if waiting ~= nil then
         entry.pending[spec.addon] = nil
@@ -707,6 +974,77 @@ local function Popups()
         hideOnEscape = 1,
         preferredIndex = 3,
     }
+    StaticPopupDialogs.DYRE_PROFILE_USE = {
+        text = "%s",
+        button1 = "Use it",
+        button2 = CANCEL or "Cancel",
+        OnAccept = function(_, data)
+            local ok, why = Profile:Use(data.name)
+            if ok then
+                Done(data.name and ("This character now uses the profile " .. data.name)
+                    or "This character now uses its own profile", why)
+            else
+                ns.Report(why)
+            end
+            ns.NotifyActive()
+        end,
+        OnCancel = function()
+            ns.NotifyActive()
+        end,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        preferredIndex = 3,
+    }
+    StaticPopupDialogs.DYRE_PROFILE_NEW = {
+        text = "%s",
+        button1 = "Create",
+        button2 = CANCEL or "Cancel",
+        hasEditBox = 1,
+        maxLetters = NAME_MAX,
+        OnShow = function(dialog)
+            local box = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
+            if box then
+                box:SetText("")
+                box:SetFocus()
+            end
+        end,
+        OnAccept = function(dialog)
+            local box = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
+            local name, why = Profile:Create(box and box:GetText())
+            if name then
+                ns.Report("This character now uses the new profile " .. name .. ".")
+                ns.NotifyActive()
+                return
+            end
+            ns.Report(why)
+            -- True keeps the popup open, so the player can fix the name.
+            return true
+        end,
+        EditBoxOnEscapePressed = function(box) box:GetParent():Hide() end,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        preferredIndex = 3,
+    }
+    StaticPopupDialogs.DYRE_PROFILE_DELETE = {
+        text = "%s",
+        button1 = DELETE or "Delete",
+        button2 = CANCEL or "Cancel",
+        OnAccept = function(_, data)
+            local ok, why = Profile:Delete(data.name)
+            if ok then
+                Done("Profile " .. data.name .. " deleted", why)
+            else
+                ns.Report(why)
+            end
+            ns.NotifyActive()
+        end,
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        preferredIndex = 3,
+    }
     StaticPopupDialogs.DYRE_PROFILE_RELOAD = {
         text = "%s",
         button1 = "Reload now",
@@ -723,13 +1061,43 @@ end
 Show = function(which, text, data)
     if InCombat() then
         ns.Report("Settings change out of combat.")
-        return
+        return false
     end
     if not Popups() or type(StaticPopup_Show) ~= "function" then
-        return
+        return false
     end
     StaticPopup_Show(which, text, nil, data)
+    return true
 end
+
+local ACTIVE_VARIABLE = "DYRE_PROFILE_ACTIVE"
+local OWN = "\3own"
+
+-- The "Profile in use" list reads its value again.
+function ns.NotifyActive()
+    if type(Settings) == "table" and type(Settings.NotifyUpdate) == "function" then
+        pcall(Settings.NotifyUpdate, ACTIVE_VARIABLE)
+    end
+end
+
+-- The list's choice: ask first, then use it.
+local function SetActive(value)
+    local name = value ~= OWN and value or nil
+    if name ~= nil and type(Named()[name]) ~= "table" then
+        ns.NotifyActive()
+        return
+    end
+    if name == Profile:Active() then
+        return
+    end
+    local text = name and ("Use the profile " .. name .. " on this character?")
+        or "Go back to this character's own profile?"
+    if not Show("DYRE_PROFILE_USE", text .. "\n\nThis replaces " .. WHAT .. ".", {name = name}) then
+        ns.NotifyActive()
+    end
+end
+ns.SetActiveProfile = SetActive
+ns.PROFILE_OWN = OWN
 
 -- A button at the right of a settings row's control (John, 2026-11-15:
 -- "Can we move the "Copy" button to the right of the select?"). The client
@@ -836,6 +1204,46 @@ function ns.AddProfileSettings(category, layout)
     local rows = {}
     if type(Settings.CreateDropdown) == "function" and type(Settings.CreateControlTextContainer) == "function"
             and type(Settings.RegisterProxySetting) == "function" then
+        local active = Settings.RegisterProxySetting(category, ACTIVE_VARIABLE, Settings.VarType.String,
+            "Profile in use", OWN,
+            function() return Profile:Active() or OWN end,
+            function(value) SetActive(value) end)
+        local function Profiles()
+            local container = Settings.CreateControlTextContainer()
+            container:Add(OWN, "This character's own")
+            for _, name in ipairs(Profile:Names()) do
+                container:Add(name, name)
+            end
+            return container:GetData()
+        end
+        rows.active = Settings.CreateDropdown(category, active, Profiles,
+            "The profile this character uses; your other characters can use the same one.")
+        rows.new = CreateSettingsButtonInitializer("New profile", "New", function()
+            Show("DYRE_PROFILE_NEW", "Name the new profile.\n\nIt starts with the settings you use now, and "
+                .. "this character uses it.", {})
+        end, "Makes a named profile from the settings you use now, for any of your characters.", true)
+        layout:AddInitializer(rows.new)
+        local function CanDelete()
+            return Profile:Active() ~= nil
+        end
+        rows.delete = CreateSettingsButtonInitializer("Delete profile", "Delete", function()
+            local name = Profile:Active()
+            if not name then
+                ns.Report("Pick a named profile in the list to delete it.")
+                return
+            end
+            Show("DYRE_PROFILE_DELETE", "Delete the profile " .. name .. "?\n\nThis character goes back to its "
+                .. "own settings. Other characters that use it go back to theirs at their next login.",
+                {name = name})
+        end, "Deletes the named profile this character uses.", true)
+        if type(rows.delete) == "table" and type(rows.delete.AddModifyPredicate) == "function" then
+            rows.delete:AddModifyPredicate(CanDelete)
+        end
+        DyresToolkit.GreyButtonLabel(rows.delete)
+        layout:AddInitializer(rows.delete)
+    end
+    if type(Settings.CreateDropdown) == "function" and type(Settings.CreateControlTextContainer) == "function"
+            and type(Settings.RegisterProxySetting) == "function" then
         local updateCopy
         local function CanCopy()
             return source ~= own
@@ -849,6 +1257,10 @@ function ns.AddProfileSettings(category, layout)
                     if other == value then
                         found = true
                     end
+                end
+                if type(value) == "string" and value:sub(1, 1) == NAMED_KEY
+                        and type(Named()[value:sub(2)]) == "table" then
+                    found = true
                 end
                 if found then
                     source = value
@@ -878,6 +1290,11 @@ function ns.AddProfileSettings(category, layout)
                     end
                 end
                 container:Add(other, label)
+            end
+            for _, name in ipairs(Profile:Names()) do
+                if name ~= Profile:Active() then
+                    container:Add(NAMED_KEY .. name, name .. " (profile)")
+                end
             end
             return container:GetData()
         end

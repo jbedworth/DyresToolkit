@@ -1144,13 +1144,6 @@ local function HasSettingsAPI()
     return true
 end
 
-local function ShownIf(initializer, predicate)
-    if type(initializer) == "table" and type(initializer.AddShownPredicate) == "function" then
-        initializer:AddShownPredicate(predicate)
-    end
-    return initializer
-end
-
 -- The master switch's variable: DYRE_<ADDON>_PROCS_ENABLED, mapped by a
 -- settings section's ctx.variable on a host page.
 local function MasterVariable(addon, map)

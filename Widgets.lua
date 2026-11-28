@@ -142,11 +142,70 @@ local function Apply(widget)
     return true
 end
 
+-- Bar opacity in and out of combat (2.19.0; an MTF player asked to set the
+-- Portals and Conjure bars "to 0% in-combat, 80% out-of-combat (100%
+-- mouse-over)"; John, 2026-11-27: for every button bar, no checkbox, "always
+-- at least 80% opacity (or the out-of-combat opacity, whichever is higher) on
+-- mouseover; that solves the problem", and both sliders start at the bar's
+-- current opacity). So a bar at 0% in combat shows as the mouse reaches it,
+-- and a secure button is never clicked unseen. A bar is a widget laid out by
+-- LayoutButtons. Its out-of-combat opacity is its Opacity setting when it has
+-- one, else store.opacityOut; its in-combat opacity is store.opacityIn, set
+-- to the out-of-combat one the first time. SetAlpha is allowed in combat.
+-- Events only: PLAYER_REGEN_DISABLED/ENABLED and the mouse entering and
+-- leaving the bar and its buttons (HookScript; the buttons' own scripts run
+-- first). While frames are unlocked a bar shows fully.
+DyresToolkit.BAR_OPACITY_VERSION = 1
+local BAR_OPACITY = {min = 0, max = 100, step = 5, default = 100}
+local MOUSEOVER_OPACITY = 80
+local barCombat = type(InCombatLockdown) == "function" and InCombatLockdown() and true or false
+local hovered = setmetatable({}, {__mode = "k"})
+local hoverHooked = setmetatable({}, {__mode = "k"})
+
+local function OpacityNumber(value, default)
+    if type(value) ~= "number" or value ~= value then
+        return default
+    end
+    return Clamp(BAR_OPACITY, value)
+end
+
+local function BarOutOpacity(widget)
+    if widget.dyre.sizes.opacity then
+        return Value(widget, "opacity")
+    end
+    return OpacityNumber(widget.dyre.store.opacityOut, 100)
+end
+
+local function BarInOpacity(widget)
+    local store = widget.dyre.store
+    if store.opacityIn == nil then
+        store.opacityIn = BarOutOpacity(widget)
+    end
+    return OpacityNumber(store.opacityIn, BarOutOpacity(widget))
+end
+
+-- The opacity a bar shows now, in percent.
+local function BarOpacity(widget)
+    if not ns.db.locked then
+        return 100
+    end
+    local out = BarOutOpacity(widget)
+    local opacity = barCombat and BarInOpacity(widget) or out
+    if hovered[widget] then
+        opacity = math.max(opacity, MOUSEOVER_OPACITY, out)
+    end
+    return opacity
+end
+
 local function ApplyOpacity(widget)
-    if not widget.dyre.sizes.opacity then
+    local alpha
+    if widget.dyre.bar then
+        alpha = BarOpacity(widget) / 100
+    elseif widget.dyre.sizes.opacity then
+        alpha = Value(widget, "opacity") / 100
+    else
         return
     end
-    local alpha = Value(widget, "opacity") / 100
     widget:SetAlpha(alpha)
     if widget.dyre.onOpacity then
         widget.dyre.onOpacity(widget, alpha)
@@ -273,6 +332,9 @@ function ns.RefreshWidgets()
     local unlocked = not ns.db.locked
     for _, widget in ipairs(widgets) do
         widget.dyre.mover:SetShown(unlocked)
+        if widget.dyre.bar then
+            ApplyOpacity(widget)
+        end
         if widget.dyre.onUnlock then
             widget.dyre.onUnlock(widget, unlocked)
         end
@@ -301,6 +363,39 @@ ns.widgetEvents:SetScript("OnEvent", function(self)
         end
     end
 end)
+
+-- Combat starts or ends: every bar takes its opacity for it.
+local barEvents = CreateFrame("Frame")
+barEvents:RegisterEvent("PLAYER_REGEN_DISABLED")
+barEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
+barEvents:SetScript("OnEvent", function(_, event)
+    barCombat = event == "PLAYER_REGEN_DISABLED"
+    for _, widget in ipairs(widgets) do
+        if widget.dyre.bar then
+            ApplyOpacity(widget)
+        end
+    end
+end)
+
+local function SetHovered(widget, on)
+    on = on and true or nil
+    if hovered[widget] ~= on then
+        hovered[widget] = on
+        ApplyOpacity(widget)
+    end
+end
+
+-- The mouse over the bar or one of its buttons shows the bar.
+local function HookHover(widget, frame)
+    if type(frame) ~= "table" or hoverHooked[frame] or type(frame.HookScript) ~= "function" then
+        return
+    end
+    hoverHooked[frame] = true
+    frame:HookScript("OnEnter", function() SetHovered(widget, true) end)
+    frame:HookScript("OnLeave", function()
+        SetHovered(widget, type(widget.IsMouseOver) == "function" and widget:IsMouseOver() == true)
+    end)
+end
 
 local WidgetMethods = {}
 
@@ -342,6 +437,11 @@ end
 function WidgetMethods.LayoutButtons(widget, buttons, opts)
     opts = type(opts) == "table" and opts or {}
     widget.dyre.bar = {buttons = buttons, opts = opts}
+    BarInOpacity(widget)
+    HookHover(widget, widget)
+    for _, button in ipairs(type(buttons) == "table" and buttons or {}) do
+        HookHover(widget, button)
+    end
     if widget.dyre.mover and widget.dyre.mover.flip then
         widget.dyre.mover.flip:Show()
     end
@@ -367,6 +467,7 @@ function WidgetMethods.LayoutButtons(widget, buttons, opts)
     else
         widget:SetContentSize(long, short, opts.anchor)
     end
+    ApplyOpacity(widget)
     return vertical and "vertical" or "horizontal"
 end
 
@@ -432,7 +533,36 @@ function DyresToolkit.AddBarLayoutSetting(category, layout, widget, opts)
             DyresToolkit.WatchSettings(initializer, opts.watch)
         end
     end
+    -- The bar's opacity in and out of combat, under its Layout row (2.19.0).
+    if opts.opacity ~= false and type(DyresToolkit.AddBarOpacitySettings) == "function" then
+        DyresToolkit.AddBarOpacitySettings(category, widget, opts)
+    end
     return initializer
+end
+
+-- A bar's opacity out of combat or in combat ("out", "in"), in percent.
+function WidgetMethods.GetBarOpacity(widget, which)
+    if which == "in" then
+        return BarInOpacity(widget)
+    end
+    return BarOutOpacity(widget)
+end
+
+function WidgetMethods.SetBarOpacity(widget, which, value)
+    value = OpacityNumber(value, nil)
+    if value == nil then
+        return
+    end
+    BarInOpacity(widget)
+    if which == "in" then
+        widget.dyre.store.opacityIn = value
+    elseif widget.dyre.sizes.opacity then
+        widget:SetSetting("opacity", value)
+        return
+    else
+        widget.dyre.store.opacityOut = value
+    end
+    ApplyOpacity(widget)
 end
 
 -- One of scale, width, height, opacity: clamped, saved, and applied.
@@ -655,6 +785,47 @@ local function SliderOptions(name, range)
     return options
 end
 
+-- "Opacity out of combat" and "Opacity in combat" for a bar (2.19.0), added
+-- by AddBarLayoutSetting under its Layout row. opts as there (variable,
+-- modify, watch). Gives the two initializers, or nil without the settings API.
+function DyresToolkit.AddBarOpacitySettings(category, widget, opts)
+    if type(Settings) ~= "table" or type(Settings.RegisterProxySetting) ~= "function"
+            or type(Settings.CreateSlider) ~= "function" or type(Settings.CreateSliderOptions) ~= "function"
+            or type(category) ~= "table" or type(widget) ~= "table" or type(widget.dyre) ~= "table" then
+        return nil
+    end
+    opts = type(opts) == "table" and opts or {}
+    local rows = {}
+    local specs = {
+        {which = "out", suffix = "OPACITY_OUT", label = "Opacity out of combat",
+            tooltip = "How solid the bar is out of combat."},
+        {which = "in", suffix = "OPACITY_IN", label = "Opacity in combat",
+            tooltip = "How solid the bar is in combat. It shows at 80% or more while your mouse is over it."},
+    }
+    for _, spec in ipairs(specs) do
+        local name = ("DYRE_" .. widget.dyre.addon .. "_" .. widget.dyre.widgetKey .. "_" .. spec.suffix):upper()
+            :gsub("[^%w_]", "_")
+        if type(opts.variable) == "function" then
+            name = opts.variable(name)
+        end
+        local setting = Settings.RegisterProxySetting(category, name, Settings.VarType.Number, spec.label,
+            BAR_OPACITY.default, function() return widget:GetBarOpacity(spec.which) end,
+            function(value) widget:SetBarOpacity(spec.which, value) end)
+        local slider = Settings.CreateSlider(category, setting, SliderOptions("opacity", BAR_OPACITY), spec.tooltip)
+        if type(slider) == "table" then
+            if type(opts.modify) == "function" and type(slider.AddModifyPredicate) == "function" then
+                slider:AddModifyPredicate(opts.modify)
+            end
+            if opts.watch then
+                DyresToolkit.WatchSettings(slider, opts.watch)
+            end
+            ns.AddDefaultTick(slider, BAR_OPACITY)
+        end
+        rows[spec.which] = slider
+    end
+    return rows
+end
+
 local function VariableName(widget, name)
     return ("DYRE_" .. widget.dyre.addon .. "_" .. widget.dyre.widgetKey .. "_" .. name):upper():gsub("[^%w_]", "_")
 end
@@ -665,7 +836,9 @@ end
 -- registered the plain names already), modify (2.17.0: a function; the rows
 -- are greyed while it gives false, e.g. the feature's switch is off), watch
 -- (2.17.0: a variable or a list; the rows check modify again live when one
--- of them changes; see WatchSettings), resetName (2.18.1: the Reset row's
+-- of them changes; see WatchSettings), skip (2.19.0: size names to leave
+-- out, such as {"opacity"} for a bar whose Layout row brings its opacity
+-- sliders), resetName (2.18.1: the Reset row's
 -- name, default the widget's title; John's client, 2026-11-27: a host page
 -- calls the section "Shield display" while the title is "Dyre's Shields Up";
 -- feature flag WIDGET_RESET_NAME).
@@ -677,8 +850,12 @@ function DyresToolkit.AddWidgetSettings(category, layout, widget, opts)
     opts = opts or {}
     local labels, tooltips = opts.labels or {}, opts.tooltips or {}
     local variables = {}
+    local skip = {}
+    for _, name in ipairs(type(opts.skip) == "table" and opts.skip or {}) do
+        skip[name] = true
+    end
     for _, name in ipairs(widget.dyre.sizes.order) do
-        local range = widget.dyre.sizes[name]
+        local range = not skip[name] and widget.dyre.sizes[name]
         if range then
             local variable = VariableName(widget, name)
             if type(opts.variable) == "function" then

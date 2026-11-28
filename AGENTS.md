@@ -152,6 +152,24 @@ Aspect bar, DCT tank bar). Widgets.lua; CONTRACT stays 2
   `DYRE_<ADDON>_<KEY>_ORIENTATION` (mapped on a host page), else a "Vertical"
   checkbox where the client has no dropdown.
 - An AddOn with an older toolkit keeps its own horizontal layout.
+- Opacity in and out of combat (2.19.0; MTF player user_kegtgryr84rvp31h on CurseForge: the Portals and
+  Conjure bars "0% in-combat, 80% out-of-combat (100% mouse-over)"; John,
+  2026-11-27: every bar, "Get rid of the checkbox, always at least 80%
+  opacity (or the out-of-combat opacity, whichever is higher) on mouseover;
+  that solves the problem", and "Set both the in and out of combat sliders
+  to the user's current opacity setting"). `BAR_OPACITY_VERSION` 1.
+  `AddBarLayoutSetting` adds "Opacity out of combat" and "Opacity in combat"
+  (0-100, step 5; variables `..._OPACITY_OUT`/`_IN`; `opts.opacity = false`
+  leaves them out). Out of combat is the widget's Opacity setting when it
+  has one, else `store.opacityOut` (default 100); in combat is
+  `store.opacityIn`, set to the out-of-combat value at the first layout.
+  Shown: unlocked 100%; else in combat (PLAYER_REGEN_DISABLED/ENABLED) the
+  in value, else the out value; mouse over the bar or a button (HookScript
+  OnEnter/OnLeave, `IsMouseOver` on leave) at least max(80, out). So a
+  secure button at 0% shows before it is clicked (the family rule on unseen
+  secure buttons). `widget:GetBarOpacity(which)`, `SetBarOpacity(which,
+  value)`. `AddWidgetSettings` `opts.skip = {"opacity"}` drops a bar's plain
+  Opacity slider. Not checked in client yet.
 - The flip button (John, 2026-11-27: users "are going to want a way to flip
   the bar ... in unlocked mode"; "A button with an arrow going around"):
   `mover.flip`, a 24 px button at the outline's top-right corner, shown
@@ -439,11 +457,16 @@ has this exception: the profile copies live in DyresToolkitDB.profiles.
   with no refresh. `ProfileParts()`. The profile (`ns.profile`): `Key`,
   `Others`, `Label`, `CopyFrom(key or PROFILE_DEFAULTS)`, `Export`,
   `Import(text)`, `Snapshot`, `Apply`.
-- The key (`ns.CharacterKey`): "Name - Realm" from GetRealmName(), else
-  UnitFullName's realm, else GetNormalizedRealmName(); with no realm, the
-  name alone (2.16.0; vanquishu, CurseForge, 2026-11-27: GetRealmName() gave
-  "" on Forever, so the key was nil and import always said "not ready").
-  Nil only while the name is not readable.
+- The key (`ns.CharacterKey`): kept in `DyresToolkitCharDB.profileKey` once
+  made, so it never changes (2.19.0; John, 2026-11-27: "Why does Locus have
+  2 profiles?"). Made from GetRealmName(), else GetNormalizedRealmName();
+  with neither, the one saved profile of this name and class, else the name
+  alone. Never UnitFullName's second value: on Forever it is the surname
+  ("Locus Stormshadow"); 2.16.0 used it (vanquishu, CurseForge: GetRealmName()
+  gave ""), which split characters into "Locus - <realm>" and "Locus -
+  Stormshadow". That surname entry is folded into the kept key at the
+  character's next login (the newer `seen` wins). Nil only while the name is
+  not readable.
 - Storage: `DyresToolkitDB.profiles["Name - Realm"] = {class, seen, parts =
   {[addon] = settings}, pending = {[addon] = settings}}`, written at each
   registration, after a copy or import, and at PLAYER_LOGOUT. A part of an
@@ -487,6 +510,22 @@ has this exception: the profile copies live in DyresToolkitDB.profiles.
   apply. Each other AddOn adds its part in its own release, at least 24 h
   after the Toolkit, with a `refresh` for live apply (or none, and the
   player is asked to reload).
+
+### Named profiles (2.19.0; John, 2026-11-27)
+
+John: "most of the Dyre's settings are applicable across characters,
+especially the positioning of everything"; he first chose one shared
+profile ("Yes, build it"), then, before release: "let users create a new
+profile they can name, and select which profile they use". This reverses
+"no switching and no shared profile" above. docs/PROFILES.md "Named
+profiles" has the rules: `DyresToolkitDB.named = {[name] = {parts, seen,
+by}}`; the entry's `use` (nil = its own `parts`); "Profile in use" dropdown
+`DYRE_PROFILE_ACTIVE` (popup `DYRE_PROFILE_USE`), New (`DYRE_PROFILE_NEW`,
+an edit box), Delete (`DYRE_PROFILE_DELETE`, greyed on its own profile);
+the active profile gets every Snapshot; a named part loads at registration
+over `pending`; a named profile is also a "Copy settings from" source. The
+test build's `DyresToolkitDB.shared` becomes the profile "Shared". No
+dependent change is needed. Not checked in client yet.
 
 ### Proc cues (unreleased, 2.11.0; John, 2026-11-18)
 
@@ -1203,6 +1242,20 @@ keeps:
   PlateDots `Attach` and Control `AttachTimer` check it; `FindPlateBar`
   takes it or "target", never the player's plate. DDT's Frost.lua arcs
   have their own hostile-only check. Not checked in client yet.
+- No shown predicates on settings rows, in any Dyre's AddOn: a row that
+  does not apply now is greyed (modify predicate; "greyed, never hidden"),
+  and a row that never applies to this character is not added.
+  tests/run.lua fails on any AddShownPredicate in the runtime files.
+- Options search and "ADDON FORBIDDEN: IsUserOAuthed()" (Drasi on
+  CurseForge, 2026-11-27; John reported it on Blizzard's bug forum): a
+  Blizzard bug. The search (Blizzard_SettingsPanel.lua OnSearchTextChanged)
+  reads the rows of every vertical-layout settings page; data an AddOn wrote
+  is tainted, so the search then inits Blizzard's Discord row tainted, and
+  C_Discord.IsUserOAuthed is refused. John's taint log (taintLog 2) named
+  DyresToolkit with no line of ours running during the search, and with
+  Dyre's AddOns off QuestieTrace triggered it too. Canvas pages (Ace) are not
+  searched. Removing the shown predicates did not fix it; no small change
+  can. Players open the category from the list instead of searching.
 - Frames always start locked at login. Frames move only out of combat.
 - The minimap button uses LibDataBroker-1.1 and LibDBIcon-1.0, embedded
   (author: "the standard way"); Forever has no AddOn compartment

@@ -4,6 +4,15 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.19.0
+
+### Features
+- Button bars can have one opacity out of combat and another in combat, set with two sliders under the bar's Layout setting. Set a bar to 0% in combat and it stays out of the way, then shows at 80% or more as soon as your mouse is over it, so you never click a button you can't see. Both start at the bar's opacity today. This works for Mage Tools Forever's Conjure and Portals bars, the Warlock's Stones bar, the Hunter's Aspect bar, and the tank bar. Thanks to user_kegtgryr84rvp31h on CurseForge for the idea.
+- Named profiles. Press New at the end of the Dyre's AddOns page to make a profile from the settings and frame positions you use now, and give it a name. On any character, pick it in "Profile in use" and that character shares it: change something on one, and the others have it at their next login. Pick "This character's own" to go back to that character's own settings, or Delete to remove a profile.
+
+### Fixes
+- A character no longer shows up twice in "Copy settings from", once with your realm and once with your character's last name. Each character keeps one profile name for good, and the extra copy is folded in, the newer settings winning, the next time that character logs in.
+
 ## 2.18.2
 
 ### Fixes

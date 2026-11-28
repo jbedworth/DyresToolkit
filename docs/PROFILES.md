@@ -54,7 +54,7 @@ What the player gets:
   selected, for Ctrl+C.
 - **Import profile**: a popup where the player pastes a line; it overwrites
   this character's profile, after a check.
-- No switching and no shared profile.
+- Named profiles were added in 2.19.0 (below): a character picks which profile it uses.
 - Not possible: export to a file. An AddOn cannot write or read files; the
   only disk storage is SavedVariables. So export and import are text only.
 
@@ -78,6 +78,45 @@ What the player gets:
   character). Each owner session audits its own keys.
 - Not in a profile: the Toolkit's account-wide settings (lock, grid, snap,
   grid size, minimap) and any AddOn's account tables.
+
+## Named profiles (2.19.0; John, 2026-11-27)
+
+John: "most of the Dyre's settings are applicable across characters,
+especially the positioning of everything." He first chose one shared
+profile, then, before it shipped: "let users create a new profile they can
+name, and select which profile they use". This reverses the 2.10.0 rule "no
+switching and no shared profile".
+
+- `DyresToolkitDB.named = {[name] = {parts = {[addon] = settings}, seen,
+  by}}`, account-wide. A character's entry has `use = name` while it uses a
+  named profile; nil, or a name that no longer exists, means its own
+  `parts`.
+- Rows under the Profile header: "Profile in use" (dropdown
+  `DYRE_PROFILE_ACTIVE`: "This character's own", then every named profile;
+  a change asks first with `DYRE_PROFILE_USE`), New (`DYRE_PROFILE_NEW`, an
+  edit box; up to 32 letters, numbers, spaces, or ' - _ .; unique), Delete
+  (`DYRE_PROFILE_DELETE`, greyed while the character uses its own profile).
+  Never in combat.
+- Use: the settings in use are saved where they belong (Snapshot), `use`
+  changes, then the chosen profile is applied live through Apply (all or
+  nothing, refresh, reload popup only where needed). So a character's own
+  settings stay as they were while it uses a named profile and come back
+  when it picks its own again.
+- New: a named profile copied from the settings in use now, and this
+  character uses it. No settings change.
+- Delete: the profile goes; this character goes back to its own settings at
+  once, the others at their next login.
+- Every Snapshot (registration, copy, import, PLAYER_LOGOUT) writes the
+  loaded parts into the profile in use, so on a named profile the last
+  character to log out wins. Parts of AddOns not loaded on that character
+  stay. A copy, import, or Defaults changes the profile in use.
+- A character on a named profile loads its part as each AddOn registers
+  (Prepare and WriteInPlace, no refresh, as `pending`); the named part wins
+  over a waiting `pending` one, which is dropped.
+- A named profile is also a "Copy settings from" source ("Name (profile)").
+- A test build's `DyresToolkitDB.shared` becomes the profile "Shared", and
+  an entry's `shared = true` becomes `use = "Shared"`.
+- `characterKeys` stay per character, as for a copy.
 
 ## Registering a part (contract 2 addition; a dependent checks that it exists)
 

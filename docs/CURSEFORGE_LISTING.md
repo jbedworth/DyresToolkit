@@ -43,6 +43,7 @@ I build Dyre's AddOns as a family of small AddOns, so you only install the ones 
 - **Shift-drag** moves a group of snapped frames together.
 - Hold **Ctrl** as you drop a frame to place it to the pixel, with no snapping.
 - **Ctrl-drag** moves a frame while frames are locked, the same way Questie's tracker does.
+- A button bar can have one opacity out of combat and another in combat. It shows at 80% or more while your mouse is over it.
 - A button bar can be a row or a column. This works for the Mage's Conjure and Portals bars, the Warlock's Stones bar, the Hunter's Aspect bar, and the tank bar. While frames are unlocked, click the small rotate button on the bar's outline.
 - Frames always start locked when you log in. They never move in combat.
 
@@ -54,6 +55,7 @@ I build Dyre's AddOns as a family of small AddOns, so you only install the ones 
 
 ### Profiles
 - Each character has its own profile. It holds the settings, frame positions, sizes, and sounds of every Dyre's AddOn.
+- Make a named profile with New, then pick it on any character. They all share one set of settings and frame positions, and a change on one reaches the others at their next login.
 - Copy another character's setup, or the defaults, with one click.
 - Export a profile as one line of text, and import it on another account.
 

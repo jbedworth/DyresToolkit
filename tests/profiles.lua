@@ -127,6 +127,10 @@ local function ProfileFixture(extra)
             end,
             CreateSliderOptions = function() return {} end,
             OpenToCategory = function(id) state.opened = id end,
+            NotifyUpdate = function(variable)
+                local setting = state.settings[variable]
+                if setting then setting:NotifyUpdate() end
+            end,
         }
     end})
     state.popups = popups
@@ -443,6 +447,146 @@ test("profiles: a change since login is in the profile at logout", function()
     equal(entry.parts.DyresCombatTools.soloSounds, true)
 end)
 
+-- The popup's edit box, typed into, then its button.
+local function Accept(state, which, text)
+    local info = state.env.StaticPopupDialogs[which]
+    local popup = state.popups[#state.popups]
+    if text ~= nil then
+        local dialog = state.dialog(popup, text)
+        return info.OnAccept(dialog, popup.data)
+    end
+    return info.OnAccept(nil, popup.data)
+end
+
+test("profiles: New makes a named profile from the settings in use, and this character uses it", function()
+    local state = ProfileFixture({combat = {threatMode = "tank"}})
+    local db = state.env.DyresToolkitDB
+    local active = state.settings.DYRE_PROFILE_ACTIVE
+    local own = state.ns.PROFILE_OWN
+    equal(active:GetValue(), own, "its own profile at first")
+    equal(active.labels[own], "This character's own")
+    state.button("New profile").click()
+    equal(state.popups[#state.popups].which, "DYRE_PROFILE_NEW")
+    -- Bad names keep the popup open.
+    equal(Accept(state, "DYRE_PROFILE_NEW", "   "), true)
+    contains(state.messages[#state.messages], "Type a name")
+    equal(Accept(state, "DYRE_PROFILE_NEW", "Bad|name"), true)
+    contains(state.messages[#state.messages], "letters, numbers, spaces")
+    equal(Accept(state, "DYRE_PROFILE_NEW", "  Main setup "), nil, "closes")
+    equal(db.named["Main setup"].parts.DyresCombatTools.threatMode, "tank", "from the settings in use")
+    equal(db.profiles["Dyre - Forever"].use, "Main setup")
+    equal(active:GetValue(), "Main setup")
+    contains(state.messages[#state.messages], "new profile Main setup")
+    equal(state.combat_part.refreshes, 0, "no settings changed")
+    equal(Accept(state, "DYRE_PROFILE_NEW", "Main setup"), true, "a name in use is refused")
+    contains(state.messages[#state.messages], "already exists")
+    -- A change goes into the named profile at logout; the character's own stays.
+    state.combat_part.live.threatMode = "dps"
+    state.fire("PLAYER_LOGOUT")
+    equal(db.named["Main setup"].parts.DyresCombatTools.threatMode, "dps")
+    equal(db.profiles["Dyre - Forever"].parts.DyresCombatTools.threatMode, "tank", "its own profile kept")
+end)
+
+test("profiles: picking a profile asks first, then applies it live; its own comes back", function()
+    local account = {named = {Raid = {parts = {DyresCombatTools = {threatMode = "dps", soloSounds = true}}}}}
+    local state = ProfileFixture({combat = {threatMode = "tank"}, account = account})
+    local db = state.env.DyresToolkitDB
+    local active = state.settings.DYRE_PROFILE_ACTIVE
+    local combat = state.combat_part
+    equal(active.labels.Raid, "Raid")
+    active:SetValue("Raid")
+    local popup = state.popups[#state.popups]
+    equal(popup.which, "DYRE_PROFILE_USE")
+    contains(popup.text, "Use the profile Raid on this character?")
+    equal(combat.live.threatMode, "tank", "nothing until accepted")
+    -- Cancel: no change, and the list reads its value again.
+    local notified = active.notified or 0
+    state.env.StaticPopupDialogs.DYRE_PROFILE_USE.OnCancel()
+    equal(active:GetValue(), state.ns.PROFILE_OWN)
+    assert((active.notified or 0) > notified, "the list read its value again")
+    active:SetValue("Raid")
+    Accept(state, "DYRE_PROFILE_USE")
+    equal(combat.live.threatMode, "dps", "applied live")
+    equal(combat.refreshes, 1)
+    equal(state.reloads, 0)
+    equal(active:GetValue(), "Raid")
+    contains(state.messages[#state.messages], "now uses the profile Raid")
+    -- Back to its own: its own settings come back.
+    active:SetValue(state.ns.PROFILE_OWN)
+    contains(state.popups[#state.popups].text, "Go back to this character's own profile?")
+    Accept(state, "DYRE_PROFILE_USE")
+    equal(combat.live.threatMode, "tank")
+    equal(db.profiles["Dyre - Forever"].use, nil)
+    -- In combat nothing changes.
+    state.env.InCombatLockdown = function() return true end
+    local before = #state.popups
+    active:SetValue("Raid")
+    equal(#state.popups, before, "no popup in combat")
+    state.env.InCombatLockdown = function() return false end
+end)
+
+test("profiles: Delete removes the profile in use and goes back to the character's own", function()
+    local account = {named = {Raid = {parts = {DyresCombatTools = {threatMode = "dps"}}}},
+        profiles = {["Dyre - Forever"] = {use = "Raid", parts = {DyresCombatTools = {threatMode = "tank"}}}}}
+    local state = ProfileFixture({combat = {threatMode = "tank"}, account = account})
+    local db = state.env.DyresToolkitDB
+    equal(state.combat_part.live.threatMode, "dps", "Raid loaded as the AddOn registered")
+    local delete = state.button("Delete profile")
+    delete.click()
+    local popup = state.popups[#state.popups]
+    equal(popup.which, "DYRE_PROFILE_DELETE")
+    contains(popup.text, "Delete the profile Raid?")
+    Accept(state, "DYRE_PROFILE_DELETE")
+    equal(db.named.Raid, nil)
+    equal(state.combat_part.live.threatMode, "tank", "its own settings back")
+    equal(db.profiles["Dyre - Forever"].use, nil)
+    delete.click()
+    contains(state.messages[#state.messages], "Pick a named profile")
+end)
+
+test("profiles: a character on a named profile loads it as each AddOn registers; a gone one falls back", function()
+    local account = {
+        named = {Raid = {parts = {DyresCombatTools = {threatMode = "dps"}, MageToolsForever = {chain = false}}}},
+        profiles = {["Dyre - Forever"] = {use = "Raid", parts = {}, pending = {MageToolsForever = {chain = true}}}},
+    }
+    local state = ProfileFixture({combat = {threatMode = "tank"}, account = account})
+    equal(state.combat_part.live.threatMode, "dps", "the named part, before the frames are built")
+    equal(state.combat_part.refreshes, 0, "no refresh at registration")
+    local mage = state.part("MageToolsForever", {chain = true})
+    equal(mage.live.chain, false, "the named part wins over a waiting one")
+    equal(state.env.DyresToolkitDB.profiles["Dyre - Forever"].pending.MageToolsForever, nil)
+    -- Another character deleted the profile: this one uses its own again.
+    local other = ProfileFixture({combat = {threatMode = "tank"},
+        account = {profiles = {["Dyre - Forever"] = {use = "Gone", parts = {}}}}})
+    equal(other.combat_part.live.threatMode, "tank")
+    equal(other.env.DyresToolkitDB.profiles["Dyre - Forever"].use, nil)
+end)
+
+test("profiles: a 2.19.0 test build's shared profile becomes the profile Shared", function()
+    local account = {shared = {parts = {DyresCombatTools = {threatMode = "dps"}}, by = "Main - Forever"},
+        profiles = {["Dyre - Forever"] = {shared = true, parts = {}}}}
+    local state = ProfileFixture({combat = {threatMode = "tank"}, account = account})
+    local db = state.env.DyresToolkitDB
+    equal(db.shared, nil)
+    equal(db.named.Shared.parts.DyresCombatTools.threatMode, "dps")
+    equal(db.profiles["Dyre - Forever"].use, "Shared")
+    equal(state.combat_part.live.threatMode, "dps")
+end)
+
+test("profiles: a named profile can be a copy source", function()
+    local account = {named = {Raid = {parts = {DyresCombatTools = {threatMode = "dps"}}}}}
+    local state = ProfileFixture({combat = {threatMode = "tank"}, account = account})
+    local source = state.settings.DYRE_PROFILE_SOURCE
+    local key = state.ns.PROFILE_NAMED_KEY .. "Raid"
+    equal(source.labels[key], "Raid (profile)")
+    source:SetValue(key)
+    equal(source:GetValue(), key)
+    local ok = state.profile:CopyFrom(key)
+    equal(ok, true)
+    equal(state.combat_part.live.threatMode, "dps")
+    equal(state.env.DyresToolkitDB.profiles["Dyre - Forever"].use, nil, "a copy does not switch profiles")
+end)
+
 test("profiles: the Profile section names this character and works through popups", function()
     local account = {profiles = {["Alt - Forever"] = {parts = {DyresCombatTools = {threatMode = "dps"}},
         class = "Mage"}}}
@@ -451,11 +595,12 @@ test("profiles: the Profile section names this character and works through popup
     -- 2.16.0: the Profile section comes last, after the link to Dyre's Threat
     -- and Combat Tools (Core.lua); its header names this character.
     local tail = {}
-    for index = #state.page - 4, #state.page do
+    for index = #state.page - 7, #state.page do
         local entry = state.page[index]
         tail[#tail + 1] = type(entry) == "table" and tostring(entry.name) or tostring(entry)
     end
-    equal(table.concat(tail, ","), "Threat and Combat Tools,## Profile: Dyre - Forever (WARRIOR),"
+    equal(table.concat(tail, ","), "Threat and Combat Tools,## Profile: Dyre - Forever (WARRIOR),DYRE_PROFILE_ACTIVE,New profile,"
+        .. "Delete profile,"
         .. "DYRE_PROFILE_SOURCE,Export profile,Import profile")
     local source = state.settings.DYRE_PROFILE_SOURCE
     -- Copy sits at the right of the dropdown, on its row (no row of its own).

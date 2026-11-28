@@ -20,7 +20,10 @@ The settings are per character. The Profile section at the end of the page
 holds this character's profile: the settings, frame places, sizes, and sounds
 of every Dyre's AddOn that has joined it. Copy another character's profile,
 or the defaults, or export and import it as one line of text. A copy or
-import applies at once. The layout settings at the top (lock, grid, snap,
+import applies at once. Press New to make a named profile from the
+settings you use now, then pick it in "Profile in use" on each character that
+should share it: a change on any of them reaches the others at their next
+login. "This character's own" goes back to that character's own settings. The layout settings at the top (lock, grid, snap,
 minimap) are yours on every character and are not in a profile.
 
 ## What it gives you
