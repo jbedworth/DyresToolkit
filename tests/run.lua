@@ -667,7 +667,7 @@ test("2.16.0: the toolkit page ends with a link to Dyre's Threat and Combat Tool
     state.events.scripts.OnEvent(state.events, "PLAYER_LOGIN")
     local link
     for _, row in ipairs(rows) do
-        if row.name == "Threat, tank tools, and swing timer" then link = row end
+        if row.name == "Threat and Combat Tools" then link = row end
     end
     equal(type(link), "table", "the link row")
     contains(link.tooltip, "install it from CurseForge", "missing: the hint")
@@ -1173,6 +1173,27 @@ test("while locked, a Ctrl-drag moves one frame freely; without Ctrl, nothing", 
     mine.x, mine.y = 562, 505
     toolkit.EndDrag(mine)
     equal(saved.mine.x, 580, "unlocked, as before: it snaps beside theirs (now at 520)")
+end)
+
+test("AddWidgetSettings: resetName names the Reset row, else the widget's title", function()
+    local state = fixture()
+    local toolkit = state.toolkit
+    local names = {}
+    state.env.CreateSettingsButtonInitializer = function(name)
+        names[#names + 1] = name
+        return {}
+    end
+    local layout = {}
+    function layout:AddInitializer() end
+    local widget = toolkit.CreateWidget(barSpec({}))
+    local page = state.env.Settings.RegisterVerticalLayoutCategory("Warlock Tools Forever")
+    equal(toolkit.WIDGET_RESET_NAME, 1, "the feature flag")
+    toolkit.AddWidgetSettings(page, layout, widget, {resetName = "Shield display",
+        variable = function(name) return "HOST__" .. name end})
+    equal(names[1], "Shield display", "the host's section name")
+    toolkit.AddWidgetSettings(page, layout, widget, {resetName = "",
+        variable = function(name) return "HOST2__" .. name end})
+    equal(names[2], widget.dyre.title, "empty: the title")
 end)
 
 test("AddSettingsLink opens another Dyre's AddOn's page, and is greyed with a hint while it is missing", function()
@@ -1858,7 +1879,7 @@ test("DIES on Threat Plates leaves the side of its target-of-target, crowd contr
     local toolkit = state.toolkit
     local widgets = {}
     local plate, bar = threatPlate(widgets)
-    env.C_NamePlate = {GetNamePlateForUnit = function() return plate end}
+    env.C_NamePlate = {GetNamePlateForUnit = function(unit) if unit ~= "player" then return plate end end}
     local function side()
         local found, info = toolkit.FindPlateBar("nameplate1")
         equal(found, bar)
@@ -1886,7 +1907,7 @@ test("DIES on Plater leaves the side of its cast target name and its raid marker
     local raid = showing(false)
     local plate = stub({unitFrame = {healthBar = bar, PlaterRaidTargetFrame = {RaidTargetIcon = raid}}})
     function plate:IsForbidden() return false end
-    env.C_NamePlate = {GetNamePlateForUnit = function() return plate end}
+    env.C_NamePlate = {GetNamePlateForUnit = function(unit) if unit ~= "player" then return plate end end}
     local profile = {castbar_target_show = false, castbar_target_anchor = {side = 6},
         indicator_raidmark_anchor = {side = 2}}
     env.Plater = {db = {profile = profile}}
@@ -2025,7 +2046,7 @@ test("the frame adapters find each AddOn's bar, Blizzard's last", function()
     local blizzard = healthBar()
     local plate = stub({UnitFrame = {healthBar = blizzard}})
     function plate:IsForbidden() return false end
-    env.C_NamePlate = {GetNamePlateForUnit = function() return plate end}
+    env.C_NamePlate = {GetNamePlateForUnit = function(unit) if unit ~= "player" then return plate end end}
     local bar, info = toolkit.FindPlateBar("nameplate1")
     equal(bar, blizzard)
     equal(info.name, "Blizzard")
@@ -2066,7 +2087,7 @@ test("HealthBars.RegisterAdapter: another AddOn's bar comes first, nil falls thr
     local blizzard = healthBar()
     local plate = stub({UnitFrame = {healthBar = blizzard}, TPFrame = {Active = true, visual = {Healthbar = healthBar()}}})
     function plate:IsForbidden() return false end
-    env.C_NamePlate = {GetNamePlateForUnit = function() return plate end}
+    env.C_NamePlate = {GetNamePlateForUnit = function(unit) if unit ~= "player" then return plate end end}
     local own, mine = healthBar(), true
     equal(api.RegisterAdapter({name = "My Plates", plate = function(p, unit)
         if mine and p == plate and unit == "nameplate1" then return own end
@@ -4530,6 +4551,47 @@ test("with a secret health a row keeps its numbers, and DIES goes just left of t
     equal(places.secret[1], "RIGHT")
     equal(places.secret[2], row.healthPercent, "secret: left of the first text")
     equal(places.secret[3], "LEFT")
+end)
+
+test("plate frames go only on a mob's plate: never the player's own or the settings preview plate", function()
+    local state = fixture()
+    controlWorld(state, {nameplate1 = mob("Creature-1", "Grunt"), nameplate2 = mob("Player-1", "Me")})
+    state.focusWorks(true)
+    state.plateFrames.nameplate1 = uiFrame(state, "Frame", nil, state.UIParent)
+    state.plateFrames.nameplate2 = uiFrame(state, "Frame", nil, state.UIParent)
+    state.plateFrames.player = state.plateFrames.nameplate2
+    state.plateFrames.preview = uiFrame(state, "Frame", nil, state.UIParent)
+    local toolkit = state.toolkit
+    equal(toolkit.IsMobPlate("nameplate1"), true)
+    equal(toolkit.IsMobPlate("nameplate2"), false, "the player's own plate")
+    equal(toolkit.IsMobPlate("preview"), false, "the settings preview plate")
+    equal(toolkit.IsMobPlate("target"), false)
+    equal(toolkit.IsMobPlate(nil), false)
+    equal(toolkit.FindPlateBar("nameplate2"), nil, "no DIES bar on the player's plate")
+    equal(toolkit.FindPlateBar("preview"), nil, "no DIES bar on the preview plate")
+    local tracker = warlockTracker(state)
+    emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate2")
+    emit(state, "NAME_PLATE_UNIT_ADDED", "preview")
+    assert(tracker.plateTimers.nameplate1, "a mob's plate gets its timer")
+    equal(tracker.plateTimers.nameplate2, nil, "no timer on the player's plate")
+    equal(tracker.plateTimers.preview, nil, "no timer on the preview plate")
+end)
+
+test("plate dots: never on the player's own plate or the settings preview plate", function()
+    local state = fixture()
+    dotWorld(state, {nameplate1 = mob("Creature-1", "Grunt"), nameplate2 = mob("Player-1", "Me")})
+    state.env.UnitAffectingCombat = function() return false end
+    state.plateFrames.nameplate1 = uiFrame(state, "Frame", nil, state.UIParent)
+    state.plateFrames.nameplate2 = uiFrame(state, "Frame", nil, state.UIParent)
+    state.plateFrames.player = state.plateFrames.nameplate2
+    state.plateFrames.preview = uiFrame(state, "Frame", nil, state.UIParent)
+    local tracker, store = dotTracker(state)
+    local dots = assert(state.toolkit.CreatePlateDots({tracker = tracker, store = store}))
+    emit(state, "NAME_PLATE_UNIT_ADDED", "nameplate2")
+    emit(state, "NAME_PLATE_UNIT_ADDED", "preview")
+    assert(dots.byUnit.nameplate1, "a mob's plate gets its bubble")
+    equal(dots.byUnit.nameplate2, nil, "no bubble on the player's plate")
+    equal(dots.byUnit.preview, nil, "no bubble on the preview plate")
 end)
 
 test("plate dots: a bubble per live hostile plate in combat, one dot per known DoT you chose", function()

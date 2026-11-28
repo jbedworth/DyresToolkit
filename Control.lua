@@ -796,7 +796,8 @@ function DyresToolkit.CreateControlTracker(spec)
     end
 
     local function AttachTimer(unit)
-        if not tracker.hasPlateTimers or not Enabled() or store.plateTimers == false or type(C_NamePlate) ~= "table" then
+        if not tracker.hasPlateTimers or not Enabled() or store.plateTimers == false or type(C_NamePlate) ~= "table"
+                or not DyresToolkit.IsMobPlate(unit) then
             return
         end
         local plate = C_NamePlate.GetNamePlateForUnit(unit)

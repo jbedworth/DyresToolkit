@@ -332,10 +332,16 @@ local function Resolve(list, plate, unit)
 end
 
 -- The bar showing this nameplate's health, and {name, place, strata} for
--- DrawPrediction; nil for a forbidden or missing plate.
+-- DrawPrediction; nil for a forbidden or missing plate, for the player's own
+-- plate, and for any token but a mob's plate or "target" (so never the
+-- settings preview plate; DyresToolkit.IsMobPlate).
 function DyresToolkit.FindPlateBar(unit)
+    if unit ~= "target" and not DyresToolkit.IsMobPlate(unit) then
+        return nil
+    end
     local plate = type(C_NamePlate) == "table" and C_NamePlate.GetNamePlateForUnit(unit)
-    if not plate or (type(plate.IsForbidden) == "function" and plate:IsForbidden()) then
+    if not plate or (type(plate.IsForbidden) == "function" and plate:IsForbidden())
+            or plate == C_NamePlate.GetNamePlateForUnit("player") then
         return nil
     end
     return Resolve(PLATE_ADAPTERS, plate, unit)

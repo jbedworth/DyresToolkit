@@ -857,14 +857,27 @@ function ns.AddProfileSettings(category, layout)
                     updateCopy()
                 end
             end)
+        -- Short entries, so they fit the dropdown (John's client,
+        -- 2026-11-27: "Locus - Stormshadow (Warloc..." was cut off): this
+        -- character is "This character" (the header names it), and another
+        -- character on this realm drops " - Realm".
         local function Options()
             local container = Settings.CreateControlTextContainer()
+            local realm = type(key) == "string" and key:match(" %- (.+)$")
             if key then
-                container:Add(key, Profile:Label(key) .. " (this character)")
+                container:Add(key, "This character")
             end
             container:Add(DEFAULTS, Profile:Label(DEFAULTS))
             for _, other in ipairs(Profile:Others()) do
-                container:Add(other, Profile:Label(other))
+                local label = Profile:Label(other)
+                if realm then
+                    local suffix = " - " .. realm
+                    local name = other:sub(1, #other - #suffix)
+                    if #other > #suffix and other:sub(-#suffix) == suffix then
+                        label = name .. label:sub(#other + 1)
+                    end
+                end
+                container:Add(other, label)
             end
             return container:GetData()
         end

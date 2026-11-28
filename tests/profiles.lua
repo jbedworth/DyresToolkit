@@ -455,7 +455,7 @@ test("profiles: the Profile section names this character and works through popup
         local entry = state.page[index]
         tail[#tail + 1] = type(entry) == "table" and tostring(entry.name) or tostring(entry)
     end
-    equal(table.concat(tail, ","), "Threat, tank tools, and swing timer,## Profile: Dyre - Forever (WARRIOR),"
+    equal(table.concat(tail, ","), "Threat and Combat Tools,## Profile: Dyre - Forever (WARRIOR),"
         .. "DYRE_PROFILE_SOURCE,Export profile,Import profile")
     local source = state.settings.DYRE_PROFILE_SOURCE
     -- Copy sits at the right of the dropdown, on its row (no row of its own).
@@ -492,9 +492,9 @@ test("profiles: the Profile section names this character and works through popup
     equal(source.choices[1], "Dyre - Forever")
     equal(source.choices[2], defaults)
     equal(source.choices[3], "Alt - Forever")
-    equal(source.labels["Dyre - Forever"], "Dyre - Forever (WARRIOR) (this character)")
+    equal(source.labels["Dyre - Forever"], "This character")
     equal(source.labels[defaults], "Defaults (a clean slate)")
-    equal(source.labels["Alt - Forever"], "Alt - Forever (Mage)")
+    equal(source.labels["Alt - Forever"], "Alt (Mage)", "same realm: no realm in the entry")
     equal(copy.isEnabled, false, "grey while this character is chosen")
     local popupCount = #state.popups
     copy:GetScript("OnClick")(copy)

@@ -53,11 +53,14 @@ minimap) are yours on every character and are not in a profile.
   name-and-version line each Dyre's AddOn says in chat at login. Errors and
   problems always show. An AddOn follows this switch from its own update
   that supports it.
-- **Proc cues** (the engine for Dyre's Shields Up's proc overlays): while a
+- **Bars that flip.** A Dyre's button bar can be a row or a column: its
+  **Layout** setting, or the small rotate button on its outline while frames
+  are unlocked.
+- **Proc cues** (the engine for Dyre's Buff Reminders' proc arcs): while a
   proc's buff is up, an arc shows on each side of your character and drains
   with the time left, and a sound plays as it appears, also in combat. Dyre's
-  Shields Up chooses the procs for each class and has their art, switches,
-  sound, and arc size on its own page, in its own update. An AddOn that
+  Buff Reminders chooses the procs for each class and has their art, switches,
+  sound, and arc size on its own page. An AddOn that
   brings no art gets a plain crescent in the proc's color. Sounds come from
   Dyre's Sounds.
   A stacking proc (Fingers of Frost) shows the right arc only while it has
@@ -91,7 +94,8 @@ prediction to show it your own way. See
 
 ## Compatibility
 
-For the Forever beta client 1.60.1, build 70888, Interface 16001.
+For the Forever beta client 1.60.1, build 70888, Interface 16001, and
+Classic Era (Interface 11509).
 
 ## Credits
 

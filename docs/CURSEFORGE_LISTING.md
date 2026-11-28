@@ -24,7 +24,7 @@ tested.
 
 ## Summary
 
-Threat warnings and tank tools for every player, and the shared layout mode, grid, mini-map button, and settings home for Dyre's AddOns on WoW: Forever.
+The part every Dyre's AddOn shares. One layout mode, grid, and snapping for every frame. Bars that turn into columns. One settings home and a profile for each character. For WoW: Forever and Classic Era.
 
 ## Description
 
@@ -35,46 +35,47 @@ Per-file changelogs need no manual text: each CI upload uses the version's
 `CHANGELOG.md` section, through `release-notes.md`.
 
 ```markdown
-**Dyre's Toolkit** ties Dyre's AddOns together on WoW: Forever. The Dyre's AddOns you install use it, and the CurseForge app installs it with them. It also gives every player threat warnings and tank tools.
+I build Dyre's AddOns as a family of small AddOns, so you only install the ones you want. The catch with a family is that every AddOn wants to move, snap, and save its settings a little differently, and I didn't want you learning that six times. **Dyre's Toolkit** is the part they all share, so they all work the same way. The CurseForge app installs it for you with any Dyre's AddOn, and on its own it shows nothing in combat and plays no sounds.
 
-### Group warnings
-- **Threat** beside enemy nameplates and above your target: a shield (tank view) or crossed swords (DPS and healer view) and your threat percent, the icon and the text both in green, yellow, or red. In the tank view, yellow comes early when another player nears the pull point, and a mob another tank holds is blue. A sound you choose plays when a mob turns red (by default Bell buzz from Dyre's Sounds 1.5.0 or later; without it, the game's raid warning).
-- Auto uses the tank bar's rule: the tank view for the group's Tank or raid main tank, a Druid in Bear Form, a Paladin with Righteous Fury, or a Warrior in Defensive Stance.
-- **Pet taunt on**: a message when Growl, Torment, or Suffering is on autocast in a group where you are not the tank.
-
-### Tank tools
-- Skull, Next marker, and pings in combat with no "blocked from an action" popup, on a bar and as key bindings.
-- A PULL button and `/dyre pull 10`, handed to Deadly Boss Mods or BigWigs when one is loaded, else the game's countdown.
-- Dyre's countdown on screen: when anyone in your group starts a pull, a big animated countdown with a draining bar, who started it, and a "PULL!" splash, in place of the game's own (it never overrides another AddOn: hidden with BigWigs, and with Deadly Boss Mods unless DBM's own pull bar is turned off).
-
-### One layout mode
-- `/dyre unlock` shows every Dyre's AddOn's frames, so you can drag them where you want. `/dyre lock` locks them all again. Each AddOn's own unlock command does the same.
-- Frames always start locked when you log in, and move only out of combat.
-
-### Snapping
-- A frame you drop near another snaps beside it, also when the other frame belongs to a different Dyre's AddOn.
+### One layout mode for every frame
+- Type `/dyre unlock`, or left-click the minimap button, and every Dyre's AddOn shows its frames with an outline and a label, so you always know which frame is which. Drag them where you want, then type `/dyre lock`.
+- A grid shows while frames are unlocked, with red lines through the middle of the screen. Frames snap to the grid and to each other, even when they come from different Dyre's AddOns.
 - **Shift-drag** moves a group of snapped frames together.
-- **Ctrl** as you drop places a frame exactly where you let go, with no snapping.
-- **Ctrl-drag** moves a frame even while frames are locked: grab it by a button or a box's header.
+- Hold **Ctrl** as you drop a frame to place it to the pixel, with no snapping.
+- **Ctrl-drag** moves a frame while frames are locked, the same way Questie's tracker does.
+- A button bar can be a row or a column. This works for the Mage's Conjure and Portals bars, the Warlock's Stones bar, the Hunter's Aspect bar, and the tank bar. While frames are unlocked, click the small rotate button on the bar's outline.
+- Frames always start locked when you log in. They never move in combat.
 
-### The grid
-- While frames are unlocked, a grid across the screen, with red lines through its center. Its size is a setting.
-- With **Snap to the grid** on (the default), a frame near a red center line centers on it, or puts its nearer edge on it.
-- Elsewhere, an edge within a quarter of the grid size of a grey line lines up with it. When both edges (left and right, or top and bottom) are that close, the one that moves the least wins, so a frame may line up at its lower-right corner rather than its upper-left: check both.
-- Snapping to another Dyre's frame comes before the grid; a Shift-dragged group snaps to the grid as one block.
+### One settings home
+- Options > AddOns > Dyre's AddOns has a page for each Dyre's AddOn you have. Type `/dyre` to open it.
+- Warlock Tools Forever and Mage Tools Forever show the settings of their companion AddOns on their own pages, so you set up your whole class in one place. Each feature has an on/off switch on the main page.
+- When a companion AddOn is missing, its page tells you what it adds and where to get it.
+- You can turn off the welcome message each AddOn writes in chat at login. Errors and problems still show.
 
-### Minimap button and settings
-- Left-click locks or unlocks frames; right-click opens a menu with the grid switches, the settings, and each installed Dyre's AddOn.
-- Options > AddOns > **Dyre's AddOns** holds these settings, with each Dyre's AddOn's page under it. `/dyre` opens it.
-- **Welcome messages at login** (on by default): turn it off to hide each Dyre's AddOn's name-and-version line in chat. Errors and problems always show.
+### Profiles
+- Each character has its own profile. It holds the settings, frame positions, sizes, and sounds of every Dyre's AddOn.
+- Copy another character's setup, or the defaults, with one click.
+- Export a profile as one line of text, and import it on another account.
+
+### Minimap button
+- Left-click locks or unlocks the frames.
+- Right-click opens a menu with the grid switches, the settings, and each Dyre's AddOn you have.
+
+### Where did the threat and tank tools go?
+I moved them into their own AddOn, **Dyre's Threat and Combat Tools** (`/dct`), so players who don't tank don't get them by default. Install it to get the threat labels, the tank button bar, the pull countdown, the pet taunt warning, and the swing timer. Your settings and key bindings come with you.
 
 ### Commands
-- `/dyre` opens the settings; `/dyre unlock`, `/dyre lock`.
-- `/dyre grid`, `/dyre snap`, `/dyre minimap` switch the grid, snapping, and the minimap button.
-- `/dyretoolkit` works the same, in case another AddOn uses `/dyre`.
+- `/dyre` opens the settings.
+- `/dyre unlock` and `/dyre lock` unlock and lock every frame.
+- `/dyre grid`, `/dyre snap`, and `/dyre minimap` turn the grid, snapping, and the minimap button on or off.
+- `/dyretoolkit` does the same as `/dyre`, for when another AddOn already uses `/dyre`.
 
 ### Compatibility
-For World of Warcraft: Forever 1.60.1 (tested on build 70888).
+For World of Warcraft: Forever 1.60.1, tested on build 70888, and for Classic Era.
+
+Questions, ideas, or bugs? Tell me in the comments.
+
+Dyre's AddOns are free. If you enjoy them, you can support them on Ko-fi: https://ko-fi.com/dyre_janelle
 
 Source, issues, and license (MIT): https://github.com/jbedworth/DyresToolkit
 ```

@@ -19,6 +19,22 @@ end
 
 local IsSecret = DyresToolkit.IsSecret
 
+-- True for a mob's own nameplate token ("nameplate1" ...). False for the
+-- player's own plate, the settings page's preview plate, and anything else:
+-- a frame of ours on those plates tainted Blizzard's nameplate code (John,
+-- 2026-11-27: secret-value errors from Options > Nameplates and the player's
+-- cast bar). Compares plate frames, so no secret value is read.
+function DyresToolkit.IsMobPlate(unit)
+    if IsSecret(unit) or type(unit) ~= "string" or not unit:match("^nameplate%d+$") then
+        return false
+    end
+    if type(C_NamePlate) ~= "table" or type(C_NamePlate.GetNamePlateForUnit) ~= "function" then
+        return false
+    end
+    local plate = C_NamePlate.GetNamePlateForUnit(unit)
+    return plate ~= nil and plate ~= C_NamePlate.GetNamePlateForUnit("player")
+end
+
 -- Text for diagnostics that never touches a secret value's contents.
 function DyresToolkit.Describe(value)
     if IsSecret(value) then

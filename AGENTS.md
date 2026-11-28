@@ -267,7 +267,10 @@ AddProcSettings take `opts.watch` for it.
 - `AddWidgetSettings(category, layout, widget, opts)`: a slider per size
   (variables `DYRE_<ADDON>_<KEY>_<NAME>`), each with a gold default mark
   (`ns.AddDefaultTick`, as MTF's and WTF's), and "Reset size"; `opts.labels`,
-  `opts.tooltips`, `opts.resetLabel`, `opts.resetTooltip`.
+  `opts.tooltips`, `opts.resetLabel`, `opts.resetTooltip`, and (2.18.1,
+  flag `WIDGET_RESET_NAME`) `opts.resetName`, the Reset row's name, default
+  the widget's title (John's client, 2026-11-27: one name per section, so a
+  host page's row says "Shield display", not "Dyre's Shields Up").
   `AddDefaultTick(initializer, {min, max, default})` (2.2.0) puts the same
   gold default mark on an AddOn's own slider.
 - Never call GetCenter (or GetRect, GetLeft...) on a frame the toolkit has
@@ -1168,6 +1171,16 @@ keeps:
   Resetter hooks). Dyre's Sounds 1.7.2's Menu.lua follows the same rule.
   Not checked in client yet: change Interface > Status Text after opening
   Dyre's pages; no error.
+- Mob plates only (2.18.1; John's client, 2026-11-27, EllesmereUI off:
+  secret-value errors "tainted by 'DyresDebuffTracker'" from Options >
+  Nameplates and the player's own nameplate cast bar; John: "fix them").
+  Never parent, anchor, or draw on the player's own nameplate or the
+  settings preview plate (`NamePlateConstants.PREVIEW_UNIT_TOKEN`).
+  `IsMobPlate(unit)` (Units.lua): a `nameplate%d+` token whose plate is not
+  `GetNamePlateForUnit("player")` (frames compared, no secret read).
+  PlateDots `Attach` and Control `AttachTimer` check it; `FindPlateBar`
+  takes it or "target", never the player's plate. DDT's Frost.lua arcs
+  have their own hostile-only check. Not checked in client yet.
 - Frames always start locked at login. Frames move only out of combat.
 - The minimap button uses LibDataBroker-1.1 and LibDBIcon-1.0, embedded
   (author: "the standard way"); Forever has no AddOn compartment

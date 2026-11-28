@@ -4,6 +4,13 @@ Player-facing changes for each Dyre's Toolkit release, newest first. The
 release builder copies the section for the TOC version into the GitHub release
 notes and the CurseForge changelog, and fails if that section is missing.
 
+## 2.18.1
+
+### Fixes
+- With Blizzard's nameplates, changing a setting on the Options > Nameplates page, or casting with your own nameplate showing, could throw Lua errors that blamed a Dyre's AddOn. The DoT dots, crowd-control timers, and DIES now go only on a mob's nameplate, never on yours or on the preview plate in the settings.
+- The "Copy settings from" list fits its box again. Your own character shows as "This character", and characters on your realm show without the realm name.
+- The link to Dyre's Threat and Combat Tools on the settings page is now called "Threat and Combat Tools", so its name isn't cut off.
+
 ## 2.18.0
 
 ### Features

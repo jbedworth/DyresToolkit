@@ -255,7 +255,7 @@ events:SetScript("OnEvent", function(self, event, name)
     -- (where its sections were before 2.16.0), then the Profile section.
     local category, layout = ns.HomeCategory()
     DyresToolkit.AddSettingsLink(category, layout, {addon = "DyresCombatTools",
-        name = "Threat, tank tools, and swing timer", button = "Open",
+        name = "Threat and Combat Tools", button = "Open",
         tooltip = "Dyre's Threat and Combat Tools: threat labels and sounds, tank tools, and the swing timer.",
         missing = "These are now in Dyre's Threat and Combat Tools: install it from CurseForge."})
     ns.AddProfileSettings(category, layout)

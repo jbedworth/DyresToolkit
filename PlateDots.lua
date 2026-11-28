@@ -141,7 +141,8 @@ function DyresToolkit.CreatePlateDots(spec)
     end
 
     local function Attach(unit)
-        if store.enabled == false or not store.plateDots or #dots.known == 0 or not tracker:IsOwner() then
+        if store.enabled == false or not store.plateDots or #dots.known == 0 or not tracker:IsOwner()
+                or not DyresToolkit.IsMobPlate(unit) then
             return
         end
         local plate = C_NamePlate.GetNamePlateForUnit(unit)

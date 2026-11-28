@@ -665,7 +665,11 @@ end
 -- registered the plain names already), modify (2.17.0: a function; the rows
 -- are greyed while it gives false, e.g. the feature's switch is off), watch
 -- (2.17.0: a variable or a list; the rows check modify again live when one
--- of them changes; see WatchSettings).
+-- of them changes; see WatchSettings), resetName (2.18.1: the Reset row's
+-- name, default the widget's title; John's client, 2026-11-27: a host page
+-- calls the section "Shield display" while the title is "Dyre's Shields Up";
+-- feature flag WIDGET_RESET_NAME).
+DyresToolkit.WIDGET_RESET_NAME = 1
 function DyresToolkit.AddWidgetSettings(category, layout, widget, opts)
     if type(Settings) ~= "table" or type(category) ~= "table" or type(widget) ~= "table" or not widget.dyre.sizes then
         return false
@@ -702,7 +706,9 @@ function DyresToolkit.AddWidgetSettings(category, layout, widget, opts)
     local resizable = #widget.dyre.sizes.order > (widget.dyre.sizes.opacity and 1 or 0)
     if resizable and type(CreateSettingsButtonInitializer) == "function" and type(layout) == "table"
             and type(layout.AddInitializer) == "function" then
-        local reset = CreateSettingsButtonInitializer(widget.dyre.title, opts.resetLabel or "Reset size",
+        local resetName = type(opts.resetName) == "string" and opts.resetName ~= "" and opts.resetName
+            or widget.dyre.title
+        local reset = CreateSettingsButtonInitializer(resetName, opts.resetLabel or "Reset size",
             function()
                 widget:ResetSize()
                 for _, variable in ipairs(variables) do
